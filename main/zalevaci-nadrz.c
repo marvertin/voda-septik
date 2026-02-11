@@ -15,6 +15,7 @@
 #include "lcd-demo.h"
 #include "prutokomer-demo.h"
 #include "teplota-demo.h"
+#include "hladina-demo.h"
 
 
 void app_main(void)
@@ -22,8 +23,9 @@ void app_main(void)
     // initialize flowmeter + display tasks
     prutokomer_demo_init();
 
-    // vytvoření dvou paralelních tasků
+    // vytvoření paralelních tasků
     blikaniled_init();
     lcd_demo_init();
     teplota_demo_init();
+    hladina_demo_init();
 }
