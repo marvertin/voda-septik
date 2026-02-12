@@ -6,6 +6,7 @@
 #include <esp_err.h>
 #include <driver/gpio.h>
 #include "pins.h"
+#include "lcd.h"
 
 #define TAG "TEMP_DEMO"
 
@@ -102,6 +103,9 @@ static void temperature_task(void *pvParameters)
     {
         if (ds18b20_read_temperature(SENSOR_GPIO, &temperature)) {
             ESP_LOGI(TAG, "Teplota: %.2f°C", temperature);
+            char buf[8];
+            snprintf(buf, sizeof(buf), "T:%.1f", temperature);
+            lcd_print(8, 0, buf, true, 0); // Zobraz na první řádek, sloupec 8
         } else {
             ESP_LOGE(TAG, "Nebylo možno přečíst teplotu");
         }

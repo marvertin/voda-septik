@@ -3,6 +3,7 @@
 #include <esp_log.h>
 #include <esp_adc/adc_oneshot.h>
 #include <driver/gpio.h>
+#include "lcd.h"
 
 #define TAG "LEVEL_DEMO"
 
@@ -26,7 +27,6 @@ static const adc_unit_t LEVEL_ADC_UNIT = ADC_UNIT_1;
 
 // Počet vzorků pro průměrování
 #define ADC_SAMPLES 100
-
 static adc_oneshot_unit_handle_t adc_handle = NULL;
 
 /**
@@ -119,6 +119,11 @@ static void level_task(void *pvParameters)
         
         // Výstup do logu
         ESP_LOGI(TAG, "Surová hodnota: %lu | Výška hladiny: %.3f m", raw_value, height);
+        
+        // Zobrazení na LCD
+        char buf[12];
+        snprintf(buf, sizeof(buf), "H:%.2fm", height);
+        lcd_print(0, 1, buf, true, 0); // Zobraz na druhý řádek, první sloupec
         
         // Čtení každou sekundu
         vTaskDelay(pdMS_TO_TICKS(100));

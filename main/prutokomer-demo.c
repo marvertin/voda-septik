@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "tm1637.h"
 #include "pins.h"
+#include "lcd.h"
 
 #define TAG "FLOW_DEMO"
 
@@ -26,8 +27,13 @@ static void IRAM_ATTR flow_isr_handler(void *arg) {
 
 static void pocitani_pulsu(void *pvParameters)
 {
+    char buf[8];
     while(1) {
         vTaskDelay(pdMS_TO_TICKS(200));   // měřím 1× za sekundu
+
+        // zobraz pulzy/seknu (zatím žádný přepočet na L/min)
+        snprintf(buf, sizeof(buf), "%lu", (unsigned long)pulse_count);
+        lcd_print(0, 0, buf, true, 0); // Zobraz na první řádek, první sloupec
 
         // zobraz pulzy/seknu (zatím žádný přepočet na L/min)
         tm1637_show_number(display, pulse_count, false, 4, 0);

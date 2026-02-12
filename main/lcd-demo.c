@@ -24,15 +24,11 @@ void lcd_demo_task(void *pvParameters)
     ESP_ERROR_CHECK(i2cdev_init());
     lcd_init();
 
-    // Ukázka: zobrazení na různých pozicích
-    lcd_print(0, 0, "Ahoj milacku!", true, portMAX_DELAY);
-    lcd_print(0, 1, "Cas:", true, portMAX_DELAY);
-
     char time[16];
     while (1)
     {
         snprintf(time, sizeof(time), "%lu", (unsigned long)get_time_sec());
-        lcd_print(5, 1, time, false, portMAX_DELAY);
+        lcd_print(10, 1, time, true, portMAX_DELAY); // Zobraz čas na druhý řádek, sloupec 10
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

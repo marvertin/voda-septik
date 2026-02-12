@@ -24,12 +24,9 @@ static void lcd_task(void *pvParameters)
 
     while (1) {
         if (xQueueReceive(lcd_queue, &msg, portMAX_DELAY) == pdTRUE) {
-            if (msg.clear_line) {
-                memset(line_buf, ' ', LCD_MAX_TEXT_LEN);
-                line_buf[LCD_MAX_TEXT_LEN] = 0;
-                hd44780_gotoxy(&lcd, 0, msg.y);
-                hd44780_puts(&lcd, line_buf);
-            }
+
+            // Zalogujeme zprávu pro debug
+            ESP_LOGI(TAG, "Zobrazit na LCD: [%u,%u] '%s' clear_line=%s", msg.x, msg.y, msg.text, msg.clear_line ? "true" : "false");
             hd44780_gotoxy(&lcd, msg.x, msg.y);
             hd44780_puts(&lcd, msg.text);
         }
@@ -52,7 +49,7 @@ void lcd_init(void)
     lcd.pins.d7 = 7;
     lcd.pins.bl = 3;
 
-    ESP_ERROR_CHECK(hd44780_init(&lcd));
+    ESP_ERROR_CHECK( hd44780_init(&lcd));
     hd44780_switch_backlight(&lcd, true);
 
     lcd_queue = xQueueCreate(LCD_QUEUE_LENGTH, sizeof(lcd_msg_t));
