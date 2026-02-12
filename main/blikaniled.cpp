@@ -1,7 +1,16 @@
 #include "blikaniled.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 static void led_task_1(void *pvParameters)
 {

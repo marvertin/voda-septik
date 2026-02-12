@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <inttypes.h>
 #include <stdio.h>
 #include <freertos/FreeRTOS.h>
@@ -5,6 +9,11 @@
 #include <sys/time.h>
 #include <hd44780.h>
 #include <pcf8574.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "pins.h"
 #include "lcd.h"
 

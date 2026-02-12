@@ -1,8 +1,17 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_adc/adc_oneshot.h>
 #include <driver/gpio.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "lcd.h"
 
 #define TAG "LEVEL_DEMO"
@@ -119,19 +128,19 @@ static uint32_t prumer(void) {
  */
 static esp_err_t adc_init(void)
 {
-    adc_oneshot_unit_init_cfg_t init_config = {
-        .unit_id = LEVEL_ADC_UNIT,
-    };
+    adc_oneshot_unit_init_cfg_t init_config;
+    memset(&init_config, 0, sizeof(init_config));
+    init_config.unit_id = LEVEL_ADC_UNIT;
     
     if (adc_oneshot_new_unit(&init_config, &adc_handle) != ESP_OK) {
         ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku");
         return ESP_FAIL;
     }
     
-    adc_oneshot_chan_cfg_t config = {
-        .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_12,
-    };
+    adc_oneshot_chan_cfg_t config;
+    memset(&config, 0, sizeof(config));
+    config.bitwidth = ADC_BITWIDTH_12;
+    config.atten = ADC_ATTEN_DB_12;
     
     if (adc_oneshot_config_channel(adc_handle, LEVEL_ADC_CHANNEL, &config) != ESP_OK) {
         ESP_LOGE(TAG, "Chyba: Nelze nakonfigurovat ADC kanál");

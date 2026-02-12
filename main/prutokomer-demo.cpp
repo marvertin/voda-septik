@@ -1,8 +1,17 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "tm1637.h"
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "pins.h"
 #include "lcd.h"
 
@@ -22,7 +31,7 @@ static tm1637_handle_t display;
 
 // ISR handler
 static void IRAM_ATTR flow_isr_handler(void *arg) {
-    pulse_count++;
+    pulse_count += 1;
 }
 
 static void pocitani_pulsu(void *pvParameters)

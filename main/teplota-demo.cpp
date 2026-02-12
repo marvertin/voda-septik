@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <inttypes.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -5,6 +9,11 @@
 #include <esp_log.h>
 #include <esp_err.h>
 #include <driver/gpio.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "pins.h"
 #include "lcd.h"
 

@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,6 +14,10 @@
 #include "i2cdev.h"
 #include "pcf8574.h"
 
+#ifdef __cplusplus
+}
+#endif
+
 #include "pins.h"
 #include "blikaniled.h"
 #include "lcd-demo.h"
@@ -17,6 +25,9 @@
 #include "teplota-demo.h"
 #include "hladina-demo.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void app_main(void)
 {
@@ -29,3 +40,7 @@ void app_main(void)
     teplota_demo_init();
     hladina_demo_init();
 }
+
+#ifdef __cplusplus
+}
+#endif

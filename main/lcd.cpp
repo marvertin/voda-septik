@@ -1,8 +1,18 @@
 #include "lcd.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <string.h>
 #include <hd44780.h>
 #include <pcf8574.h>
 #include <esp_log.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "pins.h"
 
 #define TAG "LCD"
@@ -20,7 +30,6 @@ static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
 static void lcd_task(void *pvParameters)
 {
     lcd_msg_t msg;
-    char line_buf[LCD_MAX_TEXT_LEN+1];
 
     while (1) {
         if (xQueueReceive(lcd_queue, &msg, portMAX_DELAY) == pdTRUE) {
@@ -36,7 +45,7 @@ static void lcd_task(void *pvParameters)
 void lcd_init(void)
 {
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    ESP_ERROR_CHECK(pcf8574_init_desc(&pcf8574, 0x27, 0, SDA_GPIO, SCL_GPIO));
+    ESP_ERROR_CHECK(pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, SDA_GPIO, SCL_GPIO));
 
     lcd.write_cb = write_lcd_data;
     lcd.font = HD44780_FONT_5X8;
@@ -60,7 +69,8 @@ void lcd_init(void)
 
 BaseType_t lcd_print(uint8_t x, uint8_t y, const char *text, bool clear_line, TickType_t timeout)
 {
-    lcd_msg_t msg = {0};
+    lcd_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
     msg.x = x;
     msg.y = y;
     msg.clear_line = clear_line;
