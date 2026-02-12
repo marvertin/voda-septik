@@ -30,8 +30,6 @@ static uint32_t get_time_sec()
 
 void lcd_demo_task(void *pvParameters)
 {
-    ESP_ERROR_CHECK(i2cdev_init());
-    lcd_init();
 
     char time[16];
     while (1)

@@ -1,7 +1,3 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,10 +10,6 @@ extern "C" {
 #include "i2cdev.h"
 #include "pcf8574.h"
 
-#ifdef __cplusplus
-}
-#endif
-
 #include "pins.h"
 #include "blikaniled.h"
 #include "lcd-demo.h"
@@ -25,22 +17,22 @@ extern "C" {
 #include "teplota-demo.h"
 #include "hladina-demo.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "lcd.h"
 
-void app_main(void)
+extern "C" {
+    void cpp_app_main(void);
+}
+
+void cpp_app_main(void)
 {
+    lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
+    
     // initialize flowmeter + display tasks
     prutokomer_demo_init();
 
     // vytvoření paralelních tasků
     blikaniled_init();
-    lcd_demo_init();
+    // lcd_demo_init();
     teplota_demo_init();
     hladina_demo_init();
 }
-
-#ifdef __cplusplus
-}
-#endif

@@ -44,6 +44,8 @@ static void lcd_task(void *pvParameters)
 
 void lcd_init(void)
 {
+    ESP_ERROR_CHECK(i2cdev_init());
+
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
     ESP_ERROR_CHECK(pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, SDA_GPIO, SCL_GPIO));
 

@@ -141,25 +141,6 @@ static void level_task(void *pvParameters)
 
 void hladina_demo_init(void)
 {
-    // Filtr se auto-inicializuje v konstruktoru
-
-    // Testování filtru - vkládáme testovací hodnoty v náhodném pořadí
-    uint32_t test_values[] = {500, 2000, 100, 3500, 1500, 4000, 750, 2500, 1000, 3000, 200, 3800, 1200, 2200, 4095};
-    int num_test_values = sizeof(test_values) / sizeof(test_values[0]);
-    
-    ESP_LOGI(TAG, "=== TESTOVÁNÍ TRIMMED MEAN FILTRU ===");
-    
-    for (int i = 0; i < num_test_values; i++) {
-        level_filter.insert(test_values[i]);
-        
-        ESP_LOGI(TAG, "--- Vložena hodnota %lu (krok %d) ---", test_values[i], i + 1);
-        ESP_LOGI(TAG, "Oříznutý průměr: %lu", level_filter.getValue());
-        ESP_LOGI(TAG, "");
-
-        vTaskDelay(pdMS_TO_TICKS(100)); // Krátká pauza mezi vkládáním
-    }
-    
-    ESP_LOGI(TAG, "=== TESTOVÁNÍ DOKONČENO ===");
-
+   
     xTaskCreate(level_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
