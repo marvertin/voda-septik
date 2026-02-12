@@ -18,6 +18,7 @@
 #include "hladina-demo.h"
 
 #include "lcd.h"
+#include "wifi_init.h"
 
 extern "C" {
     void cpp_app_main(void);
@@ -25,6 +26,12 @@ extern "C" {
 
 void cpp_app_main(void)
 {
+    // Inicializace WiFi
+    ESP_ERROR_CHECK(wifi_init_sta());
+    
+    // Čekáme na připojení (timeout 10 sekund)
+    wifi_wait_connected(10000);
+    
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
     
     // initialize flowmeter + display tasks
