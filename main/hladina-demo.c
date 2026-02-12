@@ -27,7 +27,92 @@ static const adc_unit_t LEVEL_ADC_UNIT = ADC_UNIT_1;
 
 // Počet vzorků pro průměrování
 #define ADC_SAMPLES 100
+
 static adc_oneshot_unit_handle_t adc_handle = NULL;
+
+typedef struct {
+    int poradi;
+    uint32_t hodnota;
+} buf_t;
+
+#define BUF_SIZE 31 // velikost bufferu pro ukládání hodnot
+#define POCET_ORIZNUTYCH_HODNOT 5 // Počet oříznutcýh hodnot, které se odstraní z každé strany z bufferu pro výpočet průměru, musí být menší než polovina velikosti bufferu
+
+// Buffer pro ukládání posledních měření, buffer je seřazen podle velkiosti hodnoty, největší hodnota je na indexu 0, nejmenší na indexu BUF_SIZE-1
+// Je průběžně aktualizován a slouží pro výpočet oříznutého průmeru, kdy se odstraní několi nejvyšší a nejnižší hodnota a zbytek se zprůměruje.
+// Budder má zarážky nba začátku a konci, aby se nemusel začátek a konec hlídat
+static buf_t buf[BUF_SIZE+2];
+static int poradi = 0;          // pořadí měření, bude se zvyšovat s každým měřením modulo BUF_SIZE
+
+static void init_buffer() {
+    for (int i = 0; i < BUF_SIZE+2; i++) {
+        buf[i].poradi = i - 1; // jako by ty nuly přišly těsně po sobě
+        buf[i].hodnota = 0;
+    }
+    // První hodnota se nastaví na minimální hodnotu, poslení na maximální hodnotu, aby se oříznutí vždy odstranilo
+    buf[0].hodnota = 0;
+    buf[0].poradi = -1;
+    buf[BUF_SIZE+1].hodnota = UINT32_MAX;  // Maximální hdointa, kterou číslo může nabývatM
+    buf[BUF_SIZE+1].poradi = -1;
+}
+
+/*
+ * Vloží novou hodnotu do bufferu a aktualizuje pořadí všech záznamů.
+ * Buffer je seřazen podle velikosti hodnoty, největší hodnota je na indexu 1, nejmenší na indexu BUF_SIZE,
+ *  protože index 0 a BUF_SIZE+1 jsou zarážky s extrémními hodnotami, které se nikdy nebudou používat pro ukládání skutečných měření. 
+ * Po vložení nové hodnoty se zkontroluje, zda je potřeba ji posunout doleva nebo doprava, aby se udržel správný pořádek.
+ */
+static void insert_value(uint32_t value) {
+    // ZAlogujeme vkládanou hodnotu a aktuální pořadí pro debug
+    //ESP_LOGI(TAG, "Vkládám hodnotu %lu, aktuální poradi=%d", value, poradi);
+
+    int index = 0; // index pro vložení nové hodnoty, bude se hledat v bufferu podle pořadí, které se zvyšuje s každým měřením modulo BUF_SIZE
+    // Nejprve najdeme index pro vložení nové hodnoty, určitě se najde, protože hodnota byla dříve vložena
+    // Hledá se nejstaší hodnota, která má stejné pořadí jako aktuální pořadí, protože hodnoty jdou modulo
+    for (int i = 1; i < BUF_SIZE+1; i++) {
+        if (poradi == buf[i].poradi) {
+            index = i;
+            break;
+        }
+    }
+
+    // Vypíšeme v debugu nalezený index pro vložení nové hodnoty
+    //ESP_LOGI(TAG, "Hledam index pro vložení nové hodnoty %lu, poradi=%d, našel index=%d s hodnotou %lu a poradi=%d", value, poradi, index, buf[index].hodnota, buf[index].poradi);
+
+    buf[index].hodnota = value;
+
+    for (;;) {
+        // Nemusíme kontrolovat hranice, protože na začátku a konci jsou zarážky s extrémními hodnotami
+        if (buf[index].hodnota < buf[index-1].hodnota) {
+            // Prohodíme s levým sousedem
+            buf_t temp = buf[index];
+            buf[index] = buf[index-1];
+            buf[index-1] = temp;
+            index--; 
+        } else if (buf[index].hodnota > buf[index+1].hodnota) {
+            // Prohodíme s pravým sousedem
+            buf_t temp = buf[index];
+            buf[index] = buf[index+1];
+            buf[index+1] = temp;
+            index++;
+        } else {
+            break; // Hodnota je na správném místě
+        }
+    }
+
+    poradi = (poradi + 1) % BUF_SIZE; // Zvyšujeme pořadí pro buňu pro nové měření
+
+}
+
+static uint32_t prumer(void) {
+    uint64_t sum = 0;
+    // Bufer má první a poslední hodnotu zarážku a vlastní buffer je od 1 do BUF_SIZE - 1, ale pole je o dva větší
+    for (int i = 1 + POCET_ORIZNUTYCH_HODNOT; i <= BUF_SIZE - POCET_ORIZNUTYCH_HODNOT; i++) {
+        sum += buf[i].hodnota;
+    }
+    uint32_t average = sum / (BUF_SIZE - 2 * POCET_ORIZNUTYCH_HODNOT);
+    return average;
+}   
 
 /**
  * Inicializuje ADC pro čtení senzoru hladiny
@@ -62,19 +147,15 @@ static esp_err_t adc_init(void)
  */
 static uint32_t adc_read_average(void)
 {
-    uint32_t sum = 0;
-    int raw_value = 0;
-    
-    for (int i = 0; i < ADC_SAMPLES; i++) {
-        if (adc_oneshot_read(adc_handle, LEVEL_ADC_CHANNEL, &raw_value) != ESP_OK) {
-            ESP_LOGE(TAG, "Chyba při čtení ADC");
-            return 0;
-        }
-        sum += raw_value;
-        vTaskDelay(pdMS_TO_TICKS(10));  // Krátká pauza mezi vzorky
+    int raw_value = 0;  
+    if (adc_oneshot_read(adc_handle, LEVEL_ADC_CHANNEL, &raw_value) != ESP_OK) {
+        ESP_LOGE(TAG, "Chyba při čtení ADC");
+        return 0;
     }
+    insert_value(raw_value); // Vložíme hodnotu do bufferu pro výpočet oříznutého průměru
+    vTaskDelay(pdMS_TO_TICKS(10));  // Krátká pauza mezi vzorky
     
-    return sum / ADC_SAMPLES;
+    return prumer();
 }
 
 /**
@@ -132,5 +213,37 @@ static void level_task(void *pvParameters)
 
 void hladina_demo_init(void)
 {
+    init_buffer(); // Inicializace bufferu pro měření
+
+    // Testování bufferu - vkládáme testovací hodnoty v náhodném pořadí
+    uint32_t test_values[] = {500, 2000, 100, 3500, 1500, 4000, 750, 2500, 1000, 3000, 200, 3800, 1200, 2200, 4095};
+    int num_test_values = sizeof(test_values) / sizeof(test_values[0]);
+    
+    ESP_LOGI(TAG, "=== TESTOVÁNÍ BUFFERU ===");
+    
+    for (int i = 0; i < num_test_values; i++) {
+        insert_value(test_values[i]);
+        
+        ESP_LOGI(TAG, "--- Vložena hodnota %lu (krok %d) ---", test_values[i], i + 1);
+        ESP_LOGI(TAG, "Poradi: %d", poradi);
+        
+        // Vypíšeme celý buffer
+        char log_line[256];
+        int pos = 0;
+        for (int j = 0; j < BUF_SIZE + 2; j++) {
+            pos += snprintf(log_line + pos, sizeof(log_line) - pos, 
+                          "[%d:%lu] ", buf[j].poradi, buf[j].hodnota);
+        }
+        ESP_LOGI(TAG, "aBuffer: %s", log_line);
+        ESP_LOGI(TAG, "");
+        
+        prumer(); // Vypočítáme a vypíšeme průměr z oříznutých hodnot
+        //ESP_LOGI(TAG, ""); // Prázdný řádek pro lepší čitelnost
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Krátká pauza mezi vkládáním
+    }
+    
+    ESP_LOGI(TAG, "=== TESTOVÁNÍ DOKONČENO ===");
+
     xTaskCreate(level_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
