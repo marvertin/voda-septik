@@ -19,6 +19,7 @@
 
 #include "lcd.h"
 #include "wifi_init.h"
+#include "mqtt_init.h"
 
 extern "C" {
     void cpp_app_main(void);
@@ -31,6 +32,9 @@ void cpp_app_main(void)
     
     // Čekáme na připojení (timeout 10 sekund)
     wifi_wait_connected(10000);
+    
+    // Inicializace MQTT - upravte URI podle vaší Home Assistant instance
+    ESP_ERROR_CHECK(mqtt_init("mqtt://192.168.2.108:1883"));
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
     
