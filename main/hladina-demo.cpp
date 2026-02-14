@@ -90,11 +90,19 @@ static const config_item_t LEVEL_CONFIG_ITEMS[] = {
     },
 };
 
-// Kalibrace senzoru se nacita z konfigurace (NVS)
-static int32_t g_adc_raw_min = 540;
-static int32_t g_adc_raw_max = 950;
-static float g_height_min = 0.0f;
-static float g_height_max = 0.290f;
+typedef struct {
+    int32_t adc_raw_min;
+    int32_t adc_raw_max;
+    float height_min;
+    float height_max;
+} level_calibration_config_t;
+
+static level_calibration_config_t g_level_config = {
+    .adc_raw_min = 540,
+    .adc_raw_max = 950,
+    .height_min = 0.0f,
+    .height_max = 0.290f,
+};
 
 static adc_oneshot_unit_handle_t adc_handle = NULL;
 
@@ -103,32 +111,17 @@ static TrimmedMean<31, 5> level_filter;
 
 static void load_level_calibration_config(void)
 {
-    int32_t raw_min = g_adc_raw_min;
-    int32_t raw_max = g_adc_raw_max;
-    float height_min = g_height_min;
-    float height_max = g_height_max;
+    ESP_ERROR_CHECK(config_webapp_get_i32("lvl_raw_min", &g_level_config.adc_raw_min));
+    ESP_ERROR_CHECK(config_webapp_get_i32("lvl_raw_max", &g_level_config.adc_raw_max));
+    ESP_ERROR_CHECK(config_webapp_get_float("lvl_h_min", &g_level_config.height_min));
+    ESP_ERROR_CHECK(config_webapp_get_float("lvl_h_max", &g_level_config.height_max));
 
-    if (config_webapp_get_i32("lvl_raw_min", &raw_min) == ESP_OK) {
-        g_adc_raw_min = raw_min;
-    }
-    if (config_webapp_get_i32("lvl_raw_max", &raw_max) == ESP_OK) {
-        g_adc_raw_max = raw_max;
-    }
-    if (config_webapp_get_float("lvl_h_min", &height_min) == ESP_OK) {
-        g_height_min = height_min;
-    }
-    if (config_webapp_get_float("lvl_h_max", &height_max) == ESP_OK) {
-        g_height_max = height_max;
-    }
-
-    if (g_adc_raw_max <= g_adc_raw_min) {
-        g_adc_raw_max = g_adc_raw_min + 1;
-    }
-    if (g_height_max < g_height_min) {
-        float temp = g_height_min;
-        g_height_min = g_height_max;
-        g_height_max = temp;
-    }
+    ESP_LOGI(TAG,
+             "Nactena kalibrace hladiny: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m",
+             (long)g_level_config.adc_raw_min,
+             (long)g_level_config.adc_raw_max,
+             g_level_config.height_min,
+             g_level_config.height_max);
 }
 
 /**
@@ -185,8 +178,9 @@ static uint32_t adc_read_average(void)
 static float adc_raw_to_height(uint32_t raw_value)
 {
     // Lineární interpolace
-    float height = g_height_min + (float)((int)raw_value - g_adc_raw_min) *
-                   (g_height_max - g_height_min) / (float)(g_adc_raw_max - g_adc_raw_min);
+    float height = g_level_config.height_min + (float)((int)raw_value - g_level_config.adc_raw_min) *
+                   (g_level_config.height_max - g_level_config.height_min) /
+                   (float)(g_level_config.adc_raw_max - g_level_config.adc_raw_min);
     
     // Omezení na rozsah
     //if (height < HEIGHT_MIN) height = HEIGHT_MIN;
@@ -198,8 +192,6 @@ static float adc_raw_to_height(uint32_t raw_value)
 static void level_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Spouštění demá čtení hladiny...");
-
-    load_level_calibration_config();
     
     // Inicializace ADC
     if (adc_init() != ESP_OK) {
@@ -222,11 +214,6 @@ static void level_task(void *pvParameters)
     
     while (1)
     {
-        static uint32_t cycle_counter = 0;
-        if ((cycle_counter++ % 100) == 0) {
-            load_level_calibration_config();
-        }
-
         // Čtení průměru z ADC
         raw_value = adc_read_average();
         
@@ -248,7 +235,8 @@ static void level_task(void *pvParameters)
 
 void hladina_demo_init(void)
 {
-   
+    load_level_calibration_config();
+
     xTaskCreate(level_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
 
