@@ -5,20 +5,41 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "esp_app_desc.h"
+#include "esp_chip_info.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "config_webapp";
 static std::vector<config_item_t> s_items_storage;
+
+static const char *SYS_NAMESPACE = "sys_meta";
+static const char *SYS_BOOT_COUNT_KEY = "boot_count";
+static const char *SYS_LAST_REASON_KEY = "last_reason";
+static const char *SYS_LAST_TIME_KEY = "last_time";
+
+typedef struct {
+    uint32_t boot_count;
+    esp_reset_reason_t last_reason;
+    int64_t last_restart_unix;
+} system_status_t;
+
+static system_status_t s_system_status = {
+    .boot_count = 0,
+    .last_reason = ESP_RST_UNKNOWN,
+    .last_restart_unix = 0,
+};
 
 typedef struct {
     const config_item_t *items;
@@ -72,6 +93,86 @@ static std::string html_escape(const std::string &input)
         }
     }
     return output;
+}
+
+static const char *reset_reason_to_str(esp_reset_reason_t reason)
+{
+    switch (reason) {
+        case ESP_RST_POWERON: return "Power-on";
+        case ESP_RST_EXT: return "External pin";
+        case ESP_RST_SW: return "Software restart";
+        case ESP_RST_PANIC: return "Kernel panic";
+        case ESP_RST_INT_WDT: return "Interrupt watchdog";
+        case ESP_RST_TASK_WDT: return "Task watchdog";
+        case ESP_RST_WDT: return "Other watchdog";
+        case ESP_RST_DEEPSLEEP: return "Wake from deep sleep";
+        case ESP_RST_BROWNOUT: return "Brownout";
+        case ESP_RST_SDIO: return "SDIO reset";
+        case ESP_RST_USB: return "USB reset";
+        case ESP_RST_JTAG: return "JTAG reset";
+        case ESP_RST_EFUSE: return "eFuse error reset";
+        case ESP_RST_PWR_GLITCH: return "Power glitch";
+        case ESP_RST_CPU_LOCKUP: return "CPU lockup";
+        default: return "Unknown";
+    }
+}
+
+static std::string format_unix_time(int64_t unix_time)
+{
+    if (unix_time <= 0) {
+        return "neznamy";
+    }
+
+    time_t t = static_cast<time_t>(unix_time);
+    struct tm tm_info = {};
+    if (localtime_r(&t, &tm_info) == nullptr) {
+        return "neznamy";
+    }
+
+    char buffer[32] = {0};
+    if (strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_info) == 0) {
+        return "neznamy";
+    }
+    return buffer;
+}
+
+static void update_restart_metadata(void)
+{
+    nvs_handle_t nvs_handle;
+    esp_err_t result = nvs_open(SYS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Nelze otevrit system namespace: %s", esp_err_to_name(result));
+        return;
+    }
+
+    uint32_t boot_count = 0;
+    result = nvs_get_u32(nvs_handle, SYS_BOOT_COUNT_KEY, &boot_count);
+    if (result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "Nelze nacist boot_count: %s", esp_err_to_name(result));
+    }
+    boot_count++;
+
+    esp_reset_reason_t reason = esp_reset_reason();
+    int64_t now = static_cast<int64_t>(time(nullptr));
+    if (now < 1609459200) {
+        now = 0;
+    }
+
+    ESP_ERROR_CHECK(nvs_set_u32(nvs_handle, SYS_BOOT_COUNT_KEY, boot_count));
+    ESP_ERROR_CHECK(nvs_set_i32(nvs_handle, SYS_LAST_REASON_KEY, static_cast<int32_t>(reason)));
+    ESP_ERROR_CHECK(nvs_set_i64(nvs_handle, SYS_LAST_TIME_KEY, now));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    nvs_close(nvs_handle);
+
+    s_system_status.boot_count = boot_count;
+    s_system_status.last_reason = reason;
+    s_system_status.last_restart_unix = now;
+
+    ESP_LOGI(TAG,
+             "Restart metadata: count=%lu, reason=%s, time=%s",
+             static_cast<unsigned long>(s_system_status.boot_count),
+             reset_reason_to_str(s_system_status.last_reason),
+             format_unix_time(s_system_status.last_restart_unix).c_str());
 }
 
 static int hex_to_int(char ch)
@@ -280,6 +381,7 @@ static std::string build_config_page_html()
     html += "button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;}";
     html += "</style></head><body>";
     html += "<h1>Konfigurace zařízení</h1>";
+    html += "<p><a href='/'>← Zpět na systémový přehled</a></p>";
     html += "<form id='cfgForm' method='post' action='/config/save'>";
 
     for (size_t index = 0; index < s_ctx.item_count; ++index) {
@@ -338,6 +440,57 @@ static std::string build_config_page_html()
         nvs_close(nvs_handle);
     }
     return html;
+}
+
+static std::string build_root_page_html()
+{
+    esp_chip_info_t chip_info = {};
+    esp_chip_info(&chip_info);
+
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    uint32_t uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+
+    std::string html;
+    html.reserve(3000);
+    html += "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
+    html += "<title>Systémový přehled</title>";
+    html += "<style>body{font-family:sans-serif;max-width:760px;margin:20px auto;padding:0 12px;}";
+    html += ".card{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;}";
+    html += "h1,h2{margin-top:0;}";
+    html += "ul{padding-left:18px;margin:0;}";
+    html += "li{margin-bottom:6px;}";
+    html += "a.button{display:inline-block;padding:10px 14px;border-radius:8px;border:1px solid #333;text-decoration:none;color:#111;}";
+    html += "</style></head><body>";
+    html += "<h1>Systémový přehled</h1>";
+
+    html += "<div class='card'><h2>Restarty</h2><ul>";
+    html += "<li>Počet restartů: <strong>" + std::to_string(s_system_status.boot_count) + "</strong></li>";
+    html += "<li>Důvod posledního restartu: <strong>" + std::string(reset_reason_to_str(s_system_status.last_reason)) + "</strong></li>";
+    html += "<li>Čas posledního restartu: <strong>" + format_unix_time(s_system_status.last_restart_unix) + "</strong></li>";
+    html += "</ul></div>";
+
+    html += "<div class='card'><h2>Systémové informace</h2><ul>";
+    html += "<li>Projekt: <strong>" + std::string(app_desc->project_name) + "</strong></li>";
+    html += "<li>Verze aplikace: <strong>" + std::string(app_desc->version) + "</strong></li>";
+    html += "<li>ESP-IDF: <strong>" + std::string(esp_get_idf_version()) + "</strong></li>";
+    html += "<li>Chip model: <strong>ESP32</strong></li>";
+    html += "<li>Jádra CPU: <strong>" + std::to_string(chip_info.cores) + "</strong></li>";
+    html += "<li>Revize čipu: <strong>" + std::to_string(chip_info.revision) + "</strong></li>";
+    html += "<li>Volná heap: <strong>" + std::to_string(static_cast<unsigned long>(esp_get_free_heap_size())) + " B</strong></li>";
+    html += "<li>Minimum heap: <strong>" + std::to_string(static_cast<unsigned long>(esp_get_minimum_free_heap_size())) + " B</strong></li>";
+    html += "<li>Uptime: <strong>" + std::to_string(uptime_seconds) + " s</strong></li>";
+    html += "</ul></div>";
+
+    html += "<p><a class='button' href='/config'>Otevřít konfiguraci</a></p>";
+    html += "</body></html>";
+    return html;
+}
+
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    std::string html = build_root_page_html();
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    return httpd_resp_send(req, html.c_str(), static_cast<ssize_t>(html.size()));
 }
 
 static esp_err_t config_get_handler(httpd_req_t *req)
@@ -549,6 +702,8 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         return result;
     }
 
+    update_restart_metadata();
+
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = http_port;
     config.max_uri_handlers = 8;
@@ -573,6 +728,20 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         .handler = config_save_handler,
         .user_ctx = nullptr,
     };
+
+    httpd_uri_t root_get_uri = {
+        .uri = "/",
+        .method = HTTP_GET,
+        .handler = root_get_handler,
+        .user_ctx = nullptr,
+    };
+
+    result = httpd_register_uri_handler(s_ctx.server, &root_get_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
 
     result = httpd_register_uri_handler(s_ctx.server, &config_get_uri);
     if (result != ESP_OK) {
