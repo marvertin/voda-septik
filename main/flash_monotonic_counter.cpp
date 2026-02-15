@@ -158,8 +158,13 @@ esp_err_t FlashMonotonicCounter::reset()
         return ESP_ERR_INVALID_STATE;
     }
 
-    const int64_t current_value = signed_value_();
-    base_value_ = -current_value;
+    esp_err_t result = esp_partition_erase_range(partition_, 0, partition_->size);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    base_value_ = 0;
+    used_bits_ = 0;
 
     return save_rollover_state_to_nvs_(base_value_, false);
 }

@@ -23,6 +23,8 @@ static constexpr uint32_t COUNTER_INCREMENT_LITERS = 10;
 static constexpr uint32_t PULSES_PER_COUNTER_INCREMENT = FLOW_PULSES_PER_LITER * COUNTER_INCREMENT_LITERS;
 static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 static constexpr float FLOW_EMA_ALPHA = 0.25f;
+static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
+static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
 static const char *FLOW_COUNTER_PARTITION_LABEL = "flow_data0";
 
 // sdílený counter z ISR
@@ -42,6 +44,7 @@ static void pocitani_pulsu(void *pvParameters)
 {
     uint32_t previous_pulse_count = pulse_count;
     int64_t previous_sample_us = esp_timer_get_time();
+    uint8_t sample_counter = 0;
 
     while(1) {
         vTaskDelay(FLOW_SAMPLE_PERIOD);
@@ -55,6 +58,10 @@ static void pocitani_pulsu(void *pvParameters)
         previous_pulse_count = current_pulse_count;
 
         s_total_pulses += new_pulses;
+        ESP_LOGI(TAG, "Nové pulzy: %lu, Celkem pulzů: %llu, Elapsed: %lld us",
+                 new_pulses,
+                 (unsigned long long)s_total_pulses,
+                 (long long)elapsed_us);
 
         const uint64_t target_persisted_steps = s_total_pulses / PULSES_PER_COUNTER_INCREMENT;
         while (s_persisted_counter_steps < target_persisted_steps) {
@@ -83,11 +90,15 @@ static void pocitani_pulsu(void *pvParameters)
         const float total_volume_l =
             static_cast<float>(s_total_pulses) / static_cast<float>(FLOW_PULSES_PER_LITER);
 
-        ESP_LOGI(TAG,
-                 "Prutok raw=%.2f l/min, ema=%.2f l/min, celkem=%.2f l",
-                 raw_flow_l_min,
-                 s_flow_l_min_ema,
-                 total_volume_l);
+        sample_counter += 1;
+        if (sample_counter >= FLOW_LOG_EVERY_N_SAMPLES) {
+            sample_counter = 0;
+            ESP_LOGI(TAG,
+                     "Prutok raw=%.2f l/min, ema=%.2f l/min, celkem=%.2f l",
+                     raw_flow_l_min,
+                     s_flow_l_min_ema,
+                     total_volume_l);
+        }
 
         sensor_event_t event = {
             .type = SENSOR_EVENT_FLOW,
@@ -112,7 +123,7 @@ void prutokomer_demo_init(void)
 
     ESP_ERROR_CHECK(s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
 
-    s_flow_counter.reset();
+    // ESP_ERROR_CHECK(s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
     s_total_pulses = s_persisted_counter_steps * static_cast<uint64_t>(PULSES_PER_COUNTER_INCREMENT);
@@ -139,5 +150,5 @@ void prutokomer_demo_init(void)
 
     ESP_LOGI(TAG, "Startuji měření pulzů...");
 
-    xTaskCreate(pocitani_pulsu, "pocitani_pulsu", 2048, NULL, 1, NULL);
+    xTaskCreate(pocitani_pulsu, "pocitani_pulsu", FLOW_TASK_STACK_SIZE, NULL, 1, NULL);
 }
