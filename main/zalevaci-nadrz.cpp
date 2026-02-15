@@ -27,12 +27,44 @@
 #include "mqtt_init.h"
 #include "config_webapp.h"
 
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
+
 extern "C" {
     void cpp_app_main(void);
 }
 
+void print_partitions(void)
+{
+    esp_partition_iterator_t it =
+        esp_partition_find(ESP_PARTITION_TYPE_ANY,
+                           ESP_PARTITION_SUBTYPE_ANY,
+                           NULL);
+
+    while (it != NULL) {
+        const esp_partition_t *part =
+            esp_partition_get(it);
+
+        printf("Label: %s, Type: %d, Subtype: %d, Addr: 0x%lx, Size: 0x%lx\n",
+               part->label,
+               part->type,
+               part->subtype,
+             static_cast<unsigned long>(part->address),
+             static_cast<unsigned long>(part->size));
+
+        it = esp_partition_next(it);
+    }
+
+    const esp_partition_t *running =  esp_ota_get_running_partition();
+
+    printf("Running from: %s at 0x%lx\n",
+       running->label,
+         static_cast<unsigned long>(running->address));
+}
+
 void cpp_app_main(void)
 {
+    print_partitions();
     esp_err_t nvs_result = nvs_flash_init();
     if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
