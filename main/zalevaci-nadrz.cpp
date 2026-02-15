@@ -41,6 +41,13 @@ void cpp_app_main(void)
     ESP_ERROR_CHECK(nvs_result);
 
     ESP_ERROR_CHECK(app_config_ensure_defaults());
+    ESP_ERROR_CHECK(app_config_load_runtime_flags());
+
+    if (app_config_is_service_mode()) {
+        ESP_LOGW("main", "System bezi v SERVISNIM rezimu");
+    } else {
+        ESP_LOGI("main", "System bezi v normalnim rezimu");
+    }
 
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
