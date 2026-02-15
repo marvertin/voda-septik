@@ -32,6 +32,10 @@ static tm1637_handle_t s_tm1637_display = nullptr;
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
+    char text[16];
+    snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
+    lcd_print(8, 0, text, false, 0);
+
     if (mqtt_is_connected()) {
         char payload[32];
         snprintf(payload, sizeof(payload), "%.2f", event.data.temperature.temperature_c);

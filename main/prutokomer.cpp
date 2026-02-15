@@ -16,7 +16,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "flash_monotonic_counter.h"
 
-#define TAG "FLOW_DEMO"
+#define TAG "FLOW"
 
 static constexpr uint32_t FLOW_PULSES_PER_LITER = 270; // F = 4.5 * Q, Q v l/min
 static constexpr uint32_t COUNTER_INCREMENT_LITERS = 10;
@@ -117,7 +117,7 @@ static void pocitani_pulsu(void *pvParameters)
     }
 }
 
-void prutokomer_demo_init(void)
+void prutokomer_init(void)
 {
 
 

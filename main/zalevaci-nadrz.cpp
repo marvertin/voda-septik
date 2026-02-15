@@ -14,7 +14,7 @@
 #include "pins.h"
 #include "blikaniled.h"
 #include "lcd-demo.h"
-#include "prutokomer-demo.h"
+#include "prutokomer.h"
 #include "teplota-demo.h"
 #include "hladina-demo.h"
 #include "app-config.h"
@@ -135,7 +135,7 @@ void cpp_app_main(void)
     sensor_dispatch_start();
     
     // initialize sensor producer tasks
-    prutokomer_demo_init();
+    prutokomer_init();
 
     // vytvoření paralelních tasků
     blikaniled_init();
