@@ -25,7 +25,8 @@ typedef struct {
 } sensor_level_data_t;
 
 typedef struct {
-    uint32_t pulse_count;
+    float flow_l_min;
+    float total_volume_l;
 } sensor_flow_data_t;
 
 typedef struct {

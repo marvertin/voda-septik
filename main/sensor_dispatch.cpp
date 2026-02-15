@@ -32,10 +32,6 @@ static tm1637_handle_t s_tm1637_display = nullptr;
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
-    char text[32];
-    snprintf(text, sizeof(text), "T: %4.1f " "\xC2\xB0" "C", event.data.temperature.temperature_c);
-    lcd_print(8, 0, text, true, 0);
-
     if (mqtt_is_connected()) {
         char payload[32];
         snprintf(payload, sizeof(payload), "%.2f", event.data.temperature.temperature_c);
@@ -45,19 +41,23 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
 
 static void publish_level_to_outputs(const sensor_event_t &event)
 {
-    char text[32];
-    snprintf(text, sizeof(text), "H:%3.0fcm", event.data.level.height_m * 100.0f);
-    lcd_print(0, 1, text, true, 0);
+    char text[16];
+    snprintf(text, sizeof(text), "H:%3.0fcm ", event.data.level.height_m * 100.0f);
+    lcd_print(8, 1, text, false, 0);
 }
 
 static void publish_flow_to_outputs(const sensor_event_t &event)
 {
-    char text[16];
-    snprintf(text, sizeof(text), "Q:%3lu", (unsigned long)event.data.flow.pulse_count);
-    lcd_print(0, 0, text, true, 0);
+    char liters_text[16];
+    snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.total_volume_l);
+    lcd_print(0, 0, liters_text, false, 0);
+
+    char flow_text[16];
+    snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.flow_l_min);
+    lcd_print(0, 1, flow_text, false, 0);
 
     if (s_tm1637_display != nullptr) {
-        tm1637_show_number(s_tm1637_display, event.data.flow.pulse_count, false, 4, 0);
+        tm1637_show_number(s_tm1637_display, (int)event.data.flow.total_volume_l, false, 4, 0);
     }
 }
 

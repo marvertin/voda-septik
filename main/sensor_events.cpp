@@ -71,9 +71,10 @@ void sensor_event_to_string(const sensor_event_t *event, char *buffer, size_t bu
         case SENSOR_EVENT_FLOW:
             snprintf(buffer,
                      buffer_len,
-                     "type=flow ts=%lld pulse_count=%lu",
+                     "type=flow ts=%lld flow=%.2f l/min total=%.2f l",
                      (long long)event->timestamp_us,
-                     (unsigned long)event->data.flow.pulse_count);
+                     event->data.flow.flow_l_min,
+                     event->data.flow.total_volume_l);
             break;
 
         default:
