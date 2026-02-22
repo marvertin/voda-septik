@@ -460,6 +460,37 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, html.c_str(), static_cast<ssize_t>(html.size()));
 }
 
+static esp_err_t captive_redirect_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    const char *html =
+        "<!doctype html><html><head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta http-equiv='refresh' content='0; url=http://192.168.4.1/'>"
+        "<title>Captive portal</title>"
+        "</head><body>"
+        "<script>window.location.replace('http://192.168.4.1/');</script>"
+        "<a href='http://192.168.4.1/'>Otevrit konfiguraci</a>"
+        "</body></html>";
+    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t captive_head_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    return httpd_resp_send(req, nullptr, 0);
+}
+
+static esp_err_t captive_windows_ncsi_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    return httpd_resp_send(req, "NCSI captive portal", HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t config_get_handler(httpd_req_t *req)
 {
     UBaseType_t stack_words = uxTaskGetStackHighWaterMark(nullptr);
@@ -692,8 +723,9 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = http_port;
-    config.max_uri_handlers = 8;
+    config.max_uri_handlers = 16;
     config.stack_size = 10240;
+    config.uri_match_fn = httpd_uri_match_wildcard;
 
     result = httpd_start(&s_ctx.server, &config);
     if (result != ESP_OK) {
@@ -722,6 +754,62 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         .user_ctx = nullptr,
     };
 
+    httpd_uri_t captive_android_uri = {
+        .uri = "/generate_204",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_android_alt_uri = {
+        .uri = "/gen_204",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_apple_uri = {
+        .uri = "/hotspot-detect.html",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_windows_uri = {
+        .uri = "/fwlink",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_windows_txt_uri = {
+        .uri = "/connecttest.txt",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_windows_ncsi_uri = {
+        .uri = "/ncsi.txt",
+        .method = HTTP_GET,
+        .handler = captive_windows_ncsi_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_head_fallback_uri = {
+        .uri = "/*",
+        .method = HTTP_HEAD,
+        .handler = captive_head_handler,
+        .user_ctx = nullptr,
+    };
+
+    httpd_uri_t captive_fallback_uri = {
+        .uri = "/*",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = nullptr,
+    };
+
     result = httpd_register_uri_handler(s_ctx.server, &root_get_uri);
     if (result != ESP_OK) {
         httpd_stop(s_ctx.server);
@@ -743,7 +831,63 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         return result;
     }
 
-    ESP_LOGI(TAG, "Config web app bezi na /config");
+    result = httpd_register_uri_handler(s_ctx.server, &captive_android_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_android_alt_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_apple_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_windows_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_windows_txt_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_windows_ncsi_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_fallback_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    result = httpd_register_uri_handler(s_ctx.server, &captive_head_fallback_uri);
+    if (result != ESP_OK) {
+        httpd_stop(s_ctx.server);
+        s_ctx.server = nullptr;
+        return result;
+    }
+
+    ESP_LOGI(TAG, "Config web app bezi na /config (captive portal redirect na http://192.168.4.1/)");
     return ESP_OK;
 }
 
