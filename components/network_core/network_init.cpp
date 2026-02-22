@@ -259,12 +259,18 @@ static void start_captive_dns_server(void)
 static void wifi_reconnect_cb(void *arg)
 {
     (void)arg;
+    if (s_ap_mode_active) {
+        return;
+    }
     ESP_LOGW(TAG, "WiFi odpojeno, zkousim reconnect (backoff=%lu ms)", (unsigned long)s_wifi_reconnect_delay_ms);
     esp_wifi_connect();
 }
 
 static void schedule_wifi_reconnect(void)
 {
+    if (s_ap_mode_active) {
+        return;
+    }
     if (s_wifi_reconnect_timer == nullptr) {
         return;
     }
@@ -455,6 +461,9 @@ static esp_err_t network_platform_init(void)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     auto schedule_retry_publish = []() {
+        if (s_ap_mode_active) {
+            return;
+        }
         if (s_network_publish_retry_timer == nullptr) {
             return;
         }
@@ -497,6 +506,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
+            if (s_ap_mode_active) {
+                s_mqtt_connected = false;
+                if (s_mqtt_event_group != NULL) {
+                    xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+                }
+                publish_network_event(true);
+                break;
+            }
             ESP_LOGI(TAG, "MQTT pripojeno");
             s_mqtt_connected = true;
             xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
@@ -504,6 +521,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
 
         case MQTT_EVENT_DISCONNECTED:
+            if (s_ap_mode_active) {
+                s_mqtt_connected = false;
+                if (s_mqtt_event_group != NULL) {
+                    xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+                }
+                publish_network_event(true);
+                break;
+            }
             ESP_LOGW(TAG, "MQTT odpojeno");
             s_mqtt_connected = false;
             xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
@@ -613,8 +638,23 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    if (s_wifi_reconnect_timer != nullptr) {
+        esp_timer_stop(s_wifi_reconnect_timer);
+    }
+    if (s_network_publish_retry_timer != nullptr) {
+        esp_timer_stop(s_network_publish_retry_timer);
+    }
+
     s_ap_mode_active = true;
     s_mqtt_connected = false;
+    if (s_mqtt_client != NULL) {
+        esp_mqtt_client_stop(s_mqtt_client);
+    }
+
+    if (s_wifi_event_group != NULL) {
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    }
     if (s_mqtt_event_group != NULL) {
         xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
     }
@@ -661,6 +701,11 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
                                 const char *password,
                                 const network_mqtt_lwt_config_t *lwt_config)
 {
+    if (s_ap_mode_active) {
+        ESP_LOGW(TAG, "MQTT start preskocen: aktivni AP konfiguracni rezim");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (s_mqtt_client != NULL) {
         ESP_LOGW(TAG, "MQTT jiz inicializovan");
         return ESP_OK;
