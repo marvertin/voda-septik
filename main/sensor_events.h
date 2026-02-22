@@ -8,19 +8,13 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 #include <freertos/FreeRTOS.h>
+#include "network_event.h"
 
 typedef enum {
     EVT_SENSOR,
     EVT_NETWORK,
     EVT_TICK
 } event_type_t;
-
-typedef enum {
-    SYS_NET_DOWN,
-    SYS_NET_WIFI_ONLY,
-    SYS_NET_IP_ONLY,
-    SYS_NET_MQTT_READY
-} system_network_level_t;
 
 typedef enum {
     SENSOR_EVENT_TEMPERATURE = 0,
@@ -50,12 +44,6 @@ typedef struct {
         sensor_flow_data_t flow;
     } data;
 } sensor_event_t;
-
-typedef struct {
-    system_network_level_t level;
-    int8_t last_rssi;
-    uint32_t ip_addr;
-} network_event_t;
 
 typedef struct {
     event_type_t event_type;

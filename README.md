@@ -100,18 +100,22 @@ typedef enum {
 
 ## Architektura site (po refaktoru)
 
-- `main/network_init.*`
+- `components/network_core/network_init.*`
     - Orchestrace site: WiFi init (STA/AP), MQTT lifecycle, event handlery, retry logika.
-    - Sbira runtime data (wifi/ip/mqtt) a predava je stavovemu automatu.
+    - Sbira runtime data (wifi/ip/mqtt) a publikuje callbacky.
 
-- `main/network_state_machine.*`
-    - Vyhodnoceni `system_network_level_t`.
-    - Sestaveni a publikace `EVT_NETWORK` eventu do interni event queue.
+- `components/network_core/network_event.*`
+    - Definice `network_event_t` + vyhodnoceni `system_network_level_t`.
+    - Vyroba sitoveho eventu primo uvnitr `network_core`.
 
-- `main/network_mqtt_config.*`
+- `components/network_core/network_mqtt_config.*`
     - Validace `mqtt_uri` a bezpecne ulozeni `uri/user/pass` pro MQTT klienta.
     - Poskytuje read-only pristup na pripravenou konfiguraci.
 
-- `main/mqtt_publish.*`
+- `components/network_core/mqtt_publish.*`
     - Samostatna vrstva pro publikaci zprav (`mqtt_publish`) mimo init/lifecycle.
     - Pouziva aktivni MQTT klient handle z `network_init`.
+
+- `main/network_event_bridge.*`
+    - Odebira `network_event_t` callback z `network_core`.
+    - Bali jej do `app_event_t` a publikuje `EVT_NETWORK` do interni event queue.

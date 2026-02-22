@@ -1,25 +1,35 @@
 #include "network_event_bridge.h"
 
 #include "network_init.h"
-#include "network_state_machine.h"
+#include "sensor_events.h"
 
-static void on_network_state_changed(const network_state_t *state, void *ctx)
+#include "esp_log.h"
+#include "esp_timer.h"
+
+static const char *TAG = "network";
+
+static void on_network_event(const network_event_t *network_event, void *ctx)
 {
     (void)ctx;
 
-    if (state == nullptr) {
+    if (network_event == nullptr) {
         return;
     }
 
-    network_state_machine_publish(state->wifi_up,
-                                  state->ip_ready,
-                                  state->mqtt_ready,
-                                  state->last_rssi,
-                                  state->ip_addr,
-                                  state->timestamp_us);
+    app_event_t event = {
+        .event_type = EVT_NETWORK,
+        .timestamp_us = esp_timer_get_time(),
+        .data = {
+            .network = *network_event,
+        },
+    };
+
+    if (!sensor_events_publish(&event, 0)) {
+        ESP_LOGD(TAG, "Network event nebylo mozne publikovat");
+    }
 }
 
 void network_event_bridge_init(void)
 {
-    network_register_state_callback(on_network_state_changed, nullptr);
+    network_register_event_callback(on_network_event, nullptr);
 }

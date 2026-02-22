@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "network_mqtt_config.h"
+#include "network_event.h"
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
@@ -47,6 +48,8 @@ static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 
 static network_state_callback_t s_state_callback = nullptr;
 static void *s_state_callback_ctx = nullptr;
+static network_event_callback_t s_event_callback = nullptr;
+static void *s_event_callback_ctx = nullptr;
 
 static void publish_network_event(bool wifi_up_hint);
 
@@ -132,6 +135,25 @@ static void publish_network_event(bool wifi_up_hint)
             .timestamp_us = esp_timer_get_time(),
         };
         s_state_callback(&state, s_state_callback_ctx);
+
+        if (s_event_callback != nullptr) {
+            network_event_t event = network_event_make(state.wifi_up,
+                                                       state.ip_ready,
+                                                       state.mqtt_ready,
+                                                       state.last_rssi,
+                                                       state.ip_addr);
+            s_event_callback(&event, s_event_callback_ctx);
+        }
+        return;
+    }
+
+    if (s_event_callback != nullptr) {
+        network_event_t event = network_event_make(wifi_up,
+                                                   ip_ready,
+                                                   s_mqtt_connected,
+                                                   last_rssi,
+                                                   ip_addr);
+        s_event_callback(&event, s_event_callback_ctx);
     }
 }
 
@@ -264,6 +286,13 @@ esp_err_t network_register_state_callback(network_state_callback_t callback, voi
 {
     s_state_callback = callback;
     s_state_callback_ctx = ctx;
+    return ESP_OK;
+}
+
+esp_err_t network_register_event_callback(network_event_callback_t callback, void *ctx)
+{
+    s_event_callback = callback;
+    s_event_callback_ctx = ctx;
     return ESP_OK;
 }
 

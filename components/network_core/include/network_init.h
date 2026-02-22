@@ -6,6 +6,7 @@
 
 #include "esp_err.h"
 #include "mqtt_client.h"
+#include "network_event.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,7 @@ typedef struct {
 } network_state_t;
 
 typedef void (*network_state_callback_t)(const network_state_t *state, void *ctx);
+typedef void (*network_event_callback_t)(const network_event_t *event, void *ctx);
 
 typedef struct {
     bool enabled;
@@ -31,6 +33,7 @@ typedef struct {
 } network_mqtt_lwt_config_t;
 
 esp_err_t network_register_state_callback(network_state_callback_t callback, void *ctx);
+esp_err_t network_register_event_callback(network_event_callback_t callback, void *ctx);
 
 esp_err_t network_init_sta(const char *ssid, const char *password);
 esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password);
