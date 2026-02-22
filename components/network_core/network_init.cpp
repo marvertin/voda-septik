@@ -38,6 +38,7 @@ static uint32_t s_ip_addr = 0;
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static bool s_mqtt_connected = false;
+static bool s_mqtt_start_requested = false;
 static bool s_lwt_enabled = false;
 static int s_lwt_qos = 1;
 static bool s_lwt_retain = true;
@@ -50,6 +51,8 @@ static network_event_callback_t s_event_callback = nullptr;
 static void *s_event_callback_ctx = nullptr;
 
 static void publish_network_event(void);
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
+static esp_err_t start_mqtt_client_if_ready(void);
 
 static void schedule_wifi_reconnect(void);
 
@@ -124,6 +127,55 @@ static void publish_network_event(void)
     if (s_event_callback != nullptr) {
         s_event_callback(&event, s_event_callback_ctx);
     }
+}
+
+static esp_err_t start_mqtt_client_if_ready(void)
+{
+    if (!s_mqtt_start_requested || s_ap_mode_active || !s_ip_ready) {
+        return ESP_OK;
+    }
+
+    if (s_mqtt_client != NULL) {
+        ESP_LOGW(TAG, "MQTT jiz inicializovan");
+        return ESP_OK;
+    }
+
+    ensure_client_id_generated();
+
+    esp_mqtt_client_config_t mqtt_cfg = {};
+    mqtt_cfg.broker.address.uri = network_mqtt_config_uri();
+    mqtt_cfg.session.keepalive = 15;
+    mqtt_cfg.network.disable_auto_reconnect = false;
+    mqtt_cfg.credentials.client_id = s_mqtt_client_id;
+    mqtt_cfg.credentials.username = network_mqtt_config_username_or_null();
+    mqtt_cfg.credentials.authentication.password = network_mqtt_config_password_or_null();
+    if (s_lwt_enabled) {
+        mqtt_cfg.session.last_will.topic = s_mqtt_status_topic;
+        mqtt_cfg.session.last_will.msg = s_lwt_message;
+        mqtt_cfg.session.last_will.qos = s_lwt_qos;
+        mqtt_cfg.session.last_will.retain = s_lwt_retain;
+    }
+
+    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (s_mqtt_client == NULL) {
+        ESP_LOGE(TAG, "Nelze inicializovat MQTT klienta");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = esp_mqtt_client_register_event(s_mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Nelze registrovat MQTT event handler");
+        return ret;
+    }
+
+    ret = esp_mqtt_client_start(s_mqtt_client);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Nelze spustit MQTT klienta");
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "MQTT klient inicializovan: %s", network_mqtt_config_uri());
+    return ESP_OK;
 }
 
 static void network_platform_init(void)
@@ -234,6 +286,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         if (s_wifi_reconnect_timer != nullptr) {
             esp_timer_stop(s_wifi_reconnect_timer);
         }
+
+        esp_err_t mqtt_start_ret = start_mqtt_client_if_ready();
+        if (mqtt_start_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Odlozeny start MQTT selhal: %s", esp_err_to_name(mqtt_start_ret));
+        }
+
         publish_network_event();
         schedule_retry_publish();
     }
@@ -382,11 +440,6 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_mqtt_client != NULL) {
-        ESP_LOGW(TAG, "MQTT jiz inicializovan");
-        return ESP_OK;
-    }
-
     if (!network_mqtt_config_prepare(broker_uri, username, password)) {
         ESP_LOGE(TAG, "Neplatne MQTT URI: '%s'", broker_uri != NULL ? broker_uri : "(null)");
         ESP_LOGE(TAG, "Ocekavam format mqtt://host:port nebo mqtts://host:port");
@@ -430,47 +483,37 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
                  s_lwt_retain ? "yes" : "no");
     }
 
-    ensure_client_id_generated();
-
-    esp_mqtt_client_config_t mqtt_cfg = {};
-    mqtt_cfg.broker.address.uri = network_mqtt_config_uri();
-    mqtt_cfg.session.keepalive = 15;
-    mqtt_cfg.network.disable_auto_reconnect = false;
-    mqtt_cfg.credentials.client_id = s_mqtt_client_id;
-    mqtt_cfg.credentials.username = network_mqtt_config_username_or_null();
-    mqtt_cfg.credentials.authentication.password = network_mqtt_config_password_or_null();
-    if (s_lwt_enabled) {
-        mqtt_cfg.session.last_will.topic = s_mqtt_status_topic;
-        mqtt_cfg.session.last_will.msg = s_lwt_message;
-        mqtt_cfg.session.last_will.qos = s_lwt_qos;
-        mqtt_cfg.session.last_will.retain = s_lwt_retain;
-    }
-
-    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    if (s_mqtt_client == NULL) {
-        ESP_LOGE(TAG, "Nelze inicializovat MQTT klienta");
-        return ESP_FAIL;
-    }
-
-    esp_err_t ret = esp_mqtt_client_register_event(s_mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+    s_mqtt_start_requested = true;
+    esp_err_t ret = start_mqtt_client_if_ready();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze registrovat MQTT event handler");
         return ret;
     }
 
-    ret = esp_mqtt_client_start(s_mqtt_client);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze spustit MQTT klienta");
-        return ret;
+    if (!s_ip_ready) {
+        ESP_LOGI(TAG, "MQTT start odlozen: cekam na WiFi IP");
     }
 
-    ESP_LOGI(TAG, "MQTT klient inicializovan: %s", network_mqtt_config_uri());
     return ESP_OK;
 }
 
 esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const char *password)
 {
     return network_mqtt_start_ex(broker_uri, username, password, NULL);
+}
+
+esp_err_t network_init_with_mqtt_ex(const char *wifi_ssid,
+                                    const char *wifi_password,
+                                    const char *broker_uri,
+                                    const char *mqtt_username,
+                                    const char *mqtt_password,
+                                    const network_mqtt_lwt_config_t *lwt_config)
+{
+    esp_err_t ret = network_init_sta(wifi_ssid, wifi_password);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    return network_mqtt_start_ex(broker_uri, mqtt_username, mqtt_password, lwt_config);
 }
 
 bool network_mqtt_is_connected(void)

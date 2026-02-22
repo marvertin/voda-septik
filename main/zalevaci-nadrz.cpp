@@ -138,8 +138,6 @@ void cpp_app_main(void)
     ESP_ERROR_CHECK(config_webapp_prepare("app_cfg",
                                           config_groups,
                                           sizeof(config_groups) / sizeof(config_groups[0])));
-
-    ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
     
     char status_topic[96] = {0};
     snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
@@ -157,7 +155,12 @@ void cpp_app_main(void)
              (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
              (mqtt_password[0] != '\0') ? "yes" : "no",
              status_topic);
-    ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
+    ESP_ERROR_CHECK(network_init_with_mqtt_ex(wifi_ssid,
+                                              wifi_password,
+                                              mqtt_uri,
+                                              mqtt_username,
+                                              mqtt_password,
+                                              &lwt_cfg));
 
     ESP_ERROR_CHECK(boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
