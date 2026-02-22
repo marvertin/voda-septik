@@ -18,6 +18,7 @@
 #include "teplota-demo.h"
 #include "hladina-demo.h"
 #include "app-config.h"
+#include "boot_button.h"
 #include "restart_info.h"
 #include "sensor_events.h"
 #include "state_manager.h"
@@ -49,45 +50,25 @@ static void log_config_webapp_url(void)
     ESP_LOGI("main", "Konfiguracni aplikace bezi na: http://192.168.4.1/");
 }
 
-static void boot_button_ap_switch_task(void *pvParameters)
+static bool s_ap_switch_done = false;
+
+static void on_boot_button_pressed(void *ctx)
 {
-    (void)pvParameters;
+    (void)ctx;
 
-    gpio_config_t boot_btn_cfg = {
-        .pin_bit_mask = 1ULL << BOOT_BUTTON_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&boot_btn_cfg));
+    if (s_ap_switch_done) {
+        return;
+    }
 
-    bool ap_switch_done = false;
-    bool last_pressed = false;
-
-    while (true) {
-        bool pressed = (gpio_get_level(BOOT_BUTTON_GPIO) == 0);
-
-        if (pressed && !last_pressed) {
-            vTaskDelay(pdMS_TO_TICKS(40));
-            pressed = (gpio_get_level(BOOT_BUTTON_GPIO) == 0);
-        }
-
-        if (pressed && !last_pressed && !ap_switch_done) {
-            ESP_LOGW("main", "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
-            esp_err_t ap_result = network_init_ap("zalevaci-config", "");
-            if (ap_result == ESP_OK) {
-                ap_switch_done = true;
-                ESP_LOGI("main", "Konfiguracni AP rezim aktivni");
-                vTaskDelay(pdMS_TO_TICKS(300));
-                log_config_webapp_url();
-            } else {
-                ESP_LOGE("main", "Prepnuti do AP rezimu selhalo: %s", esp_err_to_name(ap_result));
-            }
-        }
-
-        last_pressed = pressed;
-        vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGW("main", "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
+    esp_err_t ap_result = network_init_ap("zalevaci-config", "");
+    if (ap_result == ESP_OK) {
+        s_ap_switch_done = true;
+        ESP_LOGI("main", "Konfiguracni AP rezim aktivni");
+        vTaskDelay(pdMS_TO_TICKS(300));
+        log_config_webapp_url();
+    } else {
+        ESP_LOGE("main", "Prepnuti do AP rezimu selhalo: %s", esp_err_to_name(ap_result));
     }
 }
 
@@ -203,12 +184,7 @@ void cpp_app_main(void)
              status_topic);
     ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
 
-    xTaskCreate(boot_button_ap_switch_task,
-                "boot_btn_ap",
-                configMINIMAL_STACK_SIZE * 3,
-                NULL,
-                5,
-                NULL);
+    ESP_ERROR_CHECK(boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
 
