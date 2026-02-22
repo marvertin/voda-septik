@@ -13,4 +13,5 @@ static const gpio_num_t SDA_GPIO = GPIO_NUM_21;
 static const gpio_num_t SCL_GPIO = GPIO_NUM_22;
 
 static const gpio_num_t FLOW_GPIO = GPIO_NUM_17;
+static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
 

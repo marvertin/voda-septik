@@ -29,9 +29,66 @@
 
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "esp_netif.h"
 
 extern "C" {
     void cpp_app_main(void);
+}
+
+static void log_config_webapp_url(void)
+{
+    esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (ap_netif != NULL) {
+        esp_netif_ip_info_t ip_info = {};
+        if (esp_netif_get_ip_info(ap_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+            ESP_LOGI("main", "Konfiguracni aplikace bezi na: http://" IPSTR "/", IP2STR(&ip_info.ip));
+            return;
+        }
+    }
+
+    ESP_LOGI("main", "Konfiguracni aplikace bezi na: http://192.168.4.1/");
+}
+
+static void boot_button_ap_switch_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    gpio_config_t boot_btn_cfg = {
+        .pin_bit_mask = 1ULL << BOOT_BUTTON_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&boot_btn_cfg));
+
+    bool ap_switch_done = false;
+    bool last_pressed = false;
+
+    while (true) {
+        bool pressed = (gpio_get_level(BOOT_BUTTON_GPIO) == 0);
+
+        if (pressed && !last_pressed) {
+            vTaskDelay(pdMS_TO_TICKS(40));
+            pressed = (gpio_get_level(BOOT_BUTTON_GPIO) == 0);
+        }
+
+        if (pressed && !last_pressed && !ap_switch_done) {
+            ESP_LOGW("main", "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
+            esp_err_t ap_result = network_init_ap("zalevaci-config", "");
+            if (ap_result == ESP_OK) {
+                ap_switch_done = true;
+                ESP_LOGI("main", "Konfiguracni AP rezim aktivni");
+                vTaskDelay(pdMS_TO_TICKS(300));
+                log_config_webapp_url();
+            } else {
+                ESP_LOGE("main", "Prepnuti do AP rezimu selhalo: %s", esp_err_to_name(ap_result));
+            }
+        }
+
+        last_pressed = pressed;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 }
 
 void print_partitions(void)
@@ -100,6 +157,7 @@ void cpp_app_main(void)
     if (config_ap_mode) {
         ESP_LOGW("main", "WiFi heslo neni vyplnene, spoustim konfiguracni AP");
         ESP_ERROR_CHECK(network_init_ap("zalevaci-config", ""));
+        log_config_webapp_url();
     } else {
         ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
         network_wait_connected(10000);
@@ -154,6 +212,13 @@ void cpp_app_main(void)
                  status_topic);
         ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
     }
+
+    xTaskCreate(boot_button_ap_switch_task,
+                "boot_btn_ap",
+                configMINIMAL_STACK_SIZE * 3,
+                NULL,
+                5,
+                NULL);
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
 
