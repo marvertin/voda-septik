@@ -6,8 +6,6 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "nvs_flash.h"
 
 #include <cstring>
@@ -16,20 +14,15 @@
 #include "network_mqtt_config.h"
 #include "network_event.h"
 
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT BIT1
-
 #define WIFI_RECONNECT_DELAY_MIN_MS 1000
 #define WIFI_RECONNECT_DELAY_MAX_MS 60000
 
-#define MQTT_CONNECTED_BIT BIT0
 #define MQTT_LWT_TOPIC_MAX_LEN 128
 #define MQTT_LWT_MESSAGE_MAX_LEN 64
 #define MQTT_CLIENT_ID_MAX_LEN 32
 
 static const char *TAG = "network";
 
-static EventGroupHandle_t s_wifi_event_group;
 static bool s_network_base_inited = false;
 static bool s_sta_handlers_registered = false;
 static int8_t s_last_rssi = INT8_MIN;
@@ -39,9 +32,11 @@ static uint32_t s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
 static uint32_t s_wifi_reconnect_attempts = 0;
 static uint32_t s_wifi_reconnect_successes = 0;
 static bool s_wifi_reconnect_pending = false;
+static bool s_wifi_up = false;
+static bool s_ip_ready = false;
+static uint32_t s_ip_addr = 0;
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
-static EventGroupHandle_t s_mqtt_event_group = NULL;
 static bool s_mqtt_connected = false;
 static bool s_lwt_enabled = false;
 static int s_lwt_qos = 1;
@@ -51,12 +46,10 @@ static char s_lwt_message[MQTT_LWT_MESSAGE_MAX_LEN] = {0};
 static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 static bool s_ap_mode_active = false;
 
-static network_state_callback_t s_state_callback = nullptr;
-static void *s_state_callback_ctx = nullptr;
 static network_event_callback_t s_event_callback = nullptr;
 static void *s_event_callback_ctx = nullptr;
 
-static void publish_network_event(bool wifi_up_hint);
+static void publish_network_event(void);
 
 static void schedule_wifi_reconnect(void);
 
@@ -114,115 +107,21 @@ static void ensure_client_id_generated(void)
 static void delayed_network_publish_cb(void *arg)
 {
     (void)arg;
-    publish_network_event(true);
+    publish_network_event();
 }
 
-static void publish_network_event(bool wifi_up_hint)
+static void publish_network_event(void)
 {
-    if (s_ap_mode_active) {
-        esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-        esp_netif_ip_info_t ap_ip_info = {};
-        bool ap_ip_ready = (ap_netif != NULL)
-                        && (esp_netif_get_ip_info(ap_netif, &ap_ip_info) == ESP_OK)
-                        && (ap_ip_info.ip.addr != 0);
-        uint32_t ap_ip_addr = ap_ip_ready ? ap_ip_info.ip.addr : 0;
-
-        if (s_state_callback != nullptr) {
-            network_state_t state = {
-                .wifi_up = true,
-                .ip_ready = ap_ip_ready,
-                .mqtt_ready = false,
-                .last_rssi = INT8_MIN,
-                .ip_addr = ap_ip_addr,
-                .reconnect_attempts = s_wifi_reconnect_attempts,
-                .reconnect_successes = s_wifi_reconnect_successes,
-                .timestamp_us = esp_timer_get_time(),
-            };
-            s_state_callback(&state, s_state_callback_ctx);
-
-            if (s_event_callback != nullptr) {
-                network_event_t event = network_event_make(true,
-                                                           state.wifi_up,
-                                                           state.ip_ready,
-                                                           state.mqtt_ready,
-                                                           state.last_rssi,
-                                                           state.ip_addr,
-                                                           state.reconnect_attempts,
-                                                           state.reconnect_successes);
-                s_event_callback(&event, s_event_callback_ctx);
-            }
-            return;
-        }
-
-        if (s_event_callback != nullptr) {
-            network_event_t event = network_event_make(true,
-                                                       true,
-                                                       ap_ip_ready,
-                                                       false,
-                                                       INT8_MIN,
-                                                       ap_ip_addr,
-                                                       s_wifi_reconnect_attempts,
-                                                       s_wifi_reconnect_successes);
-            s_event_callback(&event, s_event_callback_ctx);
-        }
-        return;
-    }
-
-    wifi_ap_record_t ap_info = {};
-    bool ap_info_ok = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
-    bool wifi_up = wifi_up_hint || ap_info_ok;
-
-    int8_t last_rssi = INT8_MIN;
-    if (ap_info_ok) {
-        last_rssi = ap_info.rssi;
-        s_last_rssi = ap_info.rssi;
-    } else if (wifi_up && s_last_rssi != INT8_MIN) {
-        last_rssi = s_last_rssi;
-    }
-
-    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    esp_netif_ip_info_t ip_info = {};
-    bool ip_ready = (sta_netif != NULL)
-                 && (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK)
-                 && (ip_info.ip.addr != 0);
-    uint32_t ip_addr = ip_ready ? ip_info.ip.addr : 0;
-
-    if (s_state_callback != nullptr) {
-        network_state_t state = {
-            .wifi_up = wifi_up,
-            .ip_ready = ip_ready,
-            .mqtt_ready = s_mqtt_connected,
-            .last_rssi = last_rssi,
-            .ip_addr = ip_addr,
-            .reconnect_attempts = s_wifi_reconnect_attempts,
-            .reconnect_successes = s_wifi_reconnect_successes,
-            .timestamp_us = esp_timer_get_time(),
-        };
-        s_state_callback(&state, s_state_callback_ctx);
-
-        if (s_event_callback != nullptr) {
-            network_event_t event = network_event_make(false,
-                                                       state.wifi_up,
-                                                       state.ip_ready,
-                                                       state.mqtt_ready,
-                                                       state.last_rssi,
-                                                       state.ip_addr,
-                                                       state.reconnect_attempts,
-                                                       state.reconnect_successes);
-            s_event_callback(&event, s_event_callback_ctx);
-        }
-        return;
-    }
+    network_event_t event = network_event_make(s_ap_mode_active,
+                                               s_wifi_up,
+                                               s_ip_ready,
+                                               s_mqtt_connected,
+                                               s_last_rssi,
+                                               s_ip_addr,
+                                               s_wifi_reconnect_attempts,
+                                               s_wifi_reconnect_successes);
 
     if (s_event_callback != nullptr) {
-        network_event_t event = network_event_make(false,
-                                                   wifi_up,
-                                                   ip_ready,
-                                                   s_mqtt_connected,
-                                                   last_rssi,
-                                                   ip_addr,
-                                                   s_wifi_reconnect_attempts,
-                                                   s_wifi_reconnect_successes);
         s_event_callback(&event, s_event_callback_ctx);
     }
 }
@@ -291,24 +190,42 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         s_wifi_reconnect_pending = false;
+        s_wifi_up = false;
+        s_ip_ready = false;
+        s_ip_addr = 0;
+        s_last_rssi = INT8_MIN;
         esp_wifi_connect();
         ESP_LOGI(TAG, "WiFi spusteno, probiha pripojeni...");
-        publish_network_event(false);
+        publish_network_event();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
+        s_wifi_up = true;
+        s_ip_ready = false;
+        s_ip_addr = 0;
         s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
         if (s_wifi_reconnect_timer != nullptr) {
             esp_timer_stop(s_wifi_reconnect_timer);
         }
-        publish_network_event(true);
+        publish_network_event();
         schedule_retry_publish();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
+        s_wifi_up = false;
+        s_ip_ready = false;
+        s_ip_addr = 0;
+        s_last_rssi = (disc != nullptr) ? disc->rssi : INT8_MIN;
         schedule_wifi_reconnect();
-        publish_network_event(false);
+        publish_network_event();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Ziskana IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_wifi_up = true;
+        s_ip_ready = true;
+        s_ip_addr = event->ip_info.ip.addr;
+        wifi_ap_record_t ap_info = {};
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            s_last_rssi = ap_info.rssi;
+        }
         if (s_wifi_reconnect_pending) {
             s_wifi_reconnect_successes++;
             s_wifi_reconnect_pending = false;
@@ -317,8 +234,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         if (s_wifi_reconnect_timer != nullptr) {
             esp_timer_stop(s_wifi_reconnect_timer);
         }
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        publish_network_event(true);
+        publish_network_event();
         schedule_retry_publish();
     }
 }
@@ -331,31 +247,23 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_CONNECTED:
             if (s_ap_mode_active) {
                 s_mqtt_connected = false;
-                if (s_mqtt_event_group != NULL) {
-                    xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-                }
-                publish_network_event(true);
+                publish_network_event();
                 break;
             }
             ESP_LOGI(TAG, "MQTT pripojeno");
             s_mqtt_connected = true;
-            xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-            publish_network_event(true);
+            publish_network_event();
             break;
 
         case MQTT_EVENT_DISCONNECTED:
             if (s_ap_mode_active) {
                 s_mqtt_connected = false;
-                if (s_mqtt_event_group != NULL) {
-                    xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-                }
-                publish_network_event(true);
+                publish_network_event();
                 break;
             }
             ESP_LOGW(TAG, "MQTT odpojeno");
             s_mqtt_connected = false;
-            xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-            publish_network_event(true);
+            publish_network_event();
             break;
 
         case MQTT_EVENT_ERROR:
@@ -373,13 +281,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
-esp_err_t network_register_state_callback(network_state_callback_t callback, void *ctx)
-{
-    s_state_callback = callback;
-    s_state_callback_ctx = ctx;
-    return ESP_OK;
-}
-
 esp_err_t network_register_event_callback(network_event_callback_t callback, void *ctx)
 {
     s_event_callback = callback;
@@ -394,11 +295,6 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     }
 
     network_platform_init();
-
-    if (s_wifi_event_group == NULL) {
-        s_wifi_event_group = xEventGroupCreate();
-    }
-    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
     esp_netif_create_default_wifi_sta();
 
@@ -430,6 +326,10 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     s_ap_mode_active = false;
+    s_wifi_up = false;
+    s_ip_ready = false;
+    s_ip_addr = 0;
+    s_last_rssi = INT8_MIN;
 
     ESP_LOGI(TAG, "WiFi inicializace dokoncena. Pripojuji se k SSID:%s", ssid);
 
@@ -459,39 +359,17 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
         esp_mqtt_client_stop(s_mqtt_client);
     }
 
-    if (s_wifi_event_group != NULL) {
-        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
-    }
-    if (s_mqtt_event_group != NULL) {
-        xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-    }
+    esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    esp_netif_ip_info_t ip_info = {};
+    bool ap_ip_ok = (ap_netif != NULL) && (esp_netif_get_ip_info(ap_netif, &ip_info) == ESP_OK) && (ip_info.ip.addr != 0);
+    s_wifi_up = true;
+    s_ip_ready = ap_ip_ok;
+    s_ip_addr = ap_ip_ok ? ip_info.ip.addr : 0;
+    s_last_rssi = INT8_MIN;
 
-    publish_network_event(true);
+    publish_network_event();
 
     return ESP_OK;
-}
-
-bool network_wait_connected(uint32_t timeout_ms)
-{
-    TickType_t ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                           pdFALSE,
-                                           pdFALSE,
-                                           ticks);
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Pripojeno k WiFi siti");
-        return true;
-    }
-    if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGE(TAG, "Selhalo pripojeni k WiFi");
-        return false;
-    }
-
-    ESP_LOGW(TAG, "Timeout pri cekani na WiFi pripojeni");
-    return false;
 }
 
 esp_err_t network_mqtt_start_ex(const char *broker_uri,
@@ -552,12 +430,6 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
                  s_lwt_retain ? "yes" : "no");
     }
 
-    s_mqtt_event_group = xEventGroupCreate();
-    if (s_mqtt_event_group == NULL) {
-        ESP_LOGE(TAG, "Nelze vytvorit MQTT event group");
-        return ESP_ERR_NO_MEM;
-    }
-
     ensure_client_id_generated();
 
     esp_mqtt_client_config_t mqtt_cfg = {};
@@ -599,18 +471,6 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
 esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const char *password)
 {
     return network_mqtt_start_ex(broker_uri, username, password, NULL);
-}
-
-bool network_mqtt_wait_connected(uint32_t timeout_ms)
-{
-    if (s_mqtt_event_group == NULL) {
-        ESP_LOGE(TAG, "MQTT event group neni inicializovana");
-        return false;
-    }
-
-    TickType_t ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    EventBits_t bits = xEventGroupWaitBits(s_mqtt_event_group, MQTT_CONNECTED_BIT, pdFALSE, pdFALSE, ticks);
-    return (bits & MQTT_CONNECTED_BIT) != 0;
 }
 
 bool network_mqtt_is_connected(void)

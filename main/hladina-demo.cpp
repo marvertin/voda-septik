@@ -112,10 +112,25 @@ static TrimmedMean<31, 5> level_filter;
 
 static void load_level_calibration_config(void)
 {
-    ESP_ERROR_CHECK(config_webapp_get_i32("lvl_raw_min", &g_level_config.adc_raw_min));
-    ESP_ERROR_CHECK(config_webapp_get_i32("lvl_raw_max", &g_level_config.adc_raw_max));
-    ESP_ERROR_CHECK(config_webapp_get_float("lvl_h_min", &g_level_config.height_min));
-    ESP_ERROR_CHECK(config_webapp_get_float("lvl_h_max", &g_level_config.height_max));
+    esp_err_t ret = config_webapp_get_i32("lvl_raw_min", &g_level_config.adc_raw_min);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Konfigurace lvl_raw_min neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+    }
+
+    ret = config_webapp_get_i32("lvl_raw_max", &g_level_config.adc_raw_max);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Konfigurace lvl_raw_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+    }
+
+    ret = config_webapp_get_float("lvl_h_min", &g_level_config.height_min);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Konfigurace lvl_h_min neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+    }
+
+    ret = config_webapp_get_float("lvl_h_max", &g_level_config.height_max);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Konfigurace lvl_h_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+    }
 
     ESP_LOGI(TAG,
              "Nactena kalibrace hladiny: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m",

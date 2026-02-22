@@ -19,6 +19,7 @@ extern "C" {
 #include "lcd.h"
 #include "mqtt_publish.h"
 #include "pins.h"
+#include "webapp_startup.h"
 
 static const char *TAG = "state";
 
@@ -106,6 +107,8 @@ static void state_manager_task(void *pvParameters)
                          (unsigned long)event.data.network.ip_addr,
                          (unsigned long)event.data.network.reconnect_attempts,
                          (unsigned long)event.data.network.reconnect_successes);
+
+                webapp_startup_on_network_event(&event.data.network);
 
                 if (event.data.network.level == SYS_NET_MQTT_READY) {
                     if (!mqtt_ready_published) {

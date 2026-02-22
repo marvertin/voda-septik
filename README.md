@@ -81,32 +81,23 @@ typedef enum {
     NET_MQTT_CONNECTED
 } network_event_type_t;
 
-
-typedef struct {
-    bool wifi_up;
-    bool ip_ready;
-    bool mqtt_connected;
-
-    int8_t last_rssi;
-    uint32_t ip_addr;
-} network_state_t;
-
 typedef enum {
     SYS_NET_DOWN,
     SYS_NET_WIFI_ONLY,
     SYS_NET_IP_ONLY,
-    SYS_NET_MQTT_READY
+    SYS_NET_MQTT_READY,
+    SYS_NET_AP_CONFIG
 } system_network_level_t;
 
 ## Architektura site (po refaktoru)
 
 - `components/network_core/network_init.*`
-    - Orchestrace site: WiFi init (STA/AP), MQTT lifecycle, event handlery, retry logika.
-    - Sbira runtime data (wifi/ip/mqtt) a publikuje callbacky.
+    - Orchestrace site: WiFi init (STA/AP), MQTT lifecycle, event handlery, retry timery (neblokujici).
+    - Sbira runtime data (wifi/ip/mqtt) a publikuje callback `network_event_t`.
 
 - `components/network_core/network_event.*`
     - Definice `network_event_t` + vyhodnoceni `system_network_level_t`.
-    - Vyroba sitoveho eventu primo uvnitr `network_core`.
+    - Vyroba sitoveho eventu primo uvnitr `network_core` vcetne reconnect counteru.
 
 - `components/network_core/network_mqtt_config.*`
     - Validace `mqtt_uri` a bezpecne ulozeni `uri/user/pass` pro MQTT klienta.

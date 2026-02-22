@@ -4,7 +4,7 @@ Obecna ESP-IDF komponenta pro:
 - inicializaci Wi-Fi (STA/AP),
 - lifecycle MQTT klienta,
 - publikaci MQTT zprav,
-- callback s aktualnim stavem site.
+- callback se sitovym eventem.
 
 Komponenta je zamerne bez aplikačně specifické logiky (zadne `sensor_events`, `state_manager`, apod.).
 
@@ -15,12 +15,10 @@ Hlavičky:
 - `include/mqtt_publish.h`
 
 Hlavni funkce:
-- `network_register_state_callback(...)`
+- `network_register_event_callback(...)`
 - `network_init_sta(...)`
 - `network_init_ap(...)`
-- `network_wait_connected(...)`
 - `network_mqtt_start(...)`
-- `network_mqtt_wait_connected(...)`
 - `network_mqtt_is_connected()`
 - `mqtt_publish(...)`
 - `mqtt_is_connected()`
@@ -35,18 +33,18 @@ Hlavni funkce:
 #include "network_init.h"
 #include "mqtt_publish.h"
 
-static void on_network_state(const network_state_t *state, void *ctx)
+static void on_network_event(const network_event_t *event, void *ctx)
 {
     (void)ctx;
-    // app-specificka reakce na wifi/ip/mqtt zmenu
+    // app-specificka reakce na zmenu sitoveho stavu
+    // event->level / event->last_rssi / event->ip_addr / reconnect countery
 }
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(network_register_state_callback(on_network_state, NULL));
+    ESP_ERROR_CHECK(network_register_event_callback(on_network_event, NULL));
 
     ESP_ERROR_CHECK(network_init_sta("my-ssid", "my-pass"));
-    network_wait_connected(10000);
 
     ESP_ERROR_CHECK(network_mqtt_start("mqtt://broker:1883", "user", "pass"));
 
@@ -59,5 +57,15 @@ void app_main(void)
 ## Poznamky
 
 - URI musi mit format `mqtt://host:port` nebo `mqtts://host:port`.
-- Callback dostava agregovany stav (`wifi_up`, `ip_ready`, `mqtt_ready`, `last_rssi`, `ip_addr`, `timestamp_us`).
+- Callback dostava `network_event_t` (level, RSSI, IP, reconnect_attempts, reconnect_successes).
 - Komponenta neimplementuje zadny aplikační state machine; ten patri do host aplikace.
+
+### `network_event_t` reference
+
+| Pole | Vyznam | Jednotka / format |
+| --- | --- | --- |
+| `level` | Agregovana uroven konektivity (`SYS_NET_*`). | enum |
+| `last_rssi` | Posledni znama sila Wi-Fi signalu. | dBm |
+| `ip_addr` | IPv4 adresa v `uint32_t` (network byte order). | `0xAABBCCDD` |
+| `reconnect_attempts` | Pocet pokusu o Wi-Fi reconnect od startu. | pocet |
+| `reconnect_successes` | Pocet uspesnych reconnectu (ziskana IP po reconnect pokusu). | pocet |

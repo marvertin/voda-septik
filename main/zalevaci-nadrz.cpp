@@ -19,14 +19,12 @@
 #include "hladina-demo.h"
 #include "app-config.h"
 #include "boot_button.h"
-#include "restart_info.h"
 #include "sensor_events.h"
 #include "state_manager.h"
 #include "network_event_bridge.h"
 
 #include "lcd.h"
 #include "network_init.h"
-#include "config_webapp.h"
 
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -134,37 +132,6 @@ void cpp_app_main(void)
     ESP_ERROR_CHECK(app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
     ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
-    network_wait_connected(10000);
-
-    const config_group_t config_groups[] = {
-        app_config_get_config_group(),
-        hladina_demo_get_config_group(),
-    };
-
-    app_restart_info_t restart_info = {};
-    ESP_ERROR_CHECK(app_restart_info_update_and_load(&restart_info));
-
-    config_webapp_restart_info_t webapp_restart_info = {
-        .boot_count = restart_info.boot_count,
-        .last_reason = static_cast<int32_t>(restart_info.last_reason),
-        .last_restart_unix = restart_info.last_restart_unix,
-    };
-
-    config_webapp_network_info_t webapp_network_info = {
-        .is_ap_mode = false,
-        .active_ssid = wifi_ssid,
-    };
-
-    esp_err_t config_result = config_webapp_start(
-        "app_cfg",
-        config_groups,
-        sizeof(config_groups) / sizeof(config_groups[0]),
-        80,
-        &webapp_restart_info,
-        &webapp_network_info);
-    if (config_result != ESP_OK) {
-        ESP_LOGW("main", "Config web app se nepodarilo spustit: %s", esp_err_to_name(config_result));
-    }
     
     char status_topic[96] = {0};
     snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
