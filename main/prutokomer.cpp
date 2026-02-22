@@ -19,7 +19,7 @@ extern "C" {
 #define TAG "FLOW"
 
 static constexpr uint32_t FLOW_PULSES_PER_LITER = 270; // F = 4.5 * Q, Q v l/min
-static constexpr uint32_t COUNTER_INCREMENT_LITERS = 10;
+static constexpr uint32_t COUNTER_INCREMENT_LITERS = 1; // Kolik litrů odpovídá jednomu kroku v monotonic counteru
 static constexpr uint32_t PULSES_PER_COUNTER_INCREMENT = FLOW_PULSES_PER_LITER * COUNTER_INCREMENT_LITERS;
 static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 static constexpr float FLOW_EMA_ALPHA = 0.25f;

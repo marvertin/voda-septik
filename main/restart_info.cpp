@@ -5,7 +5,7 @@
 #include "esp_log.h"
 #include "nvs.h"
 
-static const char *TAG = "RESTART_INFO";
+static const char *TAG = "restart_info";
 static const char *SYS_NAMESPACE = "sys_meta";
 static const char *SYS_BOOT_COUNT_KEY = "boot_count";
 static const char *SYS_LAST_REASON_KEY = "last_reason";

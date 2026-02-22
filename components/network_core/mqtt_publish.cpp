@@ -4,7 +4,7 @@
 
 #include "esp_log.h"
 
-static const char *TAG = "network";
+static const char *TAG = "mqtt";
 
 esp_err_t mqtt_publish(const char *topic, const char *data, bool retain)
 {

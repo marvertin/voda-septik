@@ -20,7 +20,7 @@ extern "C" {
 #include "mqtt_publish.h"
 #include "pins.h"
 
-static const char *TAG = "STATE_MANAGER";
+static const char *TAG = "state";
 
 static tm1637_config_t s_tm1637_config = {
     .clk_pin = GPIO_NUM_18,

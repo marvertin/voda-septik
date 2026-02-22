@@ -5,7 +5,7 @@
 #include "esp_log.h"
 #include <freertos/queue.h>
 
-static const char *TAG = "SENSOR_EVENTS";
+static const char *TAG = "sensor";
 static QueueHandle_t s_sensor_events_queue = nullptr;
 
 static const char *event_type_to_string(event_type_t event_type)

@@ -14,7 +14,7 @@ namespace {
 constexpr size_t SCAN_CHUNK_SIZE = 256;
 constexpr size_t WRITE_CHUNK_SIZE = 256;
 constexpr const char *NVS_NAMESPACE = "flash_ctr";
-constexpr const char *TAG = "FLASH_COUNTER";
+constexpr const char *TAG = "monotonic";
 
 uint32_t fnv1a32(const char *text)
 {
