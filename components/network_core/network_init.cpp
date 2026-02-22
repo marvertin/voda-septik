@@ -227,10 +227,10 @@ static void publish_network_event(bool wifi_up_hint)
     }
 }
 
-static esp_err_t network_platform_init(void)
+static void network_platform_init(void)
 {
     if (s_network_base_inited) {
-        return ESP_OK;
+        return;
     }
 
     esp_err_t ret = nvs_flash_init();
@@ -243,9 +243,10 @@ static esp_err_t network_platform_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
 
     ret = esp_event_loop_create_default();
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        return ret;
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ret = ESP_OK;
     }
+    ESP_ERROR_CHECK(ret);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -273,7 +274,6 @@ static esp_err_t network_platform_init(void)
     }
 
     s_network_base_inited = true;
-    return ESP_OK;
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -393,7 +393,7 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_ERROR_CHECK(network_platform_init());
+    network_platform_init();
 
     if (s_wifi_event_group == NULL) {
         s_wifi_event_group = xEventGroupCreate();
@@ -438,7 +438,7 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
 
 esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
 {
-    ESP_ERROR_CHECK(network_platform_init());
+    network_platform_init();
     esp_err_t ap_ret = network_ap_mode_start(ap_ssid, ap_password);
     if (ap_ret != ESP_OK) {
         ESP_LOGE(TAG, "Nelze spustit AP konfiguracni rezim: %s", esp_err_to_name(ap_ret));
