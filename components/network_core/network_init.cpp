@@ -254,9 +254,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT pripojeno");
             s_mqtt_connected = true;
             xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-            if (s_lwt_enabled && s_lwt_topic[0] != '\0') {
-                esp_mqtt_client_publish(s_mqtt_client, s_lwt_topic, "online", 0, s_lwt_qos, true);
-            }
             publish_network_event(true);
             break;
 

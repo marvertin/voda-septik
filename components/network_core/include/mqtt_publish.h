@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 esp_err_t mqtt_publish(const char *topic, const char *data, bool retain);
+esp_err_t mqtt_publish_online_status(const char *base_topic);
 bool mqtt_is_connected(void);
 
 #ifdef __cplusplus

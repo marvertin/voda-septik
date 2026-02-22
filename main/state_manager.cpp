@@ -19,6 +19,7 @@ extern "C" {
 #include "lcd.h"
 #include "mqtt_publish.h"
 #include "pins.h"
+#include "app-config.h"
 
 static const char *TAG = "STATE_MANAGER";
 
@@ -29,6 +30,7 @@ static tm1637_config_t s_tm1637_config = {
 };
 
 static tm1637_handle_t s_tm1637_display = nullptr;
+static char s_mqtt_base_topic[64] = {0};
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
@@ -67,8 +69,11 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
 
 static void state_manager_task(void *pvParameters)
 {
+    (void)pvParameters;
+
     app_event_t event = {};
     char debug_line[128];
+    bool mqtt_ready_published = false;
 
     while (true) {
         if (!sensor_events_receive(&event, portMAX_DELAY)) {
@@ -101,6 +106,20 @@ static void state_manager_task(void *pvParameters)
                          (int)event.data.network.level,
                          (int)event.data.network.last_rssi,
                          (unsigned long)event.data.network.ip_addr);
+
+                if (event.data.network.level == SYS_NET_MQTT_READY) {
+                    if (!mqtt_ready_published) {
+                        esp_err_t publish_result = mqtt_publish_online_status(s_mqtt_base_topic);
+                        if (publish_result == ESP_OK) {
+                            mqtt_ready_published = true;
+                            ESP_LOGI(TAG, "MQTT online status publikovan: %s/status", s_mqtt_base_topic);
+                        } else {
+                            ESP_LOGW(TAG, "Publikace online statusu selhala: %s", esp_err_to_name(publish_result));
+                        }
+                    }
+                } else {
+                    mqtt_ready_published = false;
+                }
                 break;
             case EVT_TICK:
                 ESP_LOGD(TAG, "Tick event zatim neni implementovany");
@@ -114,6 +133,12 @@ static void state_manager_task(void *pvParameters)
 
 void state_manager_start(void)
 {
+    esp_err_t topic_result = app_config_load_mqtt_topic(s_mqtt_base_topic, sizeof(s_mqtt_base_topic));
+    if (topic_result != ESP_OK || s_mqtt_base_topic[0] == '\0') {
+        snprintf(s_mqtt_base_topic, sizeof(s_mqtt_base_topic), "zalevaci-nadrz");
+        ESP_LOGW(TAG, "MQTT base topic nelze nacist, pouzivam vychozi: %s", s_mqtt_base_topic);
+    }
+
     tm1637_init(&s_tm1637_config, &s_tm1637_display);
     xTaskCreate(state_manager_task, TAG, configMINIMAL_STACK_SIZE * 5, NULL, 4, NULL);
 }
