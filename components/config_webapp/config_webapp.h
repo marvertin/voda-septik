@@ -46,6 +46,10 @@ typedef struct {
     const char *active_ssid;
 } config_webapp_network_info_t;
 
+esp_err_t config_webapp_prepare(const char *nvs_namespace,
+                                const config_group_t *groups,
+                                size_t group_count);
+
 esp_err_t config_webapp_start(const char *nvs_namespace,
                               const config_group_t *groups,
                               size_t group_count,

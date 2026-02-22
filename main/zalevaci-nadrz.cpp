@@ -131,6 +131,14 @@ void cpp_app_main(void)
     ESP_ERROR_CHECK(app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
     ESP_ERROR_CHECK(app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
+    const config_group_t config_groups[] = {
+        app_config_get_config_group(),
+        hladina_demo_get_config_group(),
+    };
+    ESP_ERROR_CHECK(config_webapp_prepare("app_cfg",
+                                          config_groups,
+                                          sizeof(config_groups) / sizeof(config_groups[0])));
+
     ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
     
     char status_topic[96] = {0};

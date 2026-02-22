@@ -645,57 +645,14 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
                               const config_webapp_restart_info_t *restart_info,
                               const config_webapp_network_info_t *network_info)
 {
-    if (nvs_namespace == nullptr || groups == nullptr || group_count == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (strlen(nvs_namespace) > 15) {
-        return ESP_ERR_INVALID_ARG;
-    }
     if (s_ctx.server != nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    size_t total_items = 0;
-    for (size_t group_index = 0; group_index < group_count; ++group_index) {
-        const config_group_t &group = groups[group_index];
-        if (group.items == nullptr || group.item_count == 0) {
-            ESP_LOGE(TAG, "Neplatna skupina konfigurace na indexu %u", static_cast<unsigned>(group_index));
-            return ESP_ERR_INVALID_ARG;
-        }
-        total_items += group.item_count;
+    esp_err_t result = config_webapp_prepare(nvs_namespace, groups, group_count);
+    if (result != ESP_OK) {
+        return result;
     }
-
-    s_items_storage.clear();
-    s_items_storage.reserve(total_items);
-    std::set<std::string> unique_keys;
-
-    for (size_t group_index = 0; group_index < group_count; ++group_index) {
-        const config_group_t &group = groups[group_index];
-        for (size_t item_index = 0; item_index < group.item_count; ++item_index) {
-            const config_item_t &item = group.items[item_index];
-            if (item.key == nullptr || strlen(item.key) == 0 || strlen(item.key) > 15) {
-                ESP_LOGE(TAG, "Neplatny klic konfigurace (group=%u, item=%u)",
-                         static_cast<unsigned>(group_index),
-                         static_cast<unsigned>(item_index));
-                s_items_storage.clear();
-                return ESP_ERR_INVALID_ARG;
-            }
-
-            std::string key = item.key;
-            if (!unique_keys.insert(key).second) {
-                ESP_LOGE(TAG, "Duplicitni konfiguracni klic: %s", item.key);
-                s_items_storage.clear();
-                return ESP_ERR_INVALID_ARG;
-            }
-
-            s_items_storage.push_back(item);
-        }
-    }
-
-    memset(&s_ctx, 0, sizeof(s_ctx));
-    s_ctx.items = s_items_storage.data();
-    s_ctx.item_count = s_items_storage.size();
-    strncpy(s_ctx.nvs_namespace, nvs_namespace, sizeof(s_ctx.nvs_namespace) - 1);
 
     s_has_restart_info = (restart_info != nullptr);
     if (s_has_restart_info) {
@@ -714,11 +671,6 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         }
     } else {
         memset(&s_network_info, 0, sizeof(s_network_info));
-    }
-
-    esp_err_t result = ensure_defaults_in_nvs();
-    if (result != ESP_OK) {
-        return result;
     }
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -888,6 +840,66 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
     }
 
     ESP_LOGI(TAG, "Config web app bezi na /config (captive portal redirect na http://192.168.4.1/)");
+    return ESP_OK;
+}
+
+esp_err_t config_webapp_prepare(const char *nvs_namespace,
+                                const config_group_t *groups,
+                                size_t group_count)
+{
+    if (nvs_namespace == nullptr || groups == nullptr || group_count == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strlen(nvs_namespace) > 15) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t total_items = 0;
+    for (size_t group_index = 0; group_index < group_count; ++group_index) {
+        const config_group_t &group = groups[group_index];
+        if (group.items == nullptr || group.item_count == 0) {
+            ESP_LOGE(TAG, "Neplatna skupina konfigurace na indexu %u", static_cast<unsigned>(group_index));
+            return ESP_ERR_INVALID_ARG;
+        }
+        total_items += group.item_count;
+    }
+
+    s_items_storage.clear();
+    s_items_storage.reserve(total_items);
+    std::set<std::string> unique_keys;
+
+    for (size_t group_index = 0; group_index < group_count; ++group_index) {
+        const config_group_t &group = groups[group_index];
+        for (size_t item_index = 0; item_index < group.item_count; ++item_index) {
+            const config_item_t &item = group.items[item_index];
+            if (item.key == nullptr || strlen(item.key) == 0 || strlen(item.key) > 15) {
+                ESP_LOGE(TAG, "Neplatny klic konfigurace (group=%u, item=%u)",
+                         static_cast<unsigned>(group_index),
+                         static_cast<unsigned>(item_index));
+                s_items_storage.clear();
+                return ESP_ERR_INVALID_ARG;
+            }
+
+            std::string key = item.key;
+            if (!unique_keys.insert(key).second) {
+                ESP_LOGE(TAG, "Duplicitni konfiguracni klic: %s", item.key);
+                s_items_storage.clear();
+                return ESP_ERR_INVALID_ARG;
+            }
+
+            s_items_storage.push_back(item);
+        }
+    }
+
+    memset(&s_ctx, 0, sizeof(s_ctx));
+    s_ctx.items = s_items_storage.data();
+    s_ctx.item_count = s_items_storage.size();
+    strncpy(s_ctx.nvs_namespace, nvs_namespace, sizeof(s_ctx.nvs_namespace) - 1);
+
+    esp_err_t result = ensure_defaults_in_nvs();
+    if (result != ESP_OK) {
+        return result;
+    }
     return ESP_OK;
 }
 
