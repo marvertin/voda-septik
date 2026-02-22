@@ -8,6 +8,10 @@
 #include "freertos/event_groups.h"
 #include <string.h>
 
+#include "sensor_events.h"
+#include "mqtt_init.h"
+#include "esp_timer.h"
+
 #define WIFI_MAX_RETRY 5
 
 static const char *TAG = "wifi";
@@ -20,6 +24,52 @@ static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 static bool s_wifi_base_inited = false;
 static bool s_sta_handlers_registered = false;
+
+static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
+{
+    if (mqtt_ready) {
+        return SYS_NET_MQTT_READY;
+    }
+    if (ip_ready) {
+        return SYS_NET_IP_ONLY;
+    }
+    if (wifi_up) {
+        return SYS_NET_WIFI_ONLY;
+    }
+    return SYS_NET_DOWN;
+}
+
+static void publish_network_event(bool wifi_up_hint)
+{
+    wifi_ap_record_t ap_info = {};
+    bool wifi_up = wifi_up_hint || (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+    int8_t last_rssi = wifi_up ? ap_info.rssi : INT8_MIN;
+
+    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip_info = {};
+    bool ip_ready = (sta_netif != NULL)
+                 && (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK)
+                 && (ip_info.ip.addr != 0);
+    uint32_t ip_addr = ip_ready ? ip_info.ip.addr : 0;
+
+    bool mqtt_ready = mqtt_is_connected();
+
+    app_event_t event = {
+        .event_type = EVT_NETWORK,
+        .timestamp_us = esp_timer_get_time(),
+        .data = {
+            .network = {
+                .level = get_network_level(wifi_up, ip_ready, mqtt_ready),
+                .last_rssi = last_rssi,
+                .ip_addr = ip_addr,
+            },
+        },
+    };
+
+    if (!sensor_events_publish(&event, 0)) {
+        ESP_LOGD(TAG, "Network event nebylo mozne publikovat");
+    }
+}
 
 static esp_err_t wifi_platform_init(void)
 {
@@ -54,6 +104,10 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
         ESP_LOGI(TAG, "WiFi spuštěno, probíhá připojení...");
+        publish_network_event(false);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
+        publish_network_event(true);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < WIFI_MAX_RETRY) {
             esp_wifi_connect();
@@ -63,11 +117,13 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
             ESP_LOGE(TAG, "Selhalo připojení k WiFi");
         }
+        publish_network_event(false);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Získána IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        publish_network_event(true);
     }
 }
 

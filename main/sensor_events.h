@@ -16,6 +16,13 @@ typedef enum {
 } event_type_t;
 
 typedef enum {
+    SYS_NET_DOWN,
+    SYS_NET_WIFI_ONLY,
+    SYS_NET_IP_ONLY,
+    SYS_NET_MQTT_READY
+} system_network_level_t;
+
+typedef enum {
     SENSOR_EVENT_TEMPERATURE = 0,
     SENSOR_EVENT_LEVEL,
     SENSOR_EVENT_FLOW,
@@ -45,10 +52,17 @@ typedef struct {
 } sensor_event_t;
 
 typedef struct {
+    system_network_level_t level;
+    int8_t last_rssi;
+    uint32_t ip_addr;
+} network_event_t;
+
+typedef struct {
     event_type_t event_type;
     int64_t timestamp_us;
     union {
         sensor_event_t sensor;
+        network_event_t network;
     } data;
 } app_event_t;
 

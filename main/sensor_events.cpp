@@ -110,9 +110,12 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
         case EVT_NETWORK:
             snprintf(buffer,
                      buffer_len,
-                     "event=%s ts=%lld",
+                     "event=%s ts=%lld level=%d rssi=%d ip=0x%08lx",
                      event_type_to_string(event->event_type),
-                     (long long)event->timestamp_us);
+                     (long long)event->timestamp_us,
+                     (int)event->data.network.level,
+                     (int)event->data.network.last_rssi,
+                     (unsigned long)event->data.network.ip_addr);
             break;
 
         case EVT_TICK:

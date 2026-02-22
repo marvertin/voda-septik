@@ -69,3 +69,31 @@ esp_mqtt_client_config_t mqtt_cfg = {
     .session.last_will.retain = 1,
 };
 
+
+typedef enum {
+    NET_WIFI_DISCONNECTED,
+    NET_WIFI_CONNECTED,
+
+    NET_IP_LOST,
+    NET_IP_ACQUIRED,
+
+    NET_MQTT_DISCONNECTED,
+    NET_MQTT_CONNECTED
+} network_event_type_t;
+
+
+typedef struct {
+    bool wifi_up;
+    bool ip_ready;
+    bool mqtt_connected;
+
+    int8_t last_rssi;
+    uint32_t ip_addr;
+} network_state_t;
+
+typedef enum {
+    SYS_NET_DOWN,
+    SYS_NET_WIFI_ONLY,
+    SYS_NET_IP_ONLY,
+    SYS_NET_MQTT_READY
+} system_network_level_t;

@@ -4,6 +4,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
+#include "sensor_events.h"
+#include "esp_wifi.h"
+#include "esp_netif.h"
+#include "esp_timer.h"
+
 static const char *TAG = "mqtt";
 
 #define MQTT_CONNECTED_BIT BIT0
@@ -11,6 +16,50 @@ static const char *TAG = "mqtt";
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static EventGroupHandle_t mqtt_event_group = NULL;
 static bool mqtt_connected = false;
+
+static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
+{
+    if (mqtt_ready) {
+        return SYS_NET_MQTT_READY;
+    }
+    if (ip_ready) {
+        return SYS_NET_IP_ONLY;
+    }
+    if (wifi_up) {
+        return SYS_NET_WIFI_ONLY;
+    }
+    return SYS_NET_DOWN;
+}
+
+static void publish_network_event_from_mqtt(void)
+{
+    wifi_ap_record_t ap_info = {};
+    bool wifi_up = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+    int8_t last_rssi = wifi_up ? ap_info.rssi : INT8_MIN;
+
+    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip_info = {};
+    bool ip_ready = (sta_netif != NULL)
+                 && (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK)
+                 && (ip_info.ip.addr != 0);
+    uint32_t ip_addr = ip_ready ? ip_info.ip.addr : 0;
+
+    app_event_t event = {
+        .event_type = EVT_NETWORK,
+        .timestamp_us = esp_timer_get_time(),
+        .data = {
+            .network = {
+                .level = get_network_level(wifi_up, ip_ready, mqtt_connected),
+                .last_rssi = last_rssi,
+                .ip_addr = ip_addr,
+            },
+        },
+    };
+
+    if (!sensor_events_publish(&event, 0)) {
+        ESP_LOGD(TAG, "Network event z MQTT nebylo mozne publikovat");
+    }
+}
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
@@ -21,12 +70,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT připojeno");
             mqtt_connected = true;
             xEventGroupSetBits(mqtt_event_group, MQTT_CONNECTED_BIT);
+            publish_network_event_from_mqtt();
             break;
             
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT odpojeno");
             mqtt_connected = false;
             xEventGroupClearBits(mqtt_event_group, MQTT_CONNECTED_BIT);
+            publish_network_event_from_mqtt();
             break;
             
         case MQTT_EVENT_SUBSCRIBED:

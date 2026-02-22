@@ -81,6 +81,8 @@ void cpp_app_main(void)
         ESP_LOGI("main", "System bezi v normalnim rezimu");
     }
 
+    sensor_events_init(32);
+
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
     ESP_ERROR_CHECK(app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
@@ -131,7 +133,6 @@ void cpp_app_main(void)
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
 
-    sensor_events_init(32);
     state_manager_start();
     
     // initialize sensor producer tasks

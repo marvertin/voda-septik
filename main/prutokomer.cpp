@@ -58,10 +58,10 @@ static void pocitani_pulsu(void *pvParameters)
         previous_pulse_count = current_pulse_count;
 
         s_total_pulses += new_pulses;
-        ESP_LOGI(TAG, "Nové pulzy: %lu, Celkem pulzů: %llu, Elapsed: %lld us",
-                 new_pulses,
-                 (unsigned long long)s_total_pulses,
-                 (long long)elapsed_us);
+//        ESP_LOGI(TAG, "Nové pulzy: %lu, Celkem pulzů: %llu, Elapsed: %lld us",
+  //               new_pulses,
+    //             (unsigned long long)s_total_pulses,
+      //           (long long)elapsed_us);
 
         const uint64_t target_persisted_steps = s_total_pulses / PULSES_PER_COUNTER_INCREMENT;
         while (s_persisted_counter_steps < target_persisted_steps) {
