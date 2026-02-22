@@ -12,7 +12,6 @@
 #include <cstring>
 
 #include "network_mqtt_config.h"
-#include "network_state_machine.h"
 
 #define WIFI_MAX_RETRY 5
 #define WIFI_CONNECTED_BIT BIT0
@@ -32,6 +31,9 @@ static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
 static bool s_mqtt_connected = false;
+
+static network_state_callback_t s_state_callback = nullptr;
+static void *s_state_callback_ctx = nullptr;
 
 static void publish_network_event(bool wifi_up_hint);
 
@@ -62,12 +64,17 @@ static void publish_network_event(bool wifi_up_hint)
                  && (ip_info.ip.addr != 0);
     uint32_t ip_addr = ip_ready ? ip_info.ip.addr : 0;
 
-    network_state_machine_publish(wifi_up,
-                                  ip_ready,
-                                  s_mqtt_connected,
-                                  last_rssi,
-                                  ip_addr,
-                                  esp_timer_get_time());
+    if (s_state_callback != nullptr) {
+        network_state_t state = {
+            .wifi_up = wifi_up,
+            .ip_ready = ip_ready,
+            .mqtt_ready = s_mqtt_connected,
+            .last_rssi = last_rssi,
+            .ip_addr = ip_addr,
+            .timestamp_us = esp_timer_get_time(),
+        };
+        s_state_callback(&state, s_state_callback_ctx);
+    }
 }
 
 static esp_err_t network_platform_init(void)
@@ -178,6 +185,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         default:
             break;
     }
+}
+
+esp_err_t network_register_state_callback(network_state_callback_t callback, void *ctx)
+{
+    s_state_callback = callback;
+    s_state_callback_ctx = ctx;
+    return ESP_OK;
 }
 
 esp_err_t network_init_sta(const char *ssid, const char *password)

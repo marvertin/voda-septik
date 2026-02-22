@@ -11,6 +11,19 @@
 extern "C" {
 #endif
 
+typedef struct {
+    bool wifi_up;
+    bool ip_ready;
+    bool mqtt_ready;
+    int8_t last_rssi;
+    uint32_t ip_addr;
+    int64_t timestamp_us;
+} network_state_t;
+
+typedef void (*network_state_callback_t)(const network_state_t *state, void *ctx);
+
+esp_err_t network_register_state_callback(network_state_callback_t callback, void *ctx);
+
 esp_err_t network_init_sta(const char *ssid, const char *password);
 esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password);
 bool network_wait_connected(uint32_t timeout_ms);

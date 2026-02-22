@@ -21,6 +21,7 @@
 #include "restart_info.h"
 #include "sensor_events.h"
 #include "state_manager.h"
+#include "network_event_bridge.h"
 
 #include "lcd.h"
 #include "network_init.h"
@@ -81,6 +82,7 @@ void cpp_app_main(void)
     }
 
     sensor_events_init(32);
+    network_event_bridge_init();
 
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
