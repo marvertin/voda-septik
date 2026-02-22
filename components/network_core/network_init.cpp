@@ -40,6 +40,9 @@ static int8_t s_last_rssi = INT8_MIN;
 static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
 static esp_timer_handle_t s_wifi_reconnect_timer = nullptr;
 static uint32_t s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
+static uint32_t s_wifi_reconnect_attempts = 0;
+static uint32_t s_wifi_reconnect_successes = 0;
+static bool s_wifi_reconnect_pending = false;
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
@@ -262,6 +265,8 @@ static void wifi_reconnect_cb(void *arg)
     if (s_ap_mode_active) {
         return;
     }
+    s_wifi_reconnect_attempts++;
+    s_wifi_reconnect_pending = true;
     ESP_LOGW(TAG, "WiFi odpojeno, zkousim reconnect (backoff=%lu ms)", (unsigned long)s_wifi_reconnect_delay_ms);
     esp_wifi_connect();
 }
@@ -328,6 +333,8 @@ static void publish_network_event(bool wifi_up_hint)
                 .mqtt_ready = false,
                 .last_rssi = INT8_MIN,
                 .ip_addr = ap_ip_addr,
+                .reconnect_attempts = s_wifi_reconnect_attempts,
+                .reconnect_successes = s_wifi_reconnect_successes,
                 .timestamp_us = esp_timer_get_time(),
             };
             s_state_callback(&state, s_state_callback_ctx);
@@ -338,7 +345,9 @@ static void publish_network_event(bool wifi_up_hint)
                                                            state.ip_ready,
                                                            state.mqtt_ready,
                                                            state.last_rssi,
-                                                           state.ip_addr);
+                                                           state.ip_addr,
+                                                           state.reconnect_attempts,
+                                                           state.reconnect_successes);
                 s_event_callback(&event, s_event_callback_ctx);
             }
             return;
@@ -350,7 +359,9 @@ static void publish_network_event(bool wifi_up_hint)
                                                        ap_ip_ready,
                                                        false,
                                                        INT8_MIN,
-                                                       ap_ip_addr);
+                                                       ap_ip_addr,
+                                                       s_wifi_reconnect_attempts,
+                                                       s_wifi_reconnect_successes);
             s_event_callback(&event, s_event_callback_ctx);
         }
         return;
@@ -382,6 +393,8 @@ static void publish_network_event(bool wifi_up_hint)
             .mqtt_ready = s_mqtt_connected,
             .last_rssi = last_rssi,
             .ip_addr = ip_addr,
+            .reconnect_attempts = s_wifi_reconnect_attempts,
+            .reconnect_successes = s_wifi_reconnect_successes,
             .timestamp_us = esp_timer_get_time(),
         };
         s_state_callback(&state, s_state_callback_ctx);
@@ -392,7 +405,9 @@ static void publish_network_event(bool wifi_up_hint)
                                                        state.ip_ready,
                                                        state.mqtt_ready,
                                                        state.last_rssi,
-                                                       state.ip_addr);
+                                                       state.ip_addr,
+                                                       state.reconnect_attempts,
+                                                       state.reconnect_successes);
             s_event_callback(&event, s_event_callback_ctx);
         }
         return;
@@ -404,7 +419,9 @@ static void publish_network_event(bool wifi_up_hint)
                                                    ip_ready,
                                                    s_mqtt_connected,
                                                    last_rssi,
-                                                   ip_addr);
+                                                   ip_addr,
+                                                   s_wifi_reconnect_attempts,
+                                                   s_wifi_reconnect_successes);
         s_event_callback(&event, s_event_callback_ctx);
     }
 }
@@ -472,6 +489,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     };
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        s_wifi_reconnect_pending = false;
         esp_wifi_connect();
         ESP_LOGI(TAG, "WiFi spusteno, probiha pripojeni...");
         publish_network_event(false);
@@ -490,6 +508,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Ziskana IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
+        if (s_wifi_reconnect_pending) {
+            s_wifi_reconnect_successes++;
+            s_wifi_reconnect_pending = false;
+        }
         s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
         if (s_wifi_reconnect_timer != nullptr) {
             esp_timer_stop(s_wifi_reconnect_timer);
@@ -648,6 +670,7 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
 
     s_ap_mode_active = true;
     s_mqtt_connected = false;
+    s_wifi_reconnect_pending = false;
     if (s_mqtt_client != NULL) {
         esp_mqtt_client_stop(s_mqtt_client);
     }

@@ -18,6 +18,8 @@ typedef struct {
     bool mqtt_ready;
     int8_t last_rssi;
     uint32_t ip_addr;
+    uint32_t reconnect_attempts;
+    uint32_t reconnect_successes;
     int64_t timestamp_us;
 } network_state_t;
 

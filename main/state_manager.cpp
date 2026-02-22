@@ -100,10 +100,12 @@ static void state_manager_task(void *pvParameters)
                 break;
             case EVT_NETWORK:
                 ESP_LOGW(TAG,
-                         "Network level=%d rssi=%d ip=0x%08lx",
+                         "Network level=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
                          (int)event.data.network.level,
                          (int)event.data.network.last_rssi,
-                         (unsigned long)event.data.network.ip_addr);
+                         (unsigned long)event.data.network.ip_addr,
+                         (unsigned long)event.data.network.reconnect_attempts,
+                         (unsigned long)event.data.network.reconnect_successes);
 
                 if (event.data.network.level == SYS_NET_MQTT_READY) {
                     if (!mqtt_ready_published) {
