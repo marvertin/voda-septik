@@ -17,7 +17,7 @@ extern "C" {
 #include "state_manager.h"
 #include "sensor_events.h"
 #include "lcd.h"
-#include "mqtt_init.h"
+#include "mqtt_publish.h"
 #include "pins.h"
 
 static const char *TAG = "STATE_MANAGER";

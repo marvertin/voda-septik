@@ -1,47 +1,39 @@
-#include "wifi_init.h"
-#include "esp_wifi.h"
+#include "network_init.h"
+
 #include "esp_event.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
-#include <string.h>
+#include "nvs_flash.h"
 
-#include "sensor_events.h"
-#include "mqtt_init.h"
-#include "esp_timer.h"
+#include <cstring>
+
+#include "network_mqtt_config.h"
+#include "network_state_machine.h"
 
 #define WIFI_MAX_RETRY 5
-
-static const char *TAG = "wifi";
-
-// Event bity
 #define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
+#define WIFI_FAIL_BIT BIT1
+
+#define MQTT_CONNECTED_BIT BIT0
+
+static const char *TAG = "network";
 
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
-static bool s_wifi_base_inited = false;
+static bool s_network_base_inited = false;
 static bool s_sta_handlers_registered = false;
 static int8_t s_last_rssi = INT8_MIN;
 static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
 
-static void publish_network_event(bool wifi_up_hint);
+static esp_mqtt_client_handle_t s_mqtt_client = NULL;
+static EventGroupHandle_t s_mqtt_event_group = NULL;
+static bool s_mqtt_connected = false;
 
-static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
-{
-    if (mqtt_ready) {
-        return SYS_NET_MQTT_READY;
-    }
-    if (ip_ready) {
-        return SYS_NET_IP_ONLY;
-    }
-    if (wifi_up) {
-        return SYS_NET_WIFI_ONLY;
-    }
-    return SYS_NET_DOWN;
-}
+static void publish_network_event(bool wifi_up_hint);
 
 static void delayed_network_publish_cb(void *arg)
 {
@@ -70,28 +62,17 @@ static void publish_network_event(bool wifi_up_hint)
                  && (ip_info.ip.addr != 0);
     uint32_t ip_addr = ip_ready ? ip_info.ip.addr : 0;
 
-    bool mqtt_ready = mqtt_is_connected();
-
-    app_event_t event = {
-        .event_type = EVT_NETWORK,
-        .timestamp_us = esp_timer_get_time(),
-        .data = {
-            .network = {
-                .level = get_network_level(wifi_up, ip_ready, mqtt_ready),
-                .last_rssi = last_rssi,
-                .ip_addr = ip_addr,
-            },
-        },
-    };
-
-    if (!sensor_events_publish(&event, 0)) {
-        ESP_LOGD(TAG, "Network event nebylo mozne publikovat");
-    }
+    network_state_machine_publish(wifi_up,
+                                  ip_ready,
+                                  s_mqtt_connected,
+                                  last_rssi,
+                                  ip_addr,
+                                  esp_timer_get_time());
 }
 
-static esp_err_t wifi_platform_init(void)
+static esp_err_t network_platform_init(void)
 {
-    if (s_wifi_base_inited) {
+    if (s_network_base_inited) {
         return ESP_OK;
     }
 
@@ -123,12 +104,11 @@ static esp_err_t wifi_platform_init(void)
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_network_publish_retry_timer));
     }
 
-    s_wifi_base_inited = true;
+    s_network_base_inited = true;
     return ESP_OK;
 }
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                               int32_t event_id, void* event_data)
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     auto schedule_retry_publish = []() {
         if (s_network_publish_retry_timer == nullptr) {
@@ -140,7 +120,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
-        ESP_LOGI(TAG, "WiFi spuštěno, probíhá připojení...");
+        ESP_LOGI(TAG, "WiFi spusteno, probiha pripojeni...");
         publish_network_event(false);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
@@ -150,15 +130,15 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         if (s_retry_num < WIFI_MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGI(TAG, "Opakování připojení k AP, pokus %d/%d", s_retry_num, WIFI_MAX_RETRY);
+            ESP_LOGI(TAG, "Opakovani pripojeni k AP, pokus %d/%d", s_retry_num, WIFI_MAX_RETRY);
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            ESP_LOGE(TAG, "Selhalo připojení k WiFi");
+            ESP_LOGE(TAG, "Selhalo pripojeni k WiFi");
         }
         publish_network_event(false);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "Získána IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "Ziskana IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         publish_network_event(true);
@@ -166,15 +146,48 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-esp_err_t wifi_init_sta(const char *ssid, const char *password)
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+
+    switch (event->event_id) {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "MQTT pripojeno");
+            s_mqtt_connected = true;
+            xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+            publish_network_event(true);
+            break;
+
+        case MQTT_EVENT_DISCONNECTED:
+            ESP_LOGW(TAG, "MQTT odpojeno");
+            s_mqtt_connected = false;
+            xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+            publish_network_event(true);
+            break;
+
+        case MQTT_EVENT_ERROR:
+            ESP_LOGE(TAG, "MQTT chyba");
+            if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+                ESP_LOGE(TAG, "Posledni chyba stacku: 0x%x", event->error_handle->esp_tls_last_esp_err);
+                ESP_LOGE(TAG, "Cislo chyby TLS: 0x%x", event->error_handle->esp_tls_stack_err);
+            } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+                ESP_LOGE(TAG, "Broker odmitl pripojeni");
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+
+esp_err_t network_init_sta(const char *ssid, const char *password)
 {
     if (ssid == NULL || password == NULL || strlen(ssid) == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_ERROR_CHECK(wifi_platform_init());
+    ESP_ERROR_CHECK(network_platform_init());
 
-    // Vytvořit event group pro synchronizaci
     if (s_wifi_event_group == NULL) {
         s_wifi_event_group = xEventGroupCreate();
     }
@@ -199,8 +212,8 @@ esp_err_t wifi_init_sta(const char *ssid, const char *password)
     }
 
     wifi_config_t wifi_config = {};
-    strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config.sta.pmf_cfg.capable = true;
     wifi_config.sta.pmf_cfg.required = false;
@@ -209,18 +222,18 @@ esp_err_t wifi_init_sta(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "WiFi inicializace dokončena. Připojuji se k SSID:%s", ssid);
+    ESP_LOGI(TAG, "WiFi inicializace dokoncena. Pripojuji se k SSID:%s", ssid);
 
     return ESP_OK;
 }
 
-esp_err_t wifi_init_ap(const char *ap_ssid, const char *ap_password)
+esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
 {
     if (ap_ssid == NULL || strlen(ap_ssid) == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_ERROR_CHECK(wifi_platform_init());
+    ESP_ERROR_CHECK(network_platform_init());
     esp_netif_create_default_wifi_ap();
 
     wifi_config_t wifi_config = {};
@@ -251,24 +264,100 @@ esp_err_t wifi_init_ap(const char *ap_ssid, const char *ap_password)
     return ESP_OK;
 }
 
-bool wifi_wait_connected(uint32_t timeout_ms)
+bool network_wait_connected(uint32_t timeout_ms)
 {
     TickType_t ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    
+
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            ticks);
+                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                           pdFALSE,
+                                           pdFALSE,
+                                           ticks);
 
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Připojeno k WiFi síti");
+        ESP_LOGI(TAG, "Pripojeno k WiFi siti");
         return true;
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGE(TAG, "Selhalo připojení k WiFi");
-        return false;
-    } else {
-        ESP_LOGW(TAG, "Timeout při čekání na WiFi připojení");
+    }
+    if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGE(TAG, "Selhalo pripojeni k WiFi");
         return false;
     }
+
+    ESP_LOGW(TAG, "Timeout pri cekani na WiFi pripojeni");
+    return false;
+}
+
+esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const char *password)
+{
+    if (s_mqtt_client != NULL) {
+        ESP_LOGW(TAG, "MQTT jiz inicializovan");
+        return ESP_OK;
+    }
+
+    if (!network_mqtt_config_prepare(broker_uri, username, password)) {
+        ESP_LOGE(TAG, "Neplatne MQTT URI: '%s'", broker_uri != NULL ? broker_uri : "(null)");
+        ESP_LOGE(TAG, "Ocekavam format mqtt://host:port nebo mqtts://host:port");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGI(TAG,
+             "MQTT connect cfg: uri='%s', user='%s', password_set=%s",
+             broker_uri,
+             (username != NULL && username[0] != '\0') ? username : "(none)",
+             (password != NULL && password[0] != '\0') ? "yes" : "no");
+
+    s_mqtt_event_group = xEventGroupCreate();
+    if (s_mqtt_event_group == NULL) {
+        ESP_LOGE(TAG, "Nelze vytvorit MQTT event group");
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_mqtt_client_config_t mqtt_cfg = {};
+    mqtt_cfg.broker.address.uri = network_mqtt_config_uri();
+    mqtt_cfg.network.disable_auto_reconnect = false;
+    mqtt_cfg.credentials.username = network_mqtt_config_username_or_null();
+    mqtt_cfg.credentials.authentication.password = network_mqtt_config_password_or_null();
+
+    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (s_mqtt_client == NULL) {
+        ESP_LOGE(TAG, "Nelze inicializovat MQTT klienta");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = esp_mqtt_client_register_event(s_mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Nelze registrovat MQTT event handler");
+        return ret;
+    }
+
+    ret = esp_mqtt_client_start(s_mqtt_client);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Nelze spustit MQTT klienta");
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "MQTT klient inicializovan: %s", network_mqtt_config_uri());
+    return ESP_OK;
+}
+
+bool network_mqtt_wait_connected(uint32_t timeout_ms)
+{
+    if (s_mqtt_event_group == NULL) {
+        ESP_LOGE(TAG, "MQTT event group neni inicializovana");
+        return false;
+    }
+
+    TickType_t ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    EventBits_t bits = xEventGroupWaitBits(s_mqtt_event_group, MQTT_CONNECTED_BIT, pdFALSE, pdFALSE, ticks);
+    return (bits & MQTT_CONNECTED_BIT) != 0;
+}
+
+bool network_mqtt_is_connected(void)
+{
+    return s_mqtt_connected;
+}
+
+esp_mqtt_client_handle_t network_mqtt_client(void)
+{
+    return s_mqtt_client;
 }

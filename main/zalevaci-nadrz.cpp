@@ -23,8 +23,7 @@
 #include "state_manager.h"
 
 #include "lcd.h"
-#include "wifi_init.h"
-#include "mqtt_init.h"
+#include "network_init.h"
 #include "config_webapp.h"
 
 #include "esp_partition.h"
@@ -96,10 +95,10 @@ void cpp_app_main(void)
 
     if (config_ap_mode) {
         ESP_LOGW("main", "WiFi heslo neni vyplnene, spoustim konfiguracni AP");
-        ESP_ERROR_CHECK(wifi_init_ap("zalevaci-config", ""));
+        ESP_ERROR_CHECK(network_init_ap("zalevaci-config", ""));
     } else {
-        ESP_ERROR_CHECK(wifi_init_sta(wifi_ssid, wifi_password));
-        wifi_wait_connected(10000);
+        ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
+        network_wait_connected(10000);
     }
 
     const config_group_t config_groups[] = {
@@ -138,7 +137,7 @@ void cpp_app_main(void)
                  mqtt_uri,
                  (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
                  (mqtt_password[0] != '\0') ? "yes" : "no");
-        ESP_ERROR_CHECK(mqtt_init(mqtt_uri, mqtt_username, mqtt_password));
+        ESP_ERROR_CHECK(network_mqtt_start(mqtt_uri, mqtt_username, mqtt_password));
     }
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace

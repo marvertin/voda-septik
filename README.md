@@ -97,3 +97,21 @@ typedef enum {
     SYS_NET_IP_ONLY,
     SYS_NET_MQTT_READY
 } system_network_level_t;
+
+## Architektura site (po refaktoru)
+
+- `main/network_init.*`
+    - Orchestrace site: WiFi init (STA/AP), MQTT lifecycle, event handlery, retry logika.
+    - Sbira runtime data (wifi/ip/mqtt) a predava je stavovemu automatu.
+
+- `main/network_state_machine.*`
+    - Vyhodnoceni `system_network_level_t`.
+    - Sestaveni a publikace `EVT_NETWORK` eventu do interni event queue.
+
+- `main/network_mqtt_config.*`
+    - Validace `mqtt_uri` a bezpecne ulozeni `uri/user/pass` pro MQTT klienta.
+    - Poskytuje read-only pristup na pripravenou konfiguraci.
+
+- `main/mqtt_publish.*`
+    - Samostatna vrstva pro publikaci zprav (`mqtt_publish`) mimo init/lifecycle.
+    - Pouziva aktivni MQTT klient handle z `network_init`.
