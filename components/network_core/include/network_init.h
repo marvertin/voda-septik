@@ -26,8 +26,7 @@ typedef void (*network_event_callback_t)(const network_event_t *event, void *ctx
 
 typedef struct {
     bool enabled;
-    const char *topic;
-    const char *message;
+    const char *status_topic;
     int qos;
     bool retain;
 } network_mqtt_lwt_config_t;
@@ -47,6 +46,7 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
 bool network_mqtt_wait_connected(uint32_t timeout_ms);
 bool network_mqtt_is_connected(void);
 esp_mqtt_client_handle_t network_mqtt_client(void);
+const char *network_mqtt_status_topic(void);
 
 #ifdef __cplusplus
 }

@@ -42,7 +42,7 @@ static bool s_mqtt_connected = false;
 static bool s_lwt_enabled = false;
 static int s_lwt_qos = 1;
 static bool s_lwt_retain = true;
-static char s_lwt_topic[MQTT_LWT_TOPIC_MAX_LEN] = {0};
+static char s_mqtt_status_topic[MQTT_LWT_TOPIC_MAX_LEN] = {0};
 static char s_lwt_message[MQTT_LWT_MESSAGE_MAX_LEN] = {0};
 static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 
@@ -423,21 +423,21 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
              (password != NULL && password[0] != '\0') ? "yes" : "no");
 
     s_lwt_enabled = false;
-    s_lwt_topic[0] = '\0';
+    s_mqtt_status_topic[0] = '\0';
     s_lwt_message[0] = '\0';
     s_lwt_qos = 1;
     s_lwt_retain = true;
 
     if (lwt_config != NULL && lwt_config->enabled) {
-        if (lwt_config->topic == NULL || lwt_config->topic[0] == '\0') {
-            ESP_LOGE(TAG, "LWT je zapnute, ale topic neni vyplnen");
+        if (lwt_config->status_topic == NULL || lwt_config->status_topic[0] == '\0') {
+            ESP_LOGE(TAG, "LWT je zapnute, ale status topic neni vyplnen");
             return ESP_ERR_INVALID_ARG;
         }
 
-        strncpy(s_lwt_topic, lwt_config->topic, sizeof(s_lwt_topic) - 1);
-        s_lwt_topic[sizeof(s_lwt_topic) - 1] = '\0';
+        strncpy(s_mqtt_status_topic, lwt_config->status_topic, sizeof(s_mqtt_status_topic) - 1);
+        s_mqtt_status_topic[sizeof(s_mqtt_status_topic) - 1] = '\0';
 
-        const char *message = (lwt_config->message != NULL) ? lwt_config->message : "offline";
+        const char *message = "offline";
         strncpy(s_lwt_message, message, sizeof(s_lwt_message) - 1);
         s_lwt_message[sizeof(s_lwt_message) - 1] = '\0';
 
@@ -446,8 +446,8 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
         s_lwt_enabled = true;
 
         ESP_LOGI(TAG,
-                 "MQTT LWT cfg: topic='%s', msg='%s', qos=%d, retain=%s",
-                 s_lwt_topic,
+                 "MQTT LWT cfg: status_topic='%s', offline_msg='%s', qos=%d, retain=%s",
+                 s_mqtt_status_topic,
                  s_lwt_message,
                  s_lwt_qos,
                  s_lwt_retain ? "yes" : "no");
@@ -469,7 +469,7 @@ esp_err_t network_mqtt_start_ex(const char *broker_uri,
     mqtt_cfg.credentials.username = network_mqtt_config_username_or_null();
     mqtt_cfg.credentials.authentication.password = network_mqtt_config_password_or_null();
     if (s_lwt_enabled) {
-        mqtt_cfg.session.last_will.topic = s_lwt_topic;
+        mqtt_cfg.session.last_will.topic = s_mqtt_status_topic;
         mqtt_cfg.session.last_will.msg = s_lwt_message;
         mqtt_cfg.session.last_will.qos = s_lwt_qos;
         mqtt_cfg.session.last_will.retain = s_lwt_retain;
@@ -522,4 +522,13 @@ bool network_mqtt_is_connected(void)
 esp_mqtt_client_handle_t network_mqtt_client(void)
 {
     return s_mqtt_client;
+}
+
+const char *network_mqtt_status_topic(void)
+{
+    if (s_mqtt_status_topic[0] == '\0') {
+        return NULL;
+    }
+
+    return s_mqtt_status_topic;
 }

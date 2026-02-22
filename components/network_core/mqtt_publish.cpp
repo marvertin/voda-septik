@@ -4,8 +4,6 @@
 
 #include "esp_log.h"
 
-#include <stdio.h>
-
 static const char *TAG = "network";
 
 esp_err_t mqtt_publish(const char *topic, const char *data, bool retain)
@@ -31,16 +29,12 @@ esp_err_t mqtt_publish(const char *topic, const char *data, bool retain)
     return ESP_OK;
 }
 
-esp_err_t mqtt_publish_online_status(const char *base_topic)
+esp_err_t mqtt_publish_online_status(void)
 {
-    if (base_topic == NULL || base_topic[0] == '\0') {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    char status_topic[96] = {0};
-    int written = snprintf(status_topic, sizeof(status_topic), "%s/status", base_topic);
-    if (written <= 0 || written >= (int)sizeof(status_topic)) {
-        return ESP_ERR_INVALID_SIZE;
+    const char *status_topic = network_mqtt_status_topic();
+    if (status_topic == NULL || status_topic[0] == '\0') {
+        ESP_LOGW(TAG, "Status topic neni nastaven v network_core");
+        return ESP_ERR_INVALID_STATE;
     }
 
     return mqtt_publish(status_topic, "online", true);

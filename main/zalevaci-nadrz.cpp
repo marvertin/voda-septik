@@ -136,23 +136,22 @@ void cpp_app_main(void)
     }
     
     if (!config_ap_mode) {
-        char lwt_topic[96] = {0};
-        snprintf(lwt_topic, sizeof(lwt_topic), "%s/status", mqtt_topic);
+        char status_topic[96] = {0};
+        snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
 
         network_mqtt_lwt_config_t lwt_cfg = {
             .enabled = true,
-            .topic = lwt_topic,
-            .message = "offline",
+            .status_topic = status_topic,
             .qos = 1,
             .retain = true,
         };
 
         ESP_LOGI("main",
-                 "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, lwt_topic=%s",
+                 "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, status_topic=%s",
                  mqtt_uri,
                  (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
                  (mqtt_password[0] != '\0') ? "yes" : "no",
-                 lwt_topic);
+                 status_topic);
         ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
     }
     
