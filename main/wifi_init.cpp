@@ -24,6 +24,10 @@ static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 static bool s_wifi_base_inited = false;
 static bool s_sta_handlers_registered = false;
+static int8_t s_last_rssi = INT8_MIN;
+static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
+
+static void publish_network_event(bool wifi_up_hint);
 
 static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
 {
@@ -39,11 +43,25 @@ static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, boo
     return SYS_NET_DOWN;
 }
 
+static void delayed_network_publish_cb(void *arg)
+{
+    (void)arg;
+    publish_network_event(true);
+}
+
 static void publish_network_event(bool wifi_up_hint)
 {
     wifi_ap_record_t ap_info = {};
-    bool wifi_up = wifi_up_hint || (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
-    int8_t last_rssi = wifi_up ? ap_info.rssi : INT8_MIN;
+    bool ap_info_ok = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+    bool wifi_up = wifi_up_hint || ap_info_ok;
+
+    int8_t last_rssi = INT8_MIN;
+    if (ap_info_ok) {
+        last_rssi = ap_info.rssi;
+        s_last_rssi = ap_info.rssi;
+    } else if (wifi_up && s_last_rssi != INT8_MIN) {
+        last_rssi = s_last_rssi;
+    }
 
     esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
     esp_netif_ip_info_t ip_info = {};
@@ -94,6 +112,17 @@ static esp_err_t wifi_platform_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    if (s_network_publish_retry_timer == nullptr) {
+        esp_timer_create_args_t timer_args = {
+            .callback = &delayed_network_publish_cb,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "net_pub_retry",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_network_publish_retry_timer));
+    }
+
     s_wifi_base_inited = true;
     return ESP_OK;
 }
@@ -101,6 +130,14 @@ static esp_err_t wifi_platform_init(void)
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data)
 {
+    auto schedule_retry_publish = []() {
+        if (s_network_publish_retry_timer == nullptr) {
+            return;
+        }
+        esp_timer_stop(s_network_publish_retry_timer);
+        esp_timer_start_once(s_network_publish_retry_timer, 300 * 1000);
+    };
+
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
         ESP_LOGI(TAG, "WiFi spuštěno, probíhá připojení...");
@@ -108,6 +145,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
         publish_network_event(true);
+        schedule_retry_publish();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < WIFI_MAX_RETRY) {
             esp_wifi_connect();
@@ -124,6 +162,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         publish_network_event(true);
+        schedule_retry_publish();
     }
 }
 
