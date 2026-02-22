@@ -152,16 +152,8 @@ void cpp_app_main(void)
     ESP_ERROR_CHECK(app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
     ESP_ERROR_CHECK(app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
-    bool config_ap_mode = (strlen(wifi_password) == 0);
-
-    if (config_ap_mode) {
-        ESP_LOGW("main", "WiFi heslo neni vyplnene, spoustim konfiguracni AP");
-        ESP_ERROR_CHECK(network_init_ap("zalevaci-config", ""));
-        log_config_webapp_url();
-    } else {
-        ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
-        network_wait_connected(10000);
-    }
+    ESP_ERROR_CHECK(network_init_sta(wifi_ssid, wifi_password));
+    network_wait_connected(10000);
 
     const config_group_t config_groups[] = {
         app_config_get_config_group(),
@@ -178,8 +170,8 @@ void cpp_app_main(void)
     };
 
     config_webapp_network_info_t webapp_network_info = {
-        .is_ap_mode = config_ap_mode,
-        .active_ssid = config_ap_mode ? "zalevaci-config" : wifi_ssid,
+        .is_ap_mode = false,
+        .active_ssid = wifi_ssid,
     };
 
     esp_err_t config_result = config_webapp_start(
@@ -193,25 +185,23 @@ void cpp_app_main(void)
         ESP_LOGW("main", "Config web app se nepodarilo spustit: %s", esp_err_to_name(config_result));
     }
     
-    if (!config_ap_mode) {
-        char status_topic[96] = {0};
-        snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
+    char status_topic[96] = {0};
+    snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
 
-        network_mqtt_lwt_config_t lwt_cfg = {
-            .enabled = true,
-            .status_topic = status_topic,
-            .qos = 1,
-            .retain = true,
-        };
+    network_mqtt_lwt_config_t lwt_cfg = {
+        .enabled = true,
+        .status_topic = status_topic,
+        .qos = 1,
+        .retain = true,
+    };
 
-        ESP_LOGI("main",
-                 "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, status_topic=%s",
-                 mqtt_uri,
-                 (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
-                 (mqtt_password[0] != '\0') ? "yes" : "no",
-                 status_topic);
-        ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
-    }
+    ESP_LOGI("main",
+             "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, status_topic=%s",
+             mqtt_uri,
+             (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
+             (mqtt_password[0] != '\0') ? "yes" : "no",
+             status_topic);
+    ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
 
     xTaskCreate(boot_button_ap_switch_task,
                 "boot_btn_ap",
