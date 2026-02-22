@@ -16,6 +16,7 @@
 
 #define WIFI_RECONNECT_DELAY_MIN_MS 1000
 #define WIFI_RECONNECT_DELAY_MAX_MS 60000
+#define NETWORK_EVENT_IDLE_PUBLISH_MS 10000
 
 #define MQTT_LWT_TOPIC_MAX_LEN 128
 #define MQTT_LWT_MESSAGE_MAX_LEN 64
@@ -27,6 +28,7 @@ static bool s_network_base_inited = false;
 static bool s_sta_handlers_registered = false;
 static int8_t s_last_rssi = INT8_MIN;
 static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
+static esp_timer_handle_t s_network_idle_publish_timer = nullptr;
 static esp_timer_handle_t s_wifi_reconnect_timer = nullptr;
 static uint32_t s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
 static uint32_t s_wifi_reconnect_attempts = 0;
@@ -53,6 +55,7 @@ static void *s_event_callback_ctx = nullptr;
 static void publish_network_event(void);
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 static esp_err_t start_mqtt_client_if_ready(void);
+static void refresh_rssi_snapshot(void);
 
 static void schedule_wifi_reconnect(void);
 
@@ -113,8 +116,37 @@ static void delayed_network_publish_cb(void *arg)
     publish_network_event();
 }
 
+static void idle_network_publish_cb(void *arg)
+{
+    (void)arg;
+    publish_network_event();
+}
+
+static void refresh_rssi_snapshot(void)
+{
+    if (s_ap_mode_active || !s_wifi_up) {
+        s_last_rssi = INT8_MIN;
+        return;
+    }
+
+    wifi_ap_record_t ap_info = {};
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        s_last_rssi = ap_info.rssi;
+    } else {
+        s_last_rssi = INT8_MIN;
+    }
+}
+
 static void publish_network_event(void)
 {
+    refresh_rssi_snapshot();
+
+    if (s_network_idle_publish_timer != nullptr) {
+        (void)esp_timer_stop(s_network_idle_publish_timer);
+        (void)esp_timer_start_once(s_network_idle_publish_timer,
+                                   (uint64_t)NETWORK_EVENT_IDLE_PUBLISH_MS * 1000ULL);
+    }
+
     network_event_t event = network_event_make(s_ap_mode_active,
                                                s_wifi_up,
                                                s_ip_ready,
@@ -222,6 +254,17 @@ static void network_platform_init(void)
             .skip_unhandled_events = true,
         };
         ESP_ERROR_CHECK(esp_timer_create(&reconnect_timer_args, &s_wifi_reconnect_timer));
+    }
+
+    if (s_network_idle_publish_timer == nullptr) {
+        esp_timer_create_args_t idle_publish_timer_args = {
+            .callback = &idle_network_publish_cb,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "net_pub_idle",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&idle_publish_timer_args, &s_network_idle_publish_timer));
     }
 
     s_network_base_inited = true;
@@ -408,6 +451,9 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
     }
     if (s_network_publish_retry_timer != nullptr) {
         esp_timer_stop(s_network_publish_retry_timer);
+    }
+    if (s_network_idle_publish_timer != nullptr) {
+        esp_timer_stop(s_network_idle_publish_timer);
     }
 
     s_ap_mode_active = true;
