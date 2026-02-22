@@ -312,6 +312,24 @@ esp_err_t app_config_load_mqtt_uri(char *uri, size_t uri_len)
     return result;
 }
 
+esp_err_t app_config_load_mqtt_topic(char *topic, size_t topic_len)
+{
+    if (topic == nullptr || topic_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open(APP_CFG_NAMESPACE, NVS_READONLY, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    size_t required = topic_len;
+    result = nvs_get_str(handle, "mqtt_topic", topic, &required);
+    nvs_close(handle);
+    return result;
+}
+
 esp_err_t app_config_load_mqtt_credentials(char *username, size_t username_len, char *password, size_t password_len)
 {
     if (username == nullptr || password == nullptr || username_len == 0 || password_len == 0) {

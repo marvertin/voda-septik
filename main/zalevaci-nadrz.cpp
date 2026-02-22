@@ -87,10 +87,12 @@ void cpp_app_main(void)
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
     char mqtt_uri[128] = {0};
+    char mqtt_topic[64] = {0};
     char mqtt_username[64] = {0};
     char mqtt_password[128] = {0};
     ESP_ERROR_CHECK(app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
     ESP_ERROR_CHECK(app_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
+    ESP_ERROR_CHECK(app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
     ESP_ERROR_CHECK(app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
     bool config_ap_mode = (strlen(wifi_password) == 0);
@@ -134,12 +136,24 @@ void cpp_app_main(void)
     }
     
     if (!config_ap_mode) {
+        char lwt_topic[96] = {0};
+        snprintf(lwt_topic, sizeof(lwt_topic), "%s/status", mqtt_topic);
+
+        network_mqtt_lwt_config_t lwt_cfg = {
+            .enabled = true,
+            .topic = lwt_topic,
+            .message = "offline",
+            .qos = 1,
+            .retain = true,
+        };
+
         ESP_LOGI("main",
-                 "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s",
+                 "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, lwt_topic=%s",
                  mqtt_uri,
                  (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
-                 (mqtt_password[0] != '\0') ? "yes" : "no");
-        ESP_ERROR_CHECK(network_mqtt_start(mqtt_uri, mqtt_username, mqtt_password));
+                 (mqtt_password[0] != '\0') ? "yes" : "no",
+                 lwt_topic);
+        ESP_ERROR_CHECK(network_mqtt_start_ex(mqtt_uri, mqtt_username, mqtt_password, &lwt_cfg));
     }
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace

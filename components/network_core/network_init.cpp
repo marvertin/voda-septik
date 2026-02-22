@@ -2,6 +2,7 @@
 
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -18,6 +19,9 @@
 #define WIFI_FAIL_BIT BIT1
 
 #define MQTT_CONNECTED_BIT BIT0
+#define MQTT_LWT_TOPIC_MAX_LEN 128
+#define MQTT_LWT_MESSAGE_MAX_LEN 64
+#define MQTT_CLIENT_ID_MAX_LEN 32
 
 static const char *TAG = "network";
 
@@ -31,11 +35,36 @@ static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
 static bool s_mqtt_connected = false;
+static bool s_lwt_enabled = false;
+static int s_lwt_qos = 1;
+static bool s_lwt_retain = true;
+static char s_lwt_topic[MQTT_LWT_TOPIC_MAX_LEN] = {0};
+static char s_lwt_message[MQTT_LWT_MESSAGE_MAX_LEN] = {0};
+static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 
 static network_state_callback_t s_state_callback = nullptr;
 static void *s_state_callback_ctx = nullptr;
 
 static void publish_network_event(bool wifi_up_hint);
+
+static void ensure_client_id_generated(void)
+{
+    if (s_mqtt_client_id[0] != '\0') {
+        return;
+    }
+
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        snprintf(s_mqtt_client_id,
+                 sizeof(s_mqtt_client_id),
+                 "esp32-%02x%02x%02x",
+                 mac[3],
+                 mac[4],
+                 mac[5]);
+    } else {
+        snprintf(s_mqtt_client_id, sizeof(s_mqtt_client_id), "esp32-client");
+    }
+}
 
 static void delayed_network_publish_cb(void *arg)
 {
@@ -162,6 +191,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT pripojeno");
             s_mqtt_connected = true;
             xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+            if (s_lwt_enabled && s_lwt_topic[0] != '\0') {
+                esp_mqtt_client_publish(s_mqtt_client, s_lwt_topic, "online", 0, s_lwt_qos, true);
+            }
             publish_network_event(true);
             break;
 
@@ -301,7 +333,10 @@ bool network_wait_connected(uint32_t timeout_ms)
     return false;
 }
 
-esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const char *password)
+esp_err_t network_mqtt_start_ex(const char *broker_uri,
+                                const char *username,
+                                const char *password,
+                                const network_mqtt_lwt_config_t *lwt_config)
 {
     if (s_mqtt_client != NULL) {
         ESP_LOGW(TAG, "MQTT jiz inicializovan");
@@ -320,17 +355,58 @@ esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const
              (username != NULL && username[0] != '\0') ? username : "(none)",
              (password != NULL && password[0] != '\0') ? "yes" : "no");
 
+    s_lwt_enabled = false;
+    s_lwt_topic[0] = '\0';
+    s_lwt_message[0] = '\0';
+    s_lwt_qos = 1;
+    s_lwt_retain = true;
+
+    if (lwt_config != NULL && lwt_config->enabled) {
+        if (lwt_config->topic == NULL || lwt_config->topic[0] == '\0') {
+            ESP_LOGE(TAG, "LWT je zapnute, ale topic neni vyplnen");
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        strncpy(s_lwt_topic, lwt_config->topic, sizeof(s_lwt_topic) - 1);
+        s_lwt_topic[sizeof(s_lwt_topic) - 1] = '\0';
+
+        const char *message = (lwt_config->message != NULL) ? lwt_config->message : "offline";
+        strncpy(s_lwt_message, message, sizeof(s_lwt_message) - 1);
+        s_lwt_message[sizeof(s_lwt_message) - 1] = '\0';
+
+        s_lwt_qos = (lwt_config->qos < 0) ? 0 : ((lwt_config->qos > 2) ? 2 : lwt_config->qos);
+        s_lwt_retain = lwt_config->retain;
+        s_lwt_enabled = true;
+
+        ESP_LOGI(TAG,
+                 "MQTT LWT cfg: topic='%s', msg='%s', qos=%d, retain=%s",
+                 s_lwt_topic,
+                 s_lwt_message,
+                 s_lwt_qos,
+                 s_lwt_retain ? "yes" : "no");
+    }
+
     s_mqtt_event_group = xEventGroupCreate();
     if (s_mqtt_event_group == NULL) {
         ESP_LOGE(TAG, "Nelze vytvorit MQTT event group");
         return ESP_ERR_NO_MEM;
     }
 
+    ensure_client_id_generated();
+
     esp_mqtt_client_config_t mqtt_cfg = {};
     mqtt_cfg.broker.address.uri = network_mqtt_config_uri();
+    mqtt_cfg.session.keepalive = 15;
     mqtt_cfg.network.disable_auto_reconnect = false;
+    mqtt_cfg.credentials.client_id = s_mqtt_client_id;
     mqtt_cfg.credentials.username = network_mqtt_config_username_or_null();
     mqtt_cfg.credentials.authentication.password = network_mqtt_config_password_or_null();
+    if (s_lwt_enabled) {
+        mqtt_cfg.session.last_will.topic = s_lwt_topic;
+        mqtt_cfg.session.last_will.msg = s_lwt_message;
+        mqtt_cfg.session.last_will.qos = s_lwt_qos;
+        mqtt_cfg.session.last_will.retain = s_lwt_retain;
+    }
 
     s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (s_mqtt_client == NULL) {
@@ -352,6 +428,11 @@ esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const
 
     ESP_LOGI(TAG, "MQTT klient inicializovan: %s", network_mqtt_config_uri());
     return ESP_OK;
+}
+
+esp_err_t network_mqtt_start(const char *broker_uri, const char *username, const char *password)
+{
+    return network_mqtt_start_ex(broker_uri, username, password, NULL);
 }
 
 bool network_mqtt_wait_connected(uint32_t timeout_ms)
