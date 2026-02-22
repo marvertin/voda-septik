@@ -14,7 +14,7 @@ extern "C" {
  * @param broker_uri URI brokerů (např. "mqtt://192.168.1.100:1883")
  * @return ESP_OK při úspěchu
  */
-esp_err_t mqtt_init(const char *broker_uri);
+esp_err_t mqtt_init(const char *broker_uri, const char *username, const char *password);
 
 /**
  * @brief Publikuje zprávu na MQTT topic

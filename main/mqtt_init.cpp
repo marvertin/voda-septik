@@ -8,14 +8,46 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include <cstring>
 
 static const char *TAG = "mqtt";
 
 #define MQTT_CONNECTED_BIT BIT0
+#define MQTT_URI_MAX_LEN 128
+#define MQTT_USER_MAX_LEN 64
+#define MQTT_PASS_MAX_LEN 128
 
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static EventGroupHandle_t mqtt_event_group = NULL;
 static bool mqtt_connected = false;
+static char s_mqtt_uri[MQTT_URI_MAX_LEN] = {0};
+static char s_mqtt_username[MQTT_USER_MAX_LEN] = {0};
+static char s_mqtt_password[MQTT_PASS_MAX_LEN] = {0};
+
+static bool is_valid_mqtt_uri(const char *broker_uri)
+{
+    if (broker_uri == NULL || broker_uri[0] == '\0') {
+        return false;
+    }
+
+    const bool scheme_ok = (strncmp(broker_uri, "mqtt://", 7) == 0)
+                        || (strncmp(broker_uri, "mqtts://", 8) == 0);
+    if (!scheme_ok) {
+        return false;
+    }
+
+    const char *host = strstr(broker_uri, "://");
+    if (host == NULL) {
+        return false;
+    }
+    host += 3;
+
+    if (host[0] == '\0' || host[0] == ':' || host[0] == '/') {
+        return false;
+    }
+
+    return true;
+}
 
 static system_network_level_t get_network_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
 {
@@ -112,11 +144,38 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
-esp_err_t mqtt_init(const char *broker_uri)
+esp_err_t mqtt_init(const char *broker_uri, const char *username, const char *password)
 {
     if (mqtt_client != NULL) {
         ESP_LOGW(TAG, "MQTT již inicializován");
         return ESP_OK;
+    }
+
+    if (!is_valid_mqtt_uri(broker_uri)) {
+        ESP_LOGE(TAG, "Neplatne MQTT URI: '%s'", broker_uri != NULL ? broker_uri : "(null)");
+        ESP_LOGE(TAG, "Ocekavam format mqtt://host:port nebo mqtts://host:port");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGI(TAG,
+             "MQTT connect cfg: uri='%s', user='%s', password_set=%s",
+             broker_uri,
+             (username != NULL && username[0] != '\0') ? username : "(none)",
+             (password != NULL && password[0] != '\0') ? "yes" : "no");
+
+    strncpy(s_mqtt_uri, broker_uri, sizeof(s_mqtt_uri) - 1);
+    s_mqtt_uri[sizeof(s_mqtt_uri) - 1] = '\0';
+
+    s_mqtt_username[0] = '\0';
+    if (username != NULL) {
+        strncpy(s_mqtt_username, username, sizeof(s_mqtt_username) - 1);
+        s_mqtt_username[sizeof(s_mqtt_username) - 1] = '\0';
+    }
+
+    s_mqtt_password[0] = '\0';
+    if (password != NULL) {
+        strncpy(s_mqtt_password, password, sizeof(s_mqtt_password) - 1);
+        s_mqtt_password[sizeof(s_mqtt_password) - 1] = '\0';
     }
 
     mqtt_event_group = xEventGroupCreate();
@@ -126,8 +185,10 @@ esp_err_t mqtt_init(const char *broker_uri)
     }
 
     esp_mqtt_client_config_t mqtt_cfg = {};
-    mqtt_cfg.broker.address.uri = broker_uri;
+    mqtt_cfg.broker.address.uri = s_mqtt_uri;
     mqtt_cfg.network.disable_auto_reconnect = false;
+    mqtt_cfg.credentials.username = (s_mqtt_username[0] != '\0') ? s_mqtt_username : NULL;
+    mqtt_cfg.credentials.authentication.password = (s_mqtt_password[0] != '\0') ? s_mqtt_password : NULL;
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (mqtt_client == NULL) {

@@ -112,6 +112,51 @@ static const config_item_t APP_CORE_CONFIG_ITEMS[] = {
         .min_float = 0.0f,
         .max_float = 0.0f,
     },
+    {
+        .key = "mqtt_uri",
+        .label = "MQTT URI",
+        .description = "Adresa MQTT brokeru, napr. mqtt://mqtt:1883.",
+        .type = CONFIG_VALUE_STRING,
+        .default_string = "mqtt://mqtt:1883",
+        .default_int = 0,
+        .default_float = 0.0f,
+        .default_bool = false,
+        .max_string_len = 127,
+        .min_int = 0,
+        .max_int = 0,
+        .min_float = 0.0f,
+        .max_float = 0.0f,
+    },
+    {
+        .key = "mqtt_user",
+        .label = "MQTT uzivatel",
+        .description = "Uzivatelske jmeno pro pripojeni k MQTT brokeru.",
+        .type = CONFIG_VALUE_STRING,
+        .default_string = "",
+        .default_int = 0,
+        .default_float = 0.0f,
+        .default_bool = false,
+        .max_string_len = 63,
+        .min_int = 0,
+        .max_int = 0,
+        .min_float = 0.0f,
+        .max_float = 0.0f,
+    },
+    {
+        .key = "mqtt_pass",
+        .label = "MQTT heslo",
+        .description = "Heslo pro pripojeni k MQTT brokeru.",
+        .type = CONFIG_VALUE_STRING,
+        .default_string = "",
+        .default_int = 0,
+        .default_float = 0.0f,
+        .default_bool = false,
+        .max_string_len = 127,
+        .min_int = 0,
+        .max_int = 0,
+        .min_float = 0.0f,
+        .max_float = 0.0f,
+    },
 };
 
 config_group_t app_config_get_config_group(void)
@@ -247,6 +292,49 @@ esp_err_t app_config_load_runtime_flags(void)
 
     s_service_mode = (service_mode != 0);
     return ESP_OK;
+}
+
+esp_err_t app_config_load_mqtt_uri(char *uri, size_t uri_len)
+{
+    if (uri == nullptr || uri_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open(APP_CFG_NAMESPACE, NVS_READONLY, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    size_t required = uri_len;
+    result = nvs_get_str(handle, "mqtt_uri", uri, &required);
+    nvs_close(handle);
+    return result;
+}
+
+esp_err_t app_config_load_mqtt_credentials(char *username, size_t username_len, char *password, size_t password_len)
+{
+    if (username == nullptr || password == nullptr || username_len == 0 || password_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open(APP_CFG_NAMESPACE, NVS_READONLY, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    size_t user_required = username_len;
+    result = nvs_get_str(handle, "mqtt_user", username, &user_required);
+    if (result != ESP_OK) {
+        nvs_close(handle);
+        return result;
+    }
+
+    size_t pass_required = password_len;
+    result = nvs_get_str(handle, "mqtt_pass", password, &pass_required);
+    nvs_close(handle);
+    return result;
 }
 
 bool app_config_is_service_mode(void)
