@@ -51,6 +51,7 @@ static char s_mqtt_status_topic[MQTT_LWT_TOPIC_MAX_LEN] = {0};
 static char s_lwt_message[MQTT_LWT_MESSAGE_MAX_LEN] = {0};
 static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 static TaskHandle_t s_captive_dns_task_handle = nullptr;
+static bool s_ap_mode_active = false;
 
 static network_state_callback_t s_state_callback = nullptr;
 static void *s_state_callback_ctx = nullptr;
@@ -306,6 +307,49 @@ static void delayed_network_publish_cb(void *arg)
 
 static void publish_network_event(bool wifi_up_hint)
 {
+    if (s_ap_mode_active) {
+        esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+        esp_netif_ip_info_t ap_ip_info = {};
+        bool ap_ip_ready = (ap_netif != NULL)
+                        && (esp_netif_get_ip_info(ap_netif, &ap_ip_info) == ESP_OK)
+                        && (ap_ip_info.ip.addr != 0);
+        uint32_t ap_ip_addr = ap_ip_ready ? ap_ip_info.ip.addr : 0;
+
+        if (s_state_callback != nullptr) {
+            network_state_t state = {
+                .wifi_up = true,
+                .ip_ready = ap_ip_ready,
+                .mqtt_ready = false,
+                .last_rssi = INT8_MIN,
+                .ip_addr = ap_ip_addr,
+                .timestamp_us = esp_timer_get_time(),
+            };
+            s_state_callback(&state, s_state_callback_ctx);
+
+            if (s_event_callback != nullptr) {
+                network_event_t event = network_event_make(true,
+                                                           state.wifi_up,
+                                                           state.ip_ready,
+                                                           state.mqtt_ready,
+                                                           state.last_rssi,
+                                                           state.ip_addr);
+                s_event_callback(&event, s_event_callback_ctx);
+            }
+            return;
+        }
+
+        if (s_event_callback != nullptr) {
+            network_event_t event = network_event_make(true,
+                                                       true,
+                                                       ap_ip_ready,
+                                                       false,
+                                                       INT8_MIN,
+                                                       ap_ip_addr);
+            s_event_callback(&event, s_event_callback_ctx);
+        }
+        return;
+    }
+
     wifi_ap_record_t ap_info = {};
     bool ap_info_ok = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
     bool wifi_up = wifi_up_hint || ap_info_ok;
@@ -337,7 +381,8 @@ static void publish_network_event(bool wifi_up_hint)
         s_state_callback(&state, s_state_callback_ctx);
 
         if (s_event_callback != nullptr) {
-            network_event_t event = network_event_make(state.wifi_up,
+            network_event_t event = network_event_make(false,
+                                                       state.wifi_up,
                                                        state.ip_ready,
                                                        state.mqtt_ready,
                                                        state.last_rssi,
@@ -348,7 +393,8 @@ static void publish_network_event(bool wifi_up_hint)
     }
 
     if (s_event_callback != nullptr) {
-        network_event_t event = network_event_make(wifi_up,
+        network_event_t event = network_event_make(false,
+                                                   wifi_up,
                                                    ip_ready,
                                                    s_mqtt_connected,
                                                    last_rssi,
@@ -535,6 +581,8 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    s_ap_mode_active = false;
+
     ESP_LOGI(TAG, "WiFi inicializace dokoncena. Pripojuji se k SSID:%s", ssid);
 
     return ESP_OK;
@@ -565,6 +613,11 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    s_ap_mode_active = true;
+    s_mqtt_connected = false;
+    if (s_mqtt_event_group != NULL) {
+        xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+    }
     start_captive_dns_server();
 
     esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
@@ -574,6 +627,8 @@ esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
             ESP_LOGI(TAG, "AP mode: SSID=%s, IP=" IPSTR, ap_ssid, IP2STR(&ip_info.ip));
         }
     }
+
+    publish_network_event(true);
 
     return ESP_OK;
 }

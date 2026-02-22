@@ -1,7 +1,10 @@
 #include "network_event.h"
 
-system_network_level_t network_event_level(bool wifi_up, bool ip_ready, bool mqtt_ready)
+system_network_level_t network_event_level(bool ap_mode, bool wifi_up, bool ip_ready, bool mqtt_ready)
 {
+    if (ap_mode) {
+        return SYS_NET_AP_CONFIG;
+    }
     if (mqtt_ready) {
         return SYS_NET_MQTT_READY;
     }
@@ -14,14 +17,15 @@ system_network_level_t network_event_level(bool wifi_up, bool ip_ready, bool mqt
     return SYS_NET_DOWN;
 }
 
-network_event_t network_event_make(bool wifi_up,
+network_event_t network_event_make(bool ap_mode,
+                                   bool wifi_up,
                                    bool ip_ready,
                                    bool mqtt_ready,
                                    int8_t last_rssi,
                                    uint32_t ip_addr)
 {
     network_event_t event = {
-        .level = network_event_level(wifi_up, ip_ready, mqtt_ready),
+        .level = network_event_level(ap_mode, wifi_up, ip_ready, mqtt_ready),
         .last_rssi = last_rssi,
         .ip_addr = ip_addr,
     };
