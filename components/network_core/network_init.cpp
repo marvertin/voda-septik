@@ -14,9 +14,11 @@
 
 #include "network_mqtt_config.h"
 
-#define WIFI_MAX_RETRY 5
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
+
+#define WIFI_RECONNECT_DELAY_MIN_MS 1000
+#define WIFI_RECONNECT_DELAY_MAX_MS 60000
 
 #define MQTT_CONNECTED_BIT BIT0
 #define MQTT_LWT_TOPIC_MAX_LEN 128
@@ -26,11 +28,12 @@
 static const char *TAG = "network";
 
 static EventGroupHandle_t s_wifi_event_group;
-static int s_retry_num = 0;
 static bool s_network_base_inited = false;
 static bool s_sta_handlers_registered = false;
 static int8_t s_last_rssi = INT8_MIN;
 static esp_timer_handle_t s_network_publish_retry_timer = nullptr;
+static esp_timer_handle_t s_wifi_reconnect_timer = nullptr;
+static uint32_t s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
@@ -46,6 +49,32 @@ static network_state_callback_t s_state_callback = nullptr;
 static void *s_state_callback_ctx = nullptr;
 
 static void publish_network_event(bool wifi_up_hint);
+
+static void schedule_wifi_reconnect(void);
+
+static void wifi_reconnect_cb(void *arg)
+{
+    (void)arg;
+    ESP_LOGW(TAG, "WiFi odpojeno, zkousim reconnect (backoff=%lu ms)", (unsigned long)s_wifi_reconnect_delay_ms);
+    esp_wifi_connect();
+}
+
+static void schedule_wifi_reconnect(void)
+{
+    if (s_wifi_reconnect_timer == nullptr) {
+        return;
+    }
+
+    esp_timer_stop(s_wifi_reconnect_timer);
+    esp_timer_start_once(s_wifi_reconnect_timer, (uint64_t)s_wifi_reconnect_delay_ms * 1000ULL);
+
+    if (s_wifi_reconnect_delay_ms < WIFI_RECONNECT_DELAY_MAX_MS) {
+        uint32_t next_delay = s_wifi_reconnect_delay_ms * 2;
+        s_wifi_reconnect_delay_ms = (next_delay > WIFI_RECONNECT_DELAY_MAX_MS)
+                                   ? WIFI_RECONNECT_DELAY_MAX_MS
+                                   : next_delay;
+    }
+}
 
 static void ensure_client_id_generated(void)
 {
@@ -140,6 +169,17 @@ static esp_err_t network_platform_init(void)
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_network_publish_retry_timer));
     }
 
+    if (s_wifi_reconnect_timer == nullptr) {
+        esp_timer_create_args_t reconnect_timer_args = {
+            .callback = &wifi_reconnect_cb,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "wifi_reconnect",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&reconnect_timer_args, &s_wifi_reconnect_timer));
+    }
+
     s_network_base_inited = true;
     return ESP_OK;
 }
@@ -160,22 +200,23 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         publish_network_event(false);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
+        s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
+        if (s_wifi_reconnect_timer != nullptr) {
+            esp_timer_stop(s_wifi_reconnect_timer);
+        }
         publish_network_event(true);
         schedule_retry_publish();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < WIFI_MAX_RETRY) {
-            esp_wifi_connect();
-            s_retry_num++;
-            ESP_LOGI(TAG, "Opakovani pripojeni k AP, pokus %d/%d", s_retry_num, WIFI_MAX_RETRY);
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            ESP_LOGE(TAG, "Selhalo pripojeni k WiFi");
-        }
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        schedule_wifi_reconnect();
         publish_network_event(false);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Ziskana IP adresa:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
+        s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
+        if (s_wifi_reconnect_timer != nullptr) {
+            esp_timer_stop(s_wifi_reconnect_timer);
+        }
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         publish_network_event(true);
         schedule_retry_publish();
