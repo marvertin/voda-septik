@@ -35,9 +35,44 @@ extern "C" {
     void cpp_app_main(void);
 }
 
+static tm1637_config_t s_tm1637_error_config = {
+    .clk_pin = TM_CLK,
+    .dio_pin = TM_DIO,
+    .bit_delay_us = 100,
+};
+
+static tm1637_handle_t s_tm1637_error_display = nullptr;
+
+static void show_error_code_on_tm1637(const char *error_code)
+{
+    if (error_code == nullptr) {
+        return;
+    }
+
+    if (s_tm1637_error_display == nullptr) {
+        esp_err_t init_result = tm1637_init(&s_tm1637_error_config, &s_tm1637_error_display);
+        if (init_result != ESP_OK) {
+            ESP_LOGE("main", "TM1637 init selhal: %s", esp_err_to_name(init_result));
+            return;
+        }
+        tm1637_set_brightness(s_tm1637_error_display, 7, true);
+    }
+
+    char display_text[5] = {' ', ' ', ' ', ' ', '\0'};
+    for (size_t index = 0; index < 4 && error_code[index] != '\0'; ++index) {
+        display_text[index] = error_code[index];
+    }
+
+    esp_err_t write_result = tm1637_write_string(s_tm1637_error_display, display_text);
+    if (write_result != ESP_OK) {
+        ESP_LOGE("main", "TM1637 write selhal: %s", esp_err_to_name(write_result));
+    }
+}
+
 static void app_error_code_log_handler(const char *error_code)
 {
     ESP_LOGE("main", "Error code: %s", error_code);
+    show_error_code_on_tm1637(error_code);
 }
 
 static bool is_error_reset_reason(esp_reset_reason_t reason)

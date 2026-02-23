@@ -5,7 +5,6 @@ extern "C" {
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "driver/gpio.h"
-#include "tm1637.h"
 #include "esp_log.h"
 
 #ifdef __cplusplus
@@ -18,18 +17,9 @@ extern "C" {
 #include "sensor_events.h"
 #include "lcd.h"
 #include "mqtt_publish.h"
-#include "pins.h"
 #include "webapp_startup.h"
 
 static const char *TAG = "state";
-
-static tm1637_config_t s_tm1637_config = {
-    .clk_pin = GPIO_NUM_18,
-    .dio_pin = GPIO_NUM_19,
-    .bit_delay_us = 100,
-};
-
-static tm1637_handle_t s_tm1637_display = nullptr;
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
@@ -61,9 +51,6 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
     snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.flow_l_min);
     lcd_print(0, 1, flow_text, false, 0);
 
-    if (s_tm1637_display != nullptr) {
-        tm1637_show_number(s_tm1637_display, (int)event.data.flow.total_volume_l, false, 4, 0);
-    }
 }
 
 static void state_manager_task(void *pvParameters)
@@ -136,6 +123,5 @@ static void state_manager_task(void *pvParameters)
 
 void state_manager_start(void)
 {
-    tm1637_init(&s_tm1637_config, &s_tm1637_display);
     xTaskCreate(state_manager_task, TAG, configMINIMAL_STACK_SIZE * 5, NULL, 4, NULL);
 }
