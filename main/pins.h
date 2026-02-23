@@ -3,8 +3,8 @@
 
 #include "driver/gpio.h"
 
-static const gpio_num_t LED1_PIN = GPIO_NUM_4;
-static const gpio_num_t LED2_PIN = GPIO_NUM_5;
+static const gpio_num_t ERRORLED_PIN = GPIO_NUM_5;
+static const gpio_num_t LED2_PIN = GPIO_NUM_4;
 
 static const gpio_num_t TM_CLK = GPIO_NUM_18;   
 static const gpio_num_t TM_DIO = GPIO_NUM_19;

@@ -34,6 +34,51 @@ extern "C" {
     void cpp_app_main(void);
 }
 
+static bool is_error_reset_reason(esp_reset_reason_t reason)
+{
+    switch (reason) {
+        case ESP_RST_PANIC:
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:
+        case ESP_RST_BROWNOUT:
+        case ESP_RST_PWR_GLITCH:
+        case ESP_RST_CPU_LOCKUP:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void indicate_error_reset_if_needed(void)
+{
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (!is_error_reset_reason(reason)) {
+        return;
+    }
+
+    ESP_LOGW("main", "Detekovan chybovy reset (reason=%d), spoustim chybovou LED sekvenci", static_cast<int>(reason));
+
+    gpio_reset_pin(ERRORLED_PIN);
+    gpio_set_direction(ERRORLED_PIN, GPIO_MODE_OUTPUT);
+
+    const TickType_t fast_delay = pdMS_TO_TICKS(50);
+    const TickType_t fast_total = pdMS_TO_TICKS(10000);
+    TickType_t start = xTaskGetTickCount();
+
+    while ((xTaskGetTickCount() - start) < fast_total) {
+        gpio_set_level(ERRORLED_PIN, 1);
+        vTaskDelay(fast_delay);
+        gpio_set_level(ERRORLED_PIN, 0);
+        vTaskDelay(fast_delay);
+    }
+
+    gpio_set_level(ERRORLED_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(ERRORLED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(500));
+}
+
 static void log_config_webapp_url(void)
 {
     esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
@@ -100,6 +145,7 @@ void print_partitions(void)
 
 void cpp_app_main(void)
 {
+    indicate_error_reset_if_needed();
     print_partitions();
     esp_err_t nvs_result = nvs_flash_init();
     if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -176,4 +222,5 @@ void cpp_app_main(void)
     // lcd_demo_init();
     teplota_demo_init();
     hladina_demo_init();
+
 }
