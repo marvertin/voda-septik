@@ -4,6 +4,7 @@
 
 #include "esp_log.h"
 #include "nvs.h"
+#include "app_error_check.h"
 
 static const char *TAG = "restart_info";
 static const char *SYS_NAMESPACE = "sys_meta";
@@ -37,10 +38,10 @@ esp_err_t app_restart_info_update_and_load(app_restart_info_t *out_info)
         now = 0;
     }
 
-    ESP_ERROR_CHECK(nvs_set_u32(nvs_handle, SYS_BOOT_COUNT_KEY, boot_count));
-    ESP_ERROR_CHECK(nvs_set_i32(nvs_handle, SYS_LAST_REASON_KEY, static_cast<int32_t>(reason)));
-    ESP_ERROR_CHECK(nvs_set_i64(nvs_handle, SYS_LAST_TIME_KEY, now));
-    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    APP_ERROR_CHECK("E300", nvs_set_u32(nvs_handle, SYS_BOOT_COUNT_KEY, boot_count));
+    APP_ERROR_CHECK("E301", nvs_set_i32(nvs_handle, SYS_LAST_REASON_KEY, static_cast<int32_t>(reason)));
+    APP_ERROR_CHECK("E302", nvs_set_i64(nvs_handle, SYS_LAST_TIME_KEY, now));
+    APP_ERROR_CHECK("E303", nvs_commit(nvs_handle));
     nvs_close(nvs_handle);
 
     out_info->boot_count = boot_count;

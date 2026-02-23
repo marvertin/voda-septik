@@ -13,6 +13,7 @@
 #include "network_ap_mode.h"
 #include "network_mqtt_config.h"
 #include "network_event.h"
+#include "app_error_check.h"
 
 #define WIFI_RECONNECT_DELAY_MIN_MS 1000
 #define WIFI_RECONNECT_DELAY_MAX_MS 60000
@@ -218,21 +219,21 @@ static void network_platform_init(void)
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        APP_ERROR_CHECK("E500", nvs_flash_erase());
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    APP_ERROR_CHECK("E501", ret);
 
-    ESP_ERROR_CHECK(esp_netif_init());
+    APP_ERROR_CHECK("E502", esp_netif_init());
 
     ret = esp_event_loop_create_default();
     if (ret == ESP_ERR_INVALID_STATE) {
         ret = ESP_OK;
     }
-    ESP_ERROR_CHECK(ret);
+    APP_ERROR_CHECK("E503", ret);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    APP_ERROR_CHECK("E504", esp_wifi_init(&cfg));
 
     if (s_network_publish_retry_timer == nullptr) {
         esp_timer_create_args_t timer_args = {
@@ -242,7 +243,7 @@ static void network_platform_init(void)
             .name = "net_pub_retry",
             .skip_unhandled_events = true,
         };
-        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_network_publish_retry_timer));
+        APP_ERROR_CHECK("E505", esp_timer_create(&timer_args, &s_network_publish_retry_timer));
     }
 
     if (s_wifi_reconnect_timer == nullptr) {
@@ -253,7 +254,7 @@ static void network_platform_init(void)
             .name = "wifi_reconnect",
             .skip_unhandled_events = true,
         };
-        ESP_ERROR_CHECK(esp_timer_create(&reconnect_timer_args, &s_wifi_reconnect_timer));
+        APP_ERROR_CHECK("E506", esp_timer_create(&reconnect_timer_args, &s_wifi_reconnect_timer));
     }
 
     if (s_network_idle_publish_timer == nullptr) {
@@ -264,7 +265,7 @@ static void network_platform_init(void)
             .name = "net_pub_idle",
             .skip_unhandled_events = true,
         };
-        ESP_ERROR_CHECK(esp_timer_create(&idle_publish_timer_args, &s_network_idle_publish_timer));
+        APP_ERROR_CHECK("E507", esp_timer_create(&idle_publish_timer_args, &s_network_idle_publish_timer));
     }
 
     s_network_base_inited = true;
@@ -402,16 +403,16 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     if (!s_sta_handlers_registered) {
         esp_event_handler_instance_t instance_any_id;
         esp_event_handler_instance_t instance_got_ip;
-        ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                            ESP_EVENT_ANY_ID,
-                                                            &wifi_event_handler,
-                                                            NULL,
-                                                            &instance_any_id));
-        ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                            IP_EVENT_STA_GOT_IP,
-                                                            &wifi_event_handler,
-                                                            NULL,
-                                                            &instance_got_ip));
+        APP_ERROR_CHECK("E508", esp_event_handler_instance_register(WIFI_EVENT,
+                                          ESP_EVENT_ANY_ID,
+                                          &wifi_event_handler,
+                                          NULL,
+                                          &instance_any_id));
+        APP_ERROR_CHECK("E509", esp_event_handler_instance_register(IP_EVENT,
+                                          IP_EVENT_STA_GOT_IP,
+                                          &wifi_event_handler,
+                                          NULL,
+                                          &instance_got_ip));
         s_sta_handlers_registered = true;
     }
 
@@ -422,9 +423,9 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     wifi_config.sta.pmf_cfg.capable = true;
     wifi_config.sta.pmf_cfg.required = false;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    APP_ERROR_CHECK("E510", esp_wifi_set_mode(WIFI_MODE_STA));
+    APP_ERROR_CHECK("E511", esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    APP_ERROR_CHECK("E512", esp_wifi_start());
 
     s_ap_mode_active = false;
     s_wifi_up = false;

@@ -17,6 +17,7 @@ extern "C" {
 
 #include "pins.h"
 #include "sensor_events.h"
+#include <app_error_check.h>
 
 #define TAG "TEMP_DEMO"
 
@@ -144,4 +145,5 @@ static void temperature_task(void *pvParameters)
 void teplota_demo_init(void)
 {
     xTaskCreate(temperature_task, TAG, configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
+    // APP_ERROR_CHECK("E987", ESP_FAIL);
 }

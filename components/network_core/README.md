@@ -42,11 +42,11 @@ static void on_network_event(const network_event_t *event, void *ctx)
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(network_register_event_callback(on_network_event, NULL));
+    APP_ERROR_CHECK("E900", network_register_event_callback(on_network_event, NULL));
 
-    ESP_ERROR_CHECK(network_init_sta("my-ssid", "my-pass"));
+    APP_ERROR_CHECK("E901", network_init_sta("my-ssid", "my-pass"));
 
-    ESP_ERROR_CHECK(network_mqtt_start("mqtt://broker:1883", "user", "pass"));
+    APP_ERROR_CHECK("E902", network_mqtt_start("mqtt://broker:1883", "user", "pass"));
 
     if (mqtt_is_connected()) {
         mqtt_publish("my/topic", "hello", true);

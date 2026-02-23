@@ -25,6 +25,7 @@
 
 #include "lcd.h"
 #include "network_init.h"
+#include "app_error_check.h"
 
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -32,6 +33,11 @@
 
 extern "C" {
     void cpp_app_main(void);
+}
+
+static void app_error_code_log_handler(const char *error_code)
+{
+    ESP_LOGE("main", "Error code: %s", error_code);
 }
 
 static bool is_error_reset_reason(esp_reset_reason_t reason)
@@ -145,17 +151,18 @@ void print_partitions(void)
 
 void cpp_app_main(void)
 {
+    app_error_check_set_handler(app_error_code_log_handler);
     indicate_error_reset_if_needed();
     print_partitions();
     esp_err_t nvs_result = nvs_flash_init();
     if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        APP_ERROR_CHECK("E100", nvs_flash_erase());
         nvs_result = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(nvs_result);
+    APP_ERROR_CHECK("E101", nvs_result);
 
-    ESP_ERROR_CHECK(app_config_ensure_defaults());
-    ESP_ERROR_CHECK(app_config_load_runtime_flags());
+    APP_ERROR_CHECK("E102", app_config_ensure_defaults());
+    APP_ERROR_CHECK("E103", app_config_load_runtime_flags());
 
     if (app_config_is_service_mode()) {
         ESP_LOGW("main", "System bezi v SERVISNIM rezimu");
@@ -172,18 +179,18 @@ void cpp_app_main(void)
     char mqtt_topic[64] = {0};
     char mqtt_username[64] = {0};
     char mqtt_password[128] = {0};
-    ESP_ERROR_CHECK(app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
-    ESP_ERROR_CHECK(app_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
-    ESP_ERROR_CHECK(app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
-    ESP_ERROR_CHECK(app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
+    APP_ERROR_CHECK("E104", app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
+    APP_ERROR_CHECK("E105", app_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
+    APP_ERROR_CHECK("E106", app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
+    APP_ERROR_CHECK("E107", app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
     const config_group_t config_groups[] = {
         app_config_get_config_group(),
         hladina_demo_get_config_group(),
     };
-    ESP_ERROR_CHECK(config_webapp_prepare("app_cfg",
-                                          config_groups,
-                                          sizeof(config_groups) / sizeof(config_groups[0])));
+    APP_ERROR_CHECK("E108", config_webapp_prepare("app_cfg",
+                                                    config_groups,
+                                                    sizeof(config_groups) / sizeof(config_groups[0])));
     
     char status_topic[96] = {0};
     snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
@@ -201,14 +208,14 @@ void cpp_app_main(void)
              (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
              (mqtt_password[0] != '\0') ? "yes" : "no",
              status_topic);
-    ESP_ERROR_CHECK(network_init_with_mqtt_ex(wifi_ssid,
-                                              wifi_password,
-                                              mqtt_uri,
-                                              mqtt_username,
-                                              mqtt_password,
-                                              &lwt_cfg));
+    APP_ERROR_CHECK("E109", network_init_with_mqtt_ex(wifi_ssid,
+                                                        wifi_password,
+                                                        mqtt_uri,
+                                                        mqtt_username,
+                                                        mqtt_password,
+                                                        &lwt_cfg));
 
-    ESP_ERROR_CHECK(boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
+    APP_ERROR_CHECK("E110", boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
     lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
 

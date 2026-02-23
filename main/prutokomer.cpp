@@ -15,6 +15,7 @@ extern "C" {
 #include "pins.h"
 #include "sensor_events.h"
 #include "flash_monotonic_counter.h"
+#include "app_error_check.h"
 
 #define TAG "FLOW"
 
@@ -126,9 +127,9 @@ void prutokomer_init(void)
 {
 
 
-    ESP_ERROR_CHECK(s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
+    APP_ERROR_CHECK("E200", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
 
-    // ESP_ERROR_CHECK(s_flow_counter.reset());
+    // APP_ERROR_CHECK("E201", s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
     s_total_pulses = s_persisted_counter_steps * static_cast<uint64_t>(PULSES_PER_COUNTER_INCREMENT);
