@@ -19,6 +19,7 @@ extern "C" {
 #include "mqtt_publish.h"
 #include "webapp_startup.h"
 #include "status_display.h"
+#include <tm1637.h>
 
 static const char *TAG = "state";
 
@@ -79,9 +80,19 @@ static void state_manager_task(void *pvParameters)
                     case SENSOR_EVENT_LEVEL:
                         publish_level_to_outputs(event.data.sensor);
                         break;
-                    case SENSOR_EVENT_FLOW:
+                    case SENSOR_EVENT_FLOW: {
                         publish_flow_to_outputs(event.data.sensor);
+                        float total = event.data.sensor.data.flow.total_volume_l * 50.0f;
+                        int ktery = static_cast<int>(total) % 3;
+                        if ((int)total % 2) {
+                            set_segments(TM1637_SEG_A, ktery, true);
+                        } else {
+                            set_segments(TM1637_SEG_A, ktery, false);
+                        }
+                        
+
                         break;
+                    }
                     default:
                         ESP_LOGW(TAG, "Neznamy sensor event: %d", (int)event.data.sensor.sensor_type);
                         break;

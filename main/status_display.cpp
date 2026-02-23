@@ -34,65 +34,77 @@ static bool s_error_latched = false;
 
 static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
-static char s_base_text[5] = {' ', ' ', ' ', ' ', '\0'};
 
 static void errorled_fallback_signal(void);
 
-static bool should_colon_be_on(uint32_t phase_ms, uint32_t cycle_ms, uint32_t on_ms)
-{
-    if (cycle_ms == 0 || on_ms == 0) {
-        return false;
-    }
-    return phase_ms < on_ms;
-}
+//
+static constexpr struct {
+    uint32_t on_ms;
+    uint32_t off_ms;
+    uint32_t blink_count;
+    uint32_t gap_ms;
+} s_network_level_display_config[] = {
+    [SYS_NET_DOWN]        = { 80,  80,  3, 200},
+    [SYS_NET_WIFI_ONLY]   = {200,  80,  2, 300},
+    [SYS_NET_IP_ONLY]     = {300, 100,  1, 500},
+    [SYS_NET_MQTT_READY]  = {1000,  10,  1, 0},
+    [SYS_NET_AP_CONFIG]   = {400,  200, 20, 500},
+};
 
-static bool should_show_colon(system_network_level_t level, uint32_t now_ms)
+static uint8_t svitici_segmenty[] = { 0, 0, 0, 0 };
+
+void set_segments(const uint8_t segments, uint8_t position, bool on) 
 {
-    switch (level) {
-        case SYS_NET_DOWN:
-            return should_colon_be_on(now_ms % 1200, 1200, 90);
-        case SYS_NET_WIFI_ONLY:
-            return should_colon_be_on(now_ms % 900, 900, 120);
-        case SYS_NET_IP_ONLY: {
-            const uint32_t phase = now_ms % 700;
-            return (phase < 110) || (phase >= 250 && phase < 360);
+    if (position < 4) {
+        svitici_segmenty[position] = on ? (svitici_segmenty[position] | segments) : (svitici_segmenty[position] & ~segments);
+        if (s_tm1637_available && s_tm1637_display != nullptr) {
+            esp_err_t write_result = tm1637_set_segments(s_tm1637_display, svitici_segmenty, 4, 0);
+            if (write_result != ESP_OK) {
+                ESP_LOGE(TAG, "TM1637 set_segments selhal: %s", esp_err_to_name(write_result));
+                s_tm1637_available = false;
+                errorled_fallback_signal();
+            }
         }
-        case SYS_NET_MQTT_READY:
-            return true;
-        case SYS_NET_AP_CONFIG:
-            return should_colon_be_on(now_ms % 400, 400, 200);
-        default:
-            return false;
     }
 }
 
-static void compose_display_text(char *out_text, bool colon_on)
+static void set_colon(bool colon_on)
 {
-    char local_base[5];
+    set_segments(TM1637_SEG_DP, 1, colon_on);
+}
 
-    taskENTER_CRITICAL(&s_status_mux);
-    memcpy(local_base, s_base_text, sizeof(local_base));
-    taskEXIT_CRITICAL(&s_status_mux);
-
-    if (!colon_on) {
-        memcpy(out_text, local_base, 5);
+static void blink_pattern_blocking(system_network_level_t level)
+{
+    const auto& config = s_network_level_display_config[level];
+    
+    if (config.on_ms == 0) {
         return;
     }
-
-    out_text[0] = local_base[0];
-    out_text[1] = local_base[1];
-    out_text[2] = '.';
-    out_text[3] = local_base[2];
-    out_text[4] = local_base[3];
-    out_text[5] = '\0';
+    
+    for (uint32_t i = 0; i < config.blink_count; ++i) {
+        set_colon(true);
+        vTaskDelay(pdMS_TO_TICKS(config.on_ms));
+        set_colon(false);
+        vTaskDelay(pdMS_TO_TICKS(config.off_ms));
+    }
+    vTaskDelay(pdMS_TO_TICKS(config.gap_ms));
 }
+
+
 
 static void status_display_task(void *pvParameters)
 {
     (void)pvParameters;
 
-    char rendered_text[6] = {'\0'};
 
+    /*
+    set_segments(TM1637_SEG_A, 0, true);
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            blink_pattern_blocking(static_cast<system_network_level_t>(i));
+        }
+    }
+        */
     while (true) {
         if (s_tm1637_available && s_tm1637_display != nullptr && !s_error_latched) {
             system_network_level_t level_snapshot;
@@ -101,25 +113,12 @@ static void status_display_task(void *pvParameters)
             level_snapshot = s_network_level;
             taskEXIT_CRITICAL(&s_status_mux);
 
-            uint32_t now_ms = static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);
-            bool colon_on = should_show_colon(level_snapshot, now_ms);
-
-            char target_text[6] = {'\0'};
-            compose_display_text(target_text, colon_on);
-
-            if (strncmp(target_text, rendered_text, sizeof(rendered_text)) != 0) {
-                esp_err_t write_result = tm1637_write_string(s_tm1637_display, target_text);
-                if (write_result == ESP_OK) {
-                    memcpy(rendered_text, target_text, sizeof(rendered_text));
-                } else {
-                    ESP_LOGE(TAG, "TM1637 write selhal: %s", esp_err_to_name(write_result));
-                    s_tm1637_available = false;
-                    errorled_fallback_signal();
-                }
+            for (int i = 0; i < 2; ++i) {
+                blink_pattern_blocking(level_snapshot);
             }
+        } else {
+            vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
         }
-
-        vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
     }
 }
 
@@ -196,19 +195,5 @@ void status_display_set_network_state(const network_event_t *event)
 
     taskENTER_CRITICAL(&s_status_mux);
     s_network_level = event->level;
-    taskEXIT_CRITICAL(&s_status_mux);
-}
-
-void status_display_set_text(const char *text)
-{
-    char normalized[5] = {' ', ' ', ' ', ' ', '\0'};
-    if (text != nullptr) {
-        for (size_t i = 0; i < 4 && text[i] != '\0'; ++i) {
-            normalized[i] = text[i];
-        }
-    }
-
-    taskENTER_CRITICAL(&s_status_mux);
-    memcpy(s_base_text, normalized, sizeof(s_base_text));
     taskEXIT_CRITICAL(&s_status_mux);
 }
