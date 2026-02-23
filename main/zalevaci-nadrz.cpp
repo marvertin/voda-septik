@@ -42,20 +42,48 @@ static tm1637_config_t s_tm1637_error_config = {
 };
 
 static tm1637_handle_t s_tm1637_error_display = nullptr;
+static bool s_tm1637_available = false;
 
-static void show_error_code_on_tm1637(const char *error_code)
+static void errorled_fallback_signal(void)
 {
-    if (error_code == nullptr) {
+    gpio_reset_pin(ERRORLED_PIN);
+    gpio_set_direction(ERRORLED_PIN, GPIO_MODE_OUTPUT);
+
+    for (int i = 0; i < 3; ++i) {
+        gpio_set_level(ERRORLED_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(120));
+        gpio_set_level(ERRORLED_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(120));
+    }
+}
+
+static void init_status_display(void)
+{
+    esp_err_t init_result = tm1637_init(&s_tm1637_error_config, &s_tm1637_error_display);
+    if (init_result != ESP_OK) {
+        s_tm1637_error_display = nullptr;
+        s_tm1637_available = false;
+        ESP_LOGE("main", "TM1637 init selhal, displej nebude pouzit: %s", esp_err_to_name(init_result));
+        errorled_fallback_signal();
         return;
     }
 
-    if (s_tm1637_error_display == nullptr) {
-        esp_err_t init_result = tm1637_init(&s_tm1637_error_config, &s_tm1637_error_display);
-        if (init_result != ESP_OK) {
-            ESP_LOGE("main", "TM1637 init selhal: %s", esp_err_to_name(init_result));
-            return;
-        }
-        tm1637_set_brightness(s_tm1637_error_display, 7, true);
+    esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_error_display, 7, true);
+    if (brightness_result != ESP_OK) {
+        s_tm1637_available = false;
+        ESP_LOGE("main", "TM1637 brightness selhal, displej nebude pouzit: %s", esp_err_to_name(brightness_result));
+        errorled_fallback_signal();
+        return;
+    }
+
+    s_tm1637_available = true;
+}
+
+static void show_error_code_on_tm1637(const char *error_code)
+{
+    if (error_code == nullptr || !s_tm1637_available || s_tm1637_error_display == nullptr) {
+        errorled_fallback_signal();
+        return;
     }
 
     char display_text[5] = {' ', ' ', ' ', ' ', '\0'};
@@ -66,6 +94,8 @@ static void show_error_code_on_tm1637(const char *error_code)
     esp_err_t write_result = tm1637_write_string(s_tm1637_error_display, display_text);
     if (write_result != ESP_OK) {
         ESP_LOGE("main", "TM1637 write selhal: %s", esp_err_to_name(write_result));
+        s_tm1637_available = false;
+        errorled_fallback_signal();
     }
 }
 
@@ -188,6 +218,7 @@ void cpp_app_main(void)
 {
     app_error_check_set_handler(app_error_code_log_handler);
     indicate_error_reset_if_needed();
+    init_status_display();
     print_partitions();
     esp_err_t nvs_result = nvs_flash_init();
     if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
