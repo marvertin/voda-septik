@@ -8,6 +8,7 @@
 
 static const char *TAG = "mqtt_pub_task";
 static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
+static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(6 * 1000);
 
 static QueueHandle_t s_publish_queue = nullptr;
 static TaskHandle_t s_publish_task = nullptr;
@@ -25,6 +26,8 @@ struct mqtt_publish_queue_item_t {
 
 struct topic_last_state_t {
     bool valid;
+    bool published_once;
+    TickType_t last_publish_tick;
     mqtt_publish_event_t event;
 };
 
@@ -32,6 +35,8 @@ static topic_last_state_t s_last_state[(size_t)mqtt_topic_id_t::COUNT] = {};
 
 static bool value_type_matches_topic(mqtt_payload_kind_t payload_kind, mqtt_publish_value_type_t value_type);
 static esp_err_t build_payload_string(const mqtt_publish_event_t &event, char *payload, size_t payload_len);
+static bool refresh_due(const topic_last_state_t &last, TickType_t now_ticks);
+static void mark_published(topic_last_state_t &last, TickType_t now_ticks);
 
 static esp_err_t publish_event_now(const mqtt_publish_event_t &event)
 {
@@ -64,7 +69,7 @@ static void flush_cached_values(void)
     }
 
     for (size_t index = 0; index < (size_t)mqtt_topic_id_t::COUNT; ++index) {
-        const topic_last_state_t &last = s_last_state[index];
+        topic_last_state_t &last = s_last_state[index];
         if (!last.valid) {
             continue;
         }
@@ -75,7 +80,10 @@ static void flush_cached_values(void)
                      "Flush cached topicu %u selhal: %s",
                      (unsigned)last.event.topic_id,
                      esp_err_to_name(publish_result));
+            continue;
         }
+
+        mark_published(last, xTaskGetTickCount());
     }
 }
 
@@ -105,6 +113,22 @@ static bool value_equals(const mqtt_publish_event_t &current, const topic_last_s
 
     return memcmp(&current, &last.event, sizeof(current)) == 0;
 }
+
+static bool refresh_due(const topic_last_state_t &last, TickType_t now_ticks)
+{
+    if (!last.published_once) {
+        return true;
+    }
+
+    return (now_ticks - last.last_publish_tick) >= MQTT_PUBLISH_REFRESH_INTERVAL_TICKS;
+}
+
+static void mark_published(topic_last_state_t &last, TickType_t now_ticks)
+{
+    last.published_once = true;
+    last.last_publish_tick = now_ticks;
+}
+
 static esp_err_t build_payload_string(const mqtt_publish_event_t &event, char *payload, size_t payload_len)
 {
     if (payload == nullptr || payload_len == 0) {
@@ -165,17 +189,28 @@ static esp_err_t publish_if_changed(const mqtt_publish_event_t &event)
     }
 
     const bool changed = !value_equals(event, s_last_state[topic_index]);
-    if (!changed) {
-        return ESP_OK;
-    }
+    topic_last_state_t &last = s_last_state[topic_index];
 
-    save_last_state(event);
+    if (changed) {
+        save_last_state(event);
+    }
 
     if (!s_mqtt_connected) {
         return ESP_OK;
     }
 
-    return publish_event_now(event);
+    const TickType_t now_ticks = xTaskGetTickCount();
+    if (!changed && !refresh_due(last, now_ticks)) {
+        return ESP_OK;
+    }
+
+    const mqtt_publish_event_t &event_to_publish = changed ? event : last.event;
+    esp_err_t publish_result = publish_event_now(event_to_publish);
+    if (publish_result == ESP_OK) {
+        mark_published(last, now_ticks);
+    }
+
+    return publish_result;
 }
 
 static void mqtt_publisher_task(void *param)
