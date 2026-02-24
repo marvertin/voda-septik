@@ -2,6 +2,10 @@
 
 ## Struktura mqtt topiků.
 
+Poznamka (migrace):
+- Konfiguracni polozka `mqtt_topic` byla odstranena.
+- Korenny topic je nyni pevne dany v registru topiku (`main/mqtt_topics.*`) jako `zalivka/nadrz`.
+
 ```
 zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku + vodu ze studny
 

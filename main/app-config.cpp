@@ -98,21 +98,6 @@ static const config_item_t APP_CORE_CONFIG_ITEMS[] = {
         .max_float = 0.0f,
     },
     {
-        .key = "mqtt_topic",
-        .label = "MQTT topic",
-        .description = "Kořenový topic pro publikaci dat zařízení.",
-        .type = CONFIG_VALUE_STRING,
-        .default_string = "zalevaci-nadrz",
-        .default_int = 0,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 63,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
         .key = "mqtt_uri",
         .label = "MQTT URI",
         .description = "Adresa MQTT brokeru, napr. mqtt://mqtt:1883.",
@@ -308,24 +293,6 @@ esp_err_t app_config_load_mqtt_uri(char *uri, size_t uri_len)
 
     size_t required = uri_len;
     result = nvs_get_str(handle, "mqtt_uri", uri, &required);
-    nvs_close(handle);
-    return result;
-}
-
-esp_err_t app_config_load_mqtt_topic(char *topic, size_t topic_len)
-{
-    if (topic == nullptr || topic_len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open(APP_CFG_NAMESPACE, NVS_READONLY, &handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    size_t required = topic_len;
-    result = nvs_get_str(handle, "mqtt_topic", topic, &required);
     nvs_close(handle);
     return result;
 }

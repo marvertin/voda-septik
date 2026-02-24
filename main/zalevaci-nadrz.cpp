@@ -22,6 +22,7 @@
 #include "state_manager.h"
 #include "network_event_bridge.h"
 #include "mqtt_publisher_task.h"
+#include "mqtt_topics.h"
 
 #include "lcd.h"
 #include "network_init.h"
@@ -172,12 +173,10 @@ void cpp_app_main(void)
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
     char mqtt_uri[128] = {0};
-    char mqtt_topic[64] = {0};
     char mqtt_username[64] = {0};
     char mqtt_password[128] = {0};
     APP_ERROR_CHECK("E104", app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
     APP_ERROR_CHECK("E105", app_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
-    APP_ERROR_CHECK("E106", app_config_load_mqtt_topic(mqtt_topic, sizeof(mqtt_topic)));
     APP_ERROR_CHECK("E107", app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
 
     const config_group_t config_groups[] = {
@@ -188,12 +187,12 @@ void cpp_app_main(void)
                                                     config_groups,
                                                     sizeof(config_groups) / sizeof(config_groups[0])));
     
-    char status_topic[96] = {0};
-    snprintf(status_topic, sizeof(status_topic), "%s/status", mqtt_topic);
+    const mqtt_topic_descriptor_t *status_topic_desc = mqtt_topic_descriptor(mqtt_topic_id_t::TOPIC_SYSTEM_STATUS);
+    APP_ERROR_CHECK("E111", status_topic_desc != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);
 
     network_mqtt_lwt_config_t lwt_cfg = {
         .enabled = true,
-        .status_topic = status_topic,
+        .status_topic = status_topic_desc->full_topic,
         .qos = 1,
         .retain = true,
     };
@@ -203,7 +202,7 @@ void cpp_app_main(void)
              mqtt_uri,
              (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
              (mqtt_password[0] != '\0') ? "yes" : "no",
-             status_topic);
+             status_topic_desc->full_topic);
     APP_ERROR_CHECK("E109", network_init_with_mqtt_ex(wifi_ssid,
                                                         wifi_password,
                                                         mqtt_uri,
@@ -211,7 +210,7 @@ void cpp_app_main(void)
                                                         mqtt_password,
                                                         &lwt_cfg));
 
-    APP_ERROR_CHECK("E111", mqtt_publisher_task_start(32, 4, configMINIMAL_STACK_SIZE * 6));
+    APP_ERROR_CHECK("E112", mqtt_publisher_task_start(32, 4, configMINIMAL_STACK_SIZE * 6));
 
     APP_ERROR_CHECK("E110", boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     

@@ -16,7 +16,6 @@ extern "C" {
 #include "state_manager.h"
 #include "sensor_events.h"
 #include "lcd.h"
-#include "mqtt_publish.h"
 #include "mqtt_publisher_task.h"
 #include "webapp_startup.h"
 #include "status_display.h"
@@ -114,12 +113,14 @@ static void state_manager_task(void *pvParameters)
 
                 if (event.data.network.level == SYS_NET_MQTT_READY) {
                     if (!mqtt_ready_published) {
-                        esp_err_t publish_result = mqtt_publish_online_status();
-                        if (publish_result == ESP_OK) {
+                        esp_err_t enqueue_result = mqtt_publisher_enqueue_text(
+                            mqtt_topic_id_t::TOPIC_SYSTEM_STATUS,
+                            "online");
+                        if (enqueue_result == ESP_OK) {
                             mqtt_ready_published = true;
                             ESP_LOGI(TAG, "MQTT online status publikovan");
                         } else {
-                            ESP_LOGW(TAG, "Publikace online statusu selhala: %s", esp_err_to_name(publish_result));
+                            ESP_LOGW(TAG, "Publikace online statusu selhala: %s", esp_err_to_name(enqueue_result));
                         }
                     }
                 } else {
