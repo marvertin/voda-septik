@@ -13,8 +13,10 @@ static const char *event_type_to_string(event_type_t event_type)
     switch (event_type) {
         case EVT_SENSOR:
             return "sensor";
-        case EVT_NETWORK:
-            return "network";
+        case EVT_NETWORK_STATE_CHANGE:
+            return "network_state_change";
+        case EVT_NETWORK_TELEMETRY:
+            return "network_telemetry";
         case EVT_TICK:
             return "tick";
         default:
@@ -107,17 +109,31 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
             }
             break;
 
-        case EVT_NETWORK:
+        case EVT_NETWORK_STATE_CHANGE:
+            snprintf(buffer,
+                     buffer_len,
+                     "event=%s ts=%lld from=%d to=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
+                     event_type_to_string(event->event_type),
+                     (long long)event->timestamp_us,
+                     (int)event->data.network_state_change.from_level,
+                     (int)event->data.network_state_change.to_level,
+                     (int)event->data.network_state_change.snapshot.last_rssi,
+                     (unsigned long)event->data.network_state_change.snapshot.ip_addr,
+                     (unsigned long)event->data.network_state_change.snapshot.reconnect_attempts,
+                     (unsigned long)event->data.network_state_change.snapshot.reconnect_successes);
+            break;
+
+        case EVT_NETWORK_TELEMETRY:
             snprintf(buffer,
                      buffer_len,
                      "event=%s ts=%lld level=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
                      event_type_to_string(event->event_type),
                      (long long)event->timestamp_us,
-                     (int)event->data.network.level,
-                     (int)event->data.network.last_rssi,
-                     (unsigned long)event->data.network.ip_addr,
-                     (unsigned long)event->data.network.reconnect_attempts,
-                     (unsigned long)event->data.network.reconnect_successes);
+                     (int)event->data.network_telemetry.snapshot.level,
+                     (int)event->data.network_telemetry.snapshot.last_rssi,
+                     (unsigned long)event->data.network_telemetry.snapshot.ip_addr,
+                     (unsigned long)event->data.network_telemetry.snapshot.reconnect_attempts,
+                     (unsigned long)event->data.network_telemetry.snapshot.reconnect_successes);
             break;
 
         case EVT_TICK:

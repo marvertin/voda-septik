@@ -120,19 +120,21 @@ static void state_manager_task(void *pvParameters)
                         break;
                 }
                 break;
-            case EVT_NETWORK: {
+            case EVT_NETWORK_STATE_CHANGE: {
+                const network_event_t *network_snapshot = &event.data.network_state_change.snapshot;
                 ESP_LOGW(TAG,
-                         "Network level=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
-                         (int)event.data.network.level,
-                         (int)event.data.network.last_rssi,
-                         (unsigned long)event.data.network.ip_addr,
-                         (unsigned long)event.data.network.reconnect_attempts,
-                         (unsigned long)event.data.network.reconnect_successes);
+                         "Network state change: %d -> %d (rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu)",
+                         (int)event.data.network_state_change.from_level,
+                         (int)event.data.network_state_change.to_level,
+                         (int)network_snapshot->last_rssi,
+                         (unsigned long)network_snapshot->ip_addr,
+                         (unsigned long)network_snapshot->reconnect_attempts,
+                         (unsigned long)network_snapshot->reconnect_successes);
 
-                status_display_set_network_state(&event.data.network);
-                webapp_startup_on_network_event(&event.data.network);
+                status_display_set_network_state(network_snapshot);
+                webapp_startup_on_network_event(network_snapshot);
 
-                const bool mqtt_ready = (event.data.network.level == SYS_NET_MQTT_READY);
+                const bool mqtt_ready = (event.data.network_state_change.to_level == SYS_NET_MQTT_READY);
                 esp_err_t mqtt_state_result = mqtt_publisher_set_mqtt_connected(mqtt_ready);
                 if (mqtt_state_result != ESP_OK) {
                     ESP_LOGW(TAG, "Nastaveni MQTT stavu publisheru selhalo: %s", esp_err_to_name(mqtt_state_result));
@@ -153,6 +155,17 @@ static void state_manager_task(void *pvParameters)
                 } else {
                     mqtt_ready_published = false;
                 }
+                break;
+            }
+            case EVT_NETWORK_TELEMETRY: {
+                const network_event_t *network_snapshot = &event.data.network_telemetry.snapshot;
+                ESP_LOGD(TAG,
+                         "Network telemetry: level=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
+                         (int)network_snapshot->level,
+                         (int)network_snapshot->last_rssi,
+                         (unsigned long)network_snapshot->ip_addr,
+                         (unsigned long)network_snapshot->reconnect_attempts,
+                         (unsigned long)network_snapshot->reconnect_successes);
                 break;
             }
             case EVT_TICK:

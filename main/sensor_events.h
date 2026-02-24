@@ -12,7 +12,8 @@ extern "C" {
 
 typedef enum {
     EVT_SENSOR,
-    EVT_NETWORK,
+    EVT_NETWORK_STATE_CHANGE,
+    EVT_NETWORK_TELEMETRY,
     EVT_TICK
 } event_type_t;
 
@@ -46,11 +47,22 @@ typedef struct {
 } sensor_event_t;
 
 typedef struct {
+    system_network_level_t from_level;
+    system_network_level_t to_level;
+    network_event_t snapshot;
+} network_state_change_event_t;
+
+typedef struct {
+    network_event_t snapshot;
+} network_telemetry_event_t;
+
+typedef struct {
     event_type_t event_type;
     int64_t timestamp_us;
     union {
         sensor_event_t sensor;
-        network_event_t network;
+        network_state_change_event_t network_state_change;
+        network_telemetry_event_t network_telemetry;
     } data;
 } app_event_t;
 
