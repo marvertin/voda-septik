@@ -32,6 +32,7 @@ static tm1637_config_t s_tm1637_config = {
 static tm1637_handle_t s_tm1637_display = nullptr;
 static bool s_tm1637_available = false;
 static bool s_error_latched = false;
+static bool s_text_latched = false;
 
 static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
@@ -107,23 +108,12 @@ static void status_display_task(void *pvParameters)
     }
         */
     while (true) {
-        if (s_tm1637_available && s_tm1637_display != nullptr && !s_error_latched) {
+        if (s_tm1637_available && s_tm1637_display != nullptr && !s_error_latched && !s_text_latched) {
             system_network_level_t level_snapshot;
 
             taskENTER_CRITICAL(&s_status_mux);
             level_snapshot = s_network_level;
             taskEXIT_CRITICAL(&s_status_mux);
-
-            if (level_snapshot == SYS_NET_AP_CONFIG) {
-                esp_err_t write_result = tm1637_write_string(s_tm1637_display, "-AP-");
-                if (write_result != ESP_OK) {
-                    ESP_LOGE(TAG, "TM1637 write AP stavu selhal: %s", esp_err_to_name(write_result));
-                    s_tm1637_available = false;
-                    errorled_fallback_signal();
-                }
-                vTaskDelay(pdMS_TO_TICKS(300));
-                continue;
-            }
 
             for (int i = 0; i < 2; ++i) {
                 blink_pattern_blocking(level_snapshot);
@@ -215,4 +205,29 @@ void status_display_set_network_state(const network_event_t *event)
     taskENTER_CRITICAL(&s_status_mux);
     s_network_level = event->level;
     taskEXIT_CRITICAL(&s_status_mux);
+}
+
+void status_display_ap_mode()
+{
+    if (!s_tm1637_available || s_tm1637_display == nullptr) {
+        return;
+    }
+
+    s_text_latched = true;
+
+    static constexpr uint8_t ALL_SEGMENTS = static_cast<uint8_t>(
+        TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_D |
+        TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G | TM1637_SEG_DP);
+    static constexpr uint8_t DASH_SEGMENTS = TM1637_SEG_G;
+    static constexpr uint8_t A_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
+    static constexpr uint8_t P_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
+
+    for (uint8_t position = 0; position < 4; ++position) {
+        set_segments(ALL_SEGMENTS, position, false);
+    }
+
+    set_segments(DASH_SEGMENTS, 0, true);
+    set_segments(A_SEGMENTS, 1, true);
+    set_segments(P_SEGMENTS, 2, true);
+    set_segments(DASH_SEGMENTS, 3, true);
 }
