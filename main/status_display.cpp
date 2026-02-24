@@ -15,6 +15,7 @@ extern "C" {
 #endif
 
 #include "status_display.h"
+#include "status_display_startup_animation.h"
 
 #include "pins.h"
 #include "app_error_check.h"
@@ -179,8 +180,15 @@ void status_display_init(void)
             ESP_LOGE(TAG, "TM1637 brightness selhal, displej nebude pouzit: %s", esp_err_to_name(brightness_result));
             errorled_fallback_signal();
         } else {
-            s_tm1637_available = true;
-            xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
+            esp_err_t startup_result = status_display_play_startup_sequence(s_tm1637_display);
+            if (startup_result != ESP_OK) {
+                s_tm1637_available = false;
+                ESP_LOGE(TAG, "TM1637 startup sekvence selhala, displej nebude pouzit: %s", esp_err_to_name(startup_result));
+                errorled_fallback_signal();
+            } else {
+                s_tm1637_available = true;
+                xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
+            }
         }
     }
 
