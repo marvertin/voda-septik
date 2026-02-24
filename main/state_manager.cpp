@@ -42,6 +42,13 @@ static void publish_level_to_outputs(const sensor_event_t &event)
     char text[16];
     snprintf(text, sizeof(text), "H:%3.0fcm ", event.data.level.height_m * 100.0f);
     lcd_print(8, 1, text, false, 0);
+
+    esp_err_t enqueue_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_OBJEM,
+        (double)event.data.level.height_m);
+    if (enqueue_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue hladiny/objemu selhalo: %s", esp_err_to_name(enqueue_result));
+    }
 }
 
 static void publish_flow_to_outputs(const sensor_event_t &event)
@@ -53,6 +60,20 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
     char flow_text[16];
     snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.flow_l_min);
     lcd_print(0, 1, flow_text, false, 0);
+
+    esp_err_t flow_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_PRUTOK,
+        (double)event.data.flow.flow_l_min);
+    if (flow_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue prutoku selhalo: %s", esp_err_to_name(flow_result));
+    }
+
+    esp_err_t total_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_CERPANO_CELKEM,
+        (double)event.data.flow.total_volume_l);
+    if (total_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue cerpano_celkem selhalo: %s", esp_err_to_name(total_result));
+    }
 
 }
 
