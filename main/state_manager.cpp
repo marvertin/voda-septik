@@ -17,6 +17,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "lcd.h"
 #include "mqtt_publish.h"
+#include "mqtt_publisher_task.h"
 #include "webapp_startup.h"
 #include "status_display.h"
 #include <tm1637.h>
@@ -29,10 +30,11 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
     snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
     lcd_print(8, 0, text, false, 0);
 
-    if (mqtt_is_connected()) {
-        char payload[32];
-        snprintf(payload, sizeof(payload), "%.2f", event.data.temperature.temperature_c);
-        mqtt_publish("homeassistant/sensor/zalevaci_nadrz/temperature/state", payload, true);
+    esp_err_t enqueue_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA,
+        (double)event.data.temperature.temperature_c);
+    if (enqueue_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue teploty vody selhalo: %s", esp_err_to_name(enqueue_result));
     }
 }
 

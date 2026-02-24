@@ -21,6 +21,7 @@
 #include "sensor_events.h"
 #include "state_manager.h"
 #include "network_event_bridge.h"
+#include "mqtt_publisher_task.h"
 
 #include "lcd.h"
 #include "network_init.h"
@@ -209,6 +210,8 @@ void cpp_app_main(void)
                                                         mqtt_username,
                                                         mqtt_password,
                                                         &lwt_cfg));
+
+    APP_ERROR_CHECK("E111", mqtt_publisher_task_start(32, 4, configMINIMAL_STACK_SIZE * 6));
 
     APP_ERROR_CHECK("E110", boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
