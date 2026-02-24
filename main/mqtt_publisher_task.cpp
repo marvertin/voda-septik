@@ -127,7 +127,8 @@ static void mqtt_publisher_task(void *param)
 {
     (void)param;
 
-    mqtt_publish_event_t event = {};
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
     while (true) {
         if (xQueueReceive(s_publish_queue, &event, portMAX_DELAY) != pdPASS) {
             continue;
@@ -185,7 +186,8 @@ esp_err_t mqtt_publisher_enqueue(const mqtt_publish_event_t *event, TickType_t t
         return ESP_ERR_INVALID_ARG;
     }
 
-    mqtt_publish_event_t copy = {};
+    mqtt_publish_event_t copy;
+    memset(&copy, 0, sizeof(copy));
     copy.topic_id = event->topic_id;
     copy.value_type = event->value_type;
     memcpy(&copy.value, &event->value, sizeof(copy.value));
@@ -195,7 +197,8 @@ esp_err_t mqtt_publisher_enqueue(const mqtt_publish_event_t *event, TickType_t t
 
 esp_err_t mqtt_publisher_enqueue_bool(mqtt_topic_id_t topic_id, bool value)
 {
-    mqtt_publish_event_t event = {};
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
     event.topic_id = topic_id;
     event.value_type = mqtt_publish_value_type_t::BOOL;
     event.value.as_bool = value;
@@ -204,7 +207,8 @@ esp_err_t mqtt_publisher_enqueue_bool(mqtt_topic_id_t topic_id, bool value)
 
 esp_err_t mqtt_publisher_enqueue_int64(mqtt_topic_id_t topic_id, int64_t value)
 {
-    mqtt_publish_event_t event = {};
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
     event.topic_id = topic_id;
     event.value_type = mqtt_publish_value_type_t::INT64;
     event.value.as_int64 = value;
@@ -213,7 +217,8 @@ esp_err_t mqtt_publisher_enqueue_int64(mqtt_topic_id_t topic_id, int64_t value)
 
 esp_err_t mqtt_publisher_enqueue_double(mqtt_topic_id_t topic_id, double value)
 {
-    mqtt_publish_event_t event = {};
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
     event.topic_id = topic_id;
     event.value_type = mqtt_publish_value_type_t::DOUBLE;
     event.value.as_double = value;
@@ -226,7 +231,8 @@ esp_err_t mqtt_publisher_enqueue_text(mqtt_topic_id_t topic_id, const char *valu
         return ESP_ERR_INVALID_ARG;
     }
 
-    mqtt_publish_event_t event = {};
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
     event.topic_id = topic_id;
     event.value_type = mqtt_publish_value_type_t::TEXT;
     strncpy(event.value.as_text, value, MQTT_PUBLISH_TEXT_MAX_LEN - 1);
