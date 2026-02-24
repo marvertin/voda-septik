@@ -120,7 +120,7 @@ static void state_manager_task(void *pvParameters)
                         break;
                 }
                 break;
-            case EVT_NETWORK:
+            case EVT_NETWORK: {
                 ESP_LOGW(TAG,
                          "Network level=%d rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu",
                          (int)event.data.network.level,
@@ -132,7 +132,13 @@ static void state_manager_task(void *pvParameters)
                 status_display_set_network_state(&event.data.network);
                 webapp_startup_on_network_event(&event.data.network);
 
-                if (event.data.network.level == SYS_NET_MQTT_READY) {
+                const bool mqtt_ready = (event.data.network.level == SYS_NET_MQTT_READY);
+                esp_err_t mqtt_state_result = mqtt_publisher_set_mqtt_connected(mqtt_ready);
+                if (mqtt_state_result != ESP_OK) {
+                    ESP_LOGW(TAG, "Nastaveni MQTT stavu publisheru selhalo: %s", esp_err_to_name(mqtt_state_result));
+                }
+
+                if (mqtt_ready) {
                     if (!mqtt_ready_published) {
                         esp_err_t enqueue_result = mqtt_publisher_enqueue_text(
                             mqtt_topic_id_t::TOPIC_SYSTEM_STATUS,
@@ -148,6 +154,7 @@ static void state_manager_task(void *pvParameters)
                     mqtt_ready_published = false;
                 }
                 break;
+            }
             case EVT_TICK:
                 ESP_LOGD(TAG, "Tick event zatim neni implementovany");
                 break;

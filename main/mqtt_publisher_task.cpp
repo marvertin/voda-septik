@@ -11,6 +11,17 @@ static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
 
 static QueueHandle_t s_publish_queue = nullptr;
 static TaskHandle_t s_publish_task = nullptr;
+static volatile bool s_mqtt_connected = false;
+
+enum class queue_item_type_t : uint8_t {
+    PUBLISH_EVENT = 0,
+    FLUSH_CACHED,
+};
+
+struct mqtt_publish_queue_item_t {
+    queue_item_type_t type;
+    mqtt_publish_event_t event;
+};
 
 struct topic_last_state_t {
     bool valid;
@@ -18,6 +29,55 @@ struct topic_last_state_t {
 };
 
 static topic_last_state_t s_last_state[(size_t)mqtt_topic_id_t::COUNT] = {};
+
+static bool value_type_matches_topic(mqtt_payload_kind_t payload_kind, mqtt_publish_value_type_t value_type);
+static esp_err_t build_payload_string(const mqtt_publish_event_t &event, char *payload, size_t payload_len);
+
+static esp_err_t publish_event_now(const mqtt_publish_event_t &event)
+{
+    const mqtt_topic_descriptor_t *topic = mqtt_topic_descriptor(event.topic_id);
+    if (topic == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (topic->direction != mqtt_topic_direction_t::PUBLISH_ONLY) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!value_type_matches_topic(topic->payload_kind, event.value_type)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char payload[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
+    esp_err_t payload_result = build_payload_string(event, payload, sizeof(payload));
+    if (payload_result != ESP_OK) {
+        return payload_result;
+    }
+
+    return mqtt_publish(topic->full_topic, payload, topic->retain);
+}
+
+static void flush_cached_values(void)
+{
+    if (!s_mqtt_connected) {
+        return;
+    }
+
+    for (size_t index = 0; index < (size_t)mqtt_topic_id_t::COUNT; ++index) {
+        const topic_last_state_t &last = s_last_state[index];
+        if (!last.valid) {
+            continue;
+        }
+
+        esp_err_t publish_result = publish_event_now(last.event);
+        if (publish_result != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "Flush cached topicu %u selhal: %s",
+                     (unsigned)last.event.topic_id,
+                     esp_err_to_name(publish_result));
+        }
+    }
+}
 
 static bool value_type_matches_topic(mqtt_payload_kind_t payload_kind, mqtt_publish_value_type_t value_type)
 {
@@ -104,37 +164,37 @@ static esp_err_t publish_if_changed(const mqtt_publish_event_t &event)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (value_equals(event, s_last_state[topic_index])) {
+    const bool changed = !value_equals(event, s_last_state[topic_index]);
+    if (!changed) {
         return ESP_OK;
     }
 
-    char payload[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
-    esp_err_t payload_result = build_payload_string(event, payload, sizeof(payload));
-    if (payload_result != ESP_OK) {
-        return payload_result;
-    }
-
-    esp_err_t publish_result = mqtt_publish(topic->full_topic, payload, topic->retain);
-    if (publish_result != ESP_OK) {
-        return publish_result;
-    }
-
     save_last_state(event);
-    return ESP_OK;
+
+    if (!s_mqtt_connected) {
+        return ESP_OK;
+    }
+
+    return publish_event_now(event);
 }
 
 static void mqtt_publisher_task(void *param)
 {
     (void)param;
 
-    mqtt_publish_event_t event;
-    memset(&event, 0, sizeof(event));
+    mqtt_publish_queue_item_t item;
+    memset(&item, 0, sizeof(item));
     while (true) {
-        if (xQueueReceive(s_publish_queue, &event, portMAX_DELAY) != pdPASS) {
+        if (xQueueReceive(s_publish_queue, &item, portMAX_DELAY) != pdPASS) {
             continue;
         }
 
-        esp_err_t result = publish_if_changed(event);
+        if (item.type == queue_item_type_t::FLUSH_CACHED) {
+            flush_cached_values();
+            continue;
+        }
+
+        esp_err_t result = publish_if_changed(item.event);
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "Zpracovani publish eventu selhalo: %s", esp_err_to_name(result));
         }
@@ -155,7 +215,7 @@ esp_err_t mqtt_publisher_task_start(uint32_t queue_length,
 
     memset(s_last_state, 0, sizeof(s_last_state));
 
-    s_publish_queue = xQueueCreate((UBaseType_t)queue_length, sizeof(mqtt_publish_event_t));
+    s_publish_queue = xQueueCreate((UBaseType_t)queue_length, sizeof(mqtt_publish_queue_item_t));
     if (s_publish_queue == nullptr) {
         return ESP_ERR_NO_MEM;
     }
@@ -186,13 +246,31 @@ esp_err_t mqtt_publisher_enqueue(const mqtt_publish_event_t *event, TickType_t t
         return ESP_ERR_INVALID_ARG;
     }
 
-    mqtt_publish_event_t copy;
-    memset(&copy, 0, sizeof(copy));
-    copy.topic_id = event->topic_id;
-    copy.value_type = event->value_type;
-    memcpy(&copy.value, &event->value, sizeof(copy.value));
+    mqtt_publish_queue_item_t item;
+    memset(&item, 0, sizeof(item));
+    item.type = queue_item_type_t::PUBLISH_EVENT;
+    item.event.topic_id = event->topic_id;
+    item.event.value_type = event->value_type;
 
-    return (xQueueSend(s_publish_queue, &copy, timeout_ticks) == pdPASS) ? ESP_OK : ESP_ERR_TIMEOUT;
+    switch (event->value_type) {
+        case mqtt_publish_value_type_t::BOOL:
+            item.event.value.as_bool = event->value.as_bool;
+            break;
+        case mqtt_publish_value_type_t::INT64:
+            item.event.value.as_int64 = event->value.as_int64;
+            break;
+        case mqtt_publish_value_type_t::DOUBLE:
+            item.event.value.as_double = event->value.as_double;
+            break;
+        case mqtt_publish_value_type_t::TEXT:
+            strncpy(item.event.value.as_text, event->value.as_text, MQTT_PUBLISH_TEXT_MAX_LEN - 1);
+            item.event.value.as_text[MQTT_PUBLISH_TEXT_MAX_LEN - 1] = '\0';
+            break;
+        default:
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    return (xQueueSend(s_publish_queue, &item, timeout_ticks) == pdPASS) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
 esp_err_t mqtt_publisher_enqueue_bool(mqtt_topic_id_t topic_id, bool value)
@@ -238,6 +316,25 @@ esp_err_t mqtt_publisher_enqueue_text(mqtt_topic_id_t topic_id, const char *valu
     strncpy(event.value.as_text, value, MQTT_PUBLISH_TEXT_MAX_LEN - 1);
     event.value.as_text[MQTT_PUBLISH_TEXT_MAX_LEN - 1] = '\0';
     return mqtt_publisher_enqueue(&event, MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS);
+}
+
+esp_err_t mqtt_publisher_set_mqtt_connected(bool connected)
+{
+    s_mqtt_connected = connected;
+
+    if (!connected) {
+        return ESP_OK;
+    }
+
+    if (s_publish_queue == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    mqtt_publish_queue_item_t item;
+    memset(&item, 0, sizeof(item));
+    item.type = queue_item_type_t::FLUSH_CACHED;
+
+    return (xQueueSend(s_publish_queue, &item, 0) == pdPASS) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
 bool mqtt_publisher_is_running(void)

@@ -39,4 +39,5 @@ esp_err_t mqtt_publisher_enqueue_bool(mqtt_topic_id_t topic_id, bool value);
 esp_err_t mqtt_publisher_enqueue_int64(mqtt_topic_id_t topic_id, int64_t value);
 esp_err_t mqtt_publisher_enqueue_double(mqtt_topic_id_t topic_id, double value);
 esp_err_t mqtt_publisher_enqueue_text(mqtt_topic_id_t topic_id, const char *value);
+esp_err_t mqtt_publisher_set_mqtt_connected(bool connected);
 bool mqtt_publisher_is_running(void);
