@@ -69,6 +69,24 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 
 ## Ovladani pres Mosquitto CLI
 
+Pro pohodlne ovladani je v projektu interaktivni skript:
+
+```bash
+./tools/mqtt_cmd_cli.sh
+```
+
+Skript:
+- pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `zalivka/nadrz`,
+- cte heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`,
+- kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
+- nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/*`, ...).
+
+Volitelne lze prepsat parametry pres promenne prostredi:
+
+```bash
+MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=zalivka/nadrz ./tools/mqtt_cmd_cli.sh
+```
+
 Nize jsou priklady pro `mosquitto_sub` a `mosquitto_pub`.
 
 Nejdriv si nastav promenne (uprav podle sveho brokeru):
