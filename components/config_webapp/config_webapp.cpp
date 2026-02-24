@@ -843,6 +843,17 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
     return ESP_OK;
 }
 
+esp_err_t config_webapp_stop(void)
+{
+    if (s_ctx.server == nullptr) {
+        return ESP_OK;
+    }
+
+    httpd_handle_t server = s_ctx.server;
+    s_ctx.server = nullptr;
+    return httpd_stop(server);
+}
+
 esp_err_t config_webapp_prepare(const char *nvs_namespace,
                                 const config_group_t *groups,
                                 size_t group_count)

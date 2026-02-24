@@ -24,6 +24,18 @@ void webapp_startup_on_network_event(const network_event_t *event)
         return;
     }
 
+    esp_err_t start_result = webapp_startup_start();
+    if (start_result != ESP_OK) {
+        ESP_LOGW(TAG, "Config web app se nepodarilo spustit: %s", esp_err_to_name(start_result));
+    }
+}
+
+esp_err_t webapp_startup_start(void)
+{
+    if (s_webapp_started) {
+        return ESP_OK;
+    }
+
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
     esp_err_t wifi_cfg_result = app_config_load_wifi_credentials(
@@ -72,4 +84,19 @@ void webapp_startup_on_network_event(const network_event_t *event)
     } else {
         ESP_LOGW(TAG, "Config web app se nepodarilo spustit: %s", esp_err_to_name(start_result));
     }
+
+    return start_result;
+}
+
+esp_err_t webapp_startup_stop(void)
+{
+    esp_err_t stop_result = config_webapp_stop();
+    if (stop_result == ESP_OK) {
+        s_webapp_started = false;
+        ESP_LOGI(TAG, "Config web app zastavena");
+    } else {
+        ESP_LOGW(TAG, "Zastaveni config web app selhalo: %s", esp_err_to_name(stop_result));
+    }
+
+    return stop_result;
 }

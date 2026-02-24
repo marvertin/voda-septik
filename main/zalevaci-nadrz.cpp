@@ -22,6 +22,7 @@
 #include "state_manager.h"
 #include "network_event_bridge.h"
 #include "mqtt_publisher_task.h"
+#include "mqtt_commands.h"
 #include "mqtt_topics.h"
 
 #include "lcd.h"
@@ -211,6 +212,7 @@ void cpp_app_main(void)
                                                         &lwt_cfg));
 
     APP_ERROR_CHECK("E112", mqtt_publisher_task_start(32, 4, configMINIMAL_STACK_SIZE * 6));
+    APP_ERROR_CHECK("E113", mqtt_commands_start());
 
     APP_ERROR_CHECK("E110", boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
@@ -219,13 +221,12 @@ void cpp_app_main(void)
     state_manager_start();
     
     // initialize sensor producer tasks
-    prutokomer_init();
+    //prutokomer_init();
 
     // vytvoření paralelních tasků
     blikaniled_init();
-    // lcd_demo_init();
-    teplota_demo_init();
-    hladina_demo_init();
+    //teplota_demo_init();
+    //hladina_demo_init();
 
 
 }

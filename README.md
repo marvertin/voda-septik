@@ -67,6 +67,77 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 * home/water_tank/cmd/service_mode
 
 
+## Ovladani pres Mosquitto CLI
+
+Nize jsou priklady pro `mosquitto_sub` a `mosquitto_pub`.
+
+Nejdriv si nastav promenne (uprav podle sveho brokeru):
+
+```bash
+MQTT_HOST=192.168.1.10
+MQTT_PORT=1883
+MQTT_USER="uzivatel"
+MQTT_PASS="heslo"
+TOPIC_ROOT="zalivka/nadrz"
+```
+
+### Odběr vsech dat ze zarizeni
+
+```bash
+mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v -t "$TOPIC_ROOT/#"
+```
+
+### Odeslani commandu
+
+`cmd/reboot` (restart zarizeni):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/reboot" -m "1"
+```
+
+`cmd/webapp/start` (spusti konfiguracni web):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp/start" -m "1"
+```
+
+`cmd/webapp/stop` (zastavi konfiguracni web):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp/stop" -m "1"
+```
+
+`cmd/debug/start` (zapne debug publikaci):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/start" -m "1"
+```
+
+`cmd/debug/stop` (vypne debug publikaci):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/stop" -m "1"
+```
+
+`cmd/debug/interval_ms` (perioda debug publish):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/interval_ms" -m "2000"
+```
+
+`cmd/debug/sensors` (filtr/profil debug senzoru):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/sensors" -m "all"
+```
+
+### Odběr debug vetve
+
+```bash
+mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v -t "$TOPIC_ROOT/debug/#"
+```
+
+
 ## Architektura site (po refaktoru)
 
 - `components/network_core/network_init.*`
