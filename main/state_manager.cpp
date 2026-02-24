@@ -84,6 +84,7 @@ static void state_manager_task(void *pvParameters)
     app_event_t event = {};
     char debug_line[128];
     bool mqtt_ready_published = false;
+    bool ap_mode_latched = false;
 
     while (true) {
         if (!sensor_events_receive(&event, portMAX_DELAY)) {
@@ -122,6 +123,19 @@ static void state_manager_task(void *pvParameters)
                 break;
             case EVT_NETWORK_STATE_CHANGE: {
                 const network_event_t *network_snapshot = &event.data.network_state_change.snapshot;
+
+                if (ap_mode_latched && event.data.network_state_change.to_level != SYS_NET_AP_CONFIG) {
+                    ESP_LOGW(TAG,
+                             "Ignoruji prechod z AP režimu %d -> %d (z AP vede jen reset)",
+                             (int)event.data.network_state_change.from_level,
+                             (int)event.data.network_state_change.to_level);
+                    break;
+                }
+
+                if (event.data.network_state_change.to_level == SYS_NET_AP_CONFIG) {
+                    ap_mode_latched = true;
+                }
+
                 ESP_LOGW(TAG,
                          "Network state change: %d -> %d (rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu)",
                          (int)event.data.network_state_change.from_level,
@@ -134,7 +148,7 @@ static void state_manager_task(void *pvParameters)
                 status_display_set_network_state(network_snapshot);
                 webapp_startup_on_network_event(network_snapshot);
 
-                const bool mqtt_ready = (event.data.network_state_change.to_level == SYS_NET_MQTT_READY);
+                const bool mqtt_ready = (!ap_mode_latched) && (event.data.network_state_change.to_level == SYS_NET_MQTT_READY);
                 esp_err_t mqtt_state_result = mqtt_publisher_set_mqtt_connected(mqtt_ready);
                 if (mqtt_state_result != ESP_OK) {
                     ESP_LOGW(TAG, "Nastaveni MQTT stavu publisheru selhalo: %s", esp_err_to_name(mqtt_state_result));

@@ -114,6 +114,17 @@ static void status_display_task(void *pvParameters)
             level_snapshot = s_network_level;
             taskEXIT_CRITICAL(&s_status_mux);
 
+            if (level_snapshot == SYS_NET_AP_CONFIG) {
+                esp_err_t write_result = tm1637_write_string(s_tm1637_display, "-AP-");
+                if (write_result != ESP_OK) {
+                    ESP_LOGE(TAG, "TM1637 write AP stavu selhal: %s", esp_err_to_name(write_result));
+                    s_tm1637_available = false;
+                    errorled_fallback_signal();
+                }
+                vTaskDelay(pdMS_TO_TICKS(300));
+                continue;
+            }
+
             for (int i = 0; i < 2; ++i) {
                 blink_pattern_blocking(level_snapshot);
             }
