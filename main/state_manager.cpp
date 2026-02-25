@@ -26,6 +26,31 @@ extern "C" {
 
 static const char *TAG = "state";
 
+static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 0;
+static constexpr uint8_t SENSOR_FAULT_LEVEL_POS = 2;
+static constexpr uint8_t SENSOR_FAULT_FLOW_POS = 3;
+
+static constexpr uint8_t SENSOR_FAULT_TEMP_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_B | TM1637_SEG_C);
+static constexpr uint8_t SENSOR_FAULT_LEVEL_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_E | TM1637_SEG_F);
+static constexpr uint8_t SENSOR_FAULT_FLOW_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G);
+
+static void set_sensor_fault_indicator(sensor_event_type_t sensor_type, bool is_fault)
+{
+    switch (sensor_type) {
+        case SENSOR_EVENT_TEMPERATURE:
+            set_segments(SENSOR_FAULT_TEMP_SEGMENTS, SENSOR_FAULT_TEMP_POS, is_fault);
+            break;
+        case SENSOR_EVENT_LEVEL:
+            set_segments(SENSOR_FAULT_LEVEL_SEGMENTS, SENSOR_FAULT_LEVEL_POS, is_fault);
+            break;
+        case SENSOR_EVENT_FLOW:
+            set_segments(SENSOR_FAULT_FLOW_SEGMENTS, SENSOR_FAULT_FLOW_POS, is_fault);
+            break;
+        default:
+            break;
+    }
+}
+
 static void publish_boot_diagnostics_once(void)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -57,7 +82,10 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
     char text[16];
     esp_err_t enqueue_result;
-    if (std::isnan(event.data.temperature.temperature_c)) {
+    const bool sensor_fault = std::isnan(event.data.temperature.temperature_c);
+    set_sensor_fault_indicator(SENSOR_EVENT_TEMPERATURE, sensor_fault);
+
+    if (sensor_fault) {
         snprintf(text, sizeof(text), "T: --.- ");
         lcd_print(8, 0, text, false, 0);
 
@@ -80,7 +108,10 @@ static void publish_level_to_outputs(const sensor_event_t &event)
 {
     char text[16];
     esp_err_t enqueue_result;
-    if (event.data.level.raw_value == 0) {
+    const bool sensor_fault = (event.data.level.raw_value == 0);
+    set_sensor_fault_indicator(SENSOR_EVENT_LEVEL, sensor_fault);
+
+    if (sensor_fault) {
         snprintf(text, sizeof(text), "H: ---  ");
         lcd_print(8, 1, text, false, 0);
 
@@ -101,6 +132,9 @@ static void publish_level_to_outputs(const sensor_event_t &event)
 
 static void publish_flow_to_outputs(const sensor_event_t &event)
 {
+    const bool sensor_fault = !std::isfinite(event.data.flow.flow_l_min) || !std::isfinite(event.data.flow.total_volume_l);
+    set_sensor_fault_indicator(SENSOR_EVENT_FLOW, sensor_fault);
+
     char liters_text[16];
     snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.total_volume_l);
     lcd_print(0, 0, liters_text, false, 0);
@@ -153,15 +187,6 @@ static void state_manager_task(void *pvParameters)
                         break;
                     case SENSOR_EVENT_FLOW: {
                         publish_flow_to_outputs(event.data.sensor);
-                        float total = event.data.sensor.data.flow.total_volume_l * 50.0f;
-                        int ktery = static_cast<int>(total) % 3;
-                        if ((int)total % 2) {
-                            set_segments(TM1637_SEG_A, ktery, true);
-                        } else {
-                            set_segments(TM1637_SEG_A, ktery, false);
-                        }
-                        
-
                         break;
                     }
                     default:
