@@ -49,7 +49,7 @@ static constexpr struct {
     [SYS_NET_DOWN]        = { 80,  80,  3, 200},
     [SYS_NET_WIFI_ONLY]   = {200,  80,  2, 300},
     [SYS_NET_IP_ONLY]     = {300, 100,  1, 500},
-    [SYS_NET_MQTT_READY]  = {1000,  10,  1, 0},
+    [SYS_NET_MQTT_READY]  = {1000,  0,  1, 0},
     [SYS_NET_AP_CONFIG]   = {400,  200, 20, 500},
 };
 
@@ -86,14 +86,20 @@ static void blink_pattern_blocking(system_network_level_t level)
     for (uint32_t i = 0; i < config.blink_count; ++i) {
         set_colon(true);
         vTaskDelay(pdMS_TO_TICKS(config.on_ms));
-        set_colon(false);
-        vTaskDelay(pdMS_TO_TICKS(config.off_ms));
+        if (config.off_ms > 0) {
+            set_colon(false);
+            vTaskDelay(pdMS_TO_TICKS(config.off_ms));
+        }
     }
     vTaskDelay(pdMS_TO_TICKS(config.gap_ms));
 }
 
 
 
+/**
+ * Zobrazí na stavovém displeji indikaci aktuálního stavu sítě. 
+ * Pokud zobrazení není dostupné, bude místo toho použita chybová LED pro indikaci stavu.
+ */
 static void status_display_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -137,6 +143,10 @@ static void errorled_fallback_signal(void)
     }
 }
 
+/**
+ * Zobrazí na stavovém displeji kód chyby pomocí čtyřmístného zobrazení. Pokud zobrazení není dostupné, bude místo toho použita chybová LED pro indikaci stavu.
+ * Kód chyby bude zobrazen trvale, dokud nebude zařízení restartováno, nebo dokud nebude zobrazení znovu použito pro zobrazení jiné informace (v takovém případě bude kód chyby přepsán).
+ */
 static void show_error_code_on_tm1637(const char *error_code)
 {
     if (error_code == nullptr || !s_tm1637_available || s_tm1637_display == nullptr) {
@@ -166,6 +176,10 @@ static void app_error_code_log_handler(const char *error_code)
     show_error_code_on_tm1637(error_code);
 }
 
+/**
+ * Inicializuje stavový displej a spustí úlohu pro aktualizaci zobrazení.
+ * Pokud inicializace displeje selže, bude místo toho použita chybová LED pro indikaci stavu.
+ */
 void status_display_init(void)
 {
     esp_err_t init_result = tm1637_init(&s_tm1637_config, &s_tm1637_display);
@@ -196,6 +210,9 @@ void status_display_init(void)
     app_error_check_set_handler(app_error_code_log_handler);
 }
 
+/**
+ * Nastaví stav sítě pro zobrazení na displeji.
+ */
 void status_display_set_network_state(const network_event_t *event)
 {
     if (event == nullptr) {
@@ -207,6 +224,10 @@ void status_display_set_network_state(const network_event_t *event)
     taskEXIT_CRITICAL(&s_status_mux);
 }
 
+/**
+ * Zobrazí na displeji indikaci, že zařízení je v režimu přístupového bodu pro konfiguraci Wi-Fi. 
+ * Indikace zůstane zobrazena trvale, dokud nebude zařízení restartováno do normálního režimu.
+ */
 void status_display_ap_mode()
 {
     if (!s_tm1637_available || s_tm1637_display == nullptr) {
