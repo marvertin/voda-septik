@@ -153,6 +153,8 @@ static void state_manager_task(void *pvParameters)
                 }
 
                 if (mqtt_ready) {
+                    esp_log_level_set("*", ESP_LOG_WARN);        // default pro vše
+                    esp_log_level_set("mqtt_cmd", ESP_LOG_DEBUG); // detailní síť
                     if (!mqtt_ready_published) {
                         esp_err_t enqueue_result = mqtt_publisher_enqueue_text(
                             mqtt_topic_id_t::TOPIC_SYSTEM_STATUS,

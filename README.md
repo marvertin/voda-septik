@@ -57,7 +57,9 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 │    ├── debug/start                [-] Nastartování debug režimu, začnou se produkovat debug data. HA: button
 │    ├── debug/stop                 [-] Zastavení debug režimu. HA: button
 │    ├── debug/interval_ms          [ms] Po kolika milisekundách se mají do "debug" posílat MQTT data. HA: number
-│    └── debug/sensors              [text/json] Seznam senzorů, pro které se posílají ladicí data. HA: text
+│    ├── debug/sensors              [text/json] Seznam senzorů, pro které se posílají ladicí data. HA: text
+│    ├── ota/start                  [url] URL na binarni obraz firmware (http/https)
+│    └── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
 │
 └── debug/
       ├── raw                       [text] Surová data přímo ze senzorů před filtrací. HA: sensor
@@ -149,10 +151,37 @@ mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/sensors" -m "all"
 ```
 
+`cmd/ota/start` (spusti OTA z URL):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/ota/start" -m "http://192.168.1.10:8000/zalevaci-nadrz.bin"
+```
+
+`cmd/ota/confirm` (potvrdi novy firmware po rebootu):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/ota/confirm" -m "1"
+```
+
 ### Odběr debug vetve
 
 ```bash
 mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v -t "$TOPIC_ROOT/debug/#"
+```
+
+
+## OTA helper skript
+
+V projektu je interaktivni helper, ktery:
+- spusti jednoduchy HTTP server nad vybranym `.bin` souborem,
+- posle MQTT command `cmd/ota/start` s URL na firmware,
+- po rebootu se zepta, zda je firmware v poradku,
+- pri potvrzeni posle `cmd/ota/confirm`.
+
+Spusteni:
+
+```bash
+./tools/ota_flow_cli.sh
 ```
 
 

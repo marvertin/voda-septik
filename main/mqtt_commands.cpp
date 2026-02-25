@@ -18,6 +18,7 @@ extern "C" {
 #include "mqtt_publisher_task.h"
 #include "mqtt_topics.h"
 #include "network_init.h"
+#include "ota_manager.h"
 #include "webapp_startup.h"
 
 static const char *TAG = "mqtt_cmd";
@@ -31,6 +32,22 @@ static bool s_debug_enabled = false;
 static uint32_t s_debug_interval_ms = 5000;
 static char s_debug_sensors[MQTT_PUBLISH_TEXT_MAX_LEN] = "all";
 static portMUX_TYPE s_debug_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static const char *mqtt_event_name(int32_t event_id)
+{
+    switch (event_id) {
+        case MQTT_EVENT_CONNECTED: return "MQTT_EVENT_CONNECTED";
+        case MQTT_EVENT_DISCONNECTED: return "MQTT_EVENT_DISCONNECTED";
+        case MQTT_EVENT_SUBSCRIBED: return "MQTT_EVENT_SUBSCRIBED";
+        case MQTT_EVENT_UNSUBSCRIBED: return "MQTT_EVENT_UNSUBSCRIBED";
+        case MQTT_EVENT_PUBLISHED: return "MQTT_EVENT_PUBLISHED";
+        case MQTT_EVENT_DATA: return "MQTT_EVENT_DATA";
+        case MQTT_EVENT_ERROR: return "MQTT_EVENT_ERROR";
+        case MQTT_EVENT_BEFORE_CONNECT: return "MQTT_EVENT_BEFORE_CONNECT";
+        case MQTT_EVENT_DELETED: return "MQTT_EVENT_DELETED";
+        default: return "MQTT_EVENT_UNKNOWN";
+    }
+}
 
 static const mqtt_topic_descriptor_t *find_command_topic(const char *topic, int topic_len)
 {
@@ -183,6 +200,26 @@ static void handle_command(mqtt_topic_id_t command_id, const char *payload)
             command_set_debug_sensors(payload);
             break;
 
+        case mqtt_topic_id_t::TOPIC_CMD_OTA_START: {
+            esp_err_t result = ota_manager_start_from_url(payload);
+            if (result != ESP_OK) {
+                ESP_LOGW(TAG, "cmd/ota/start selhal: %s", esp_err_to_name(result));
+            } else {
+                ESP_LOGW(TAG, "cmd/ota/start prijat, OTA task spusten");
+            }
+            break;
+        }
+
+        case mqtt_topic_id_t::TOPIC_CMD_OTA_CONFIRM: {
+            esp_err_t result = ota_manager_confirm_running_firmware();
+            if (result != ESP_OK) {
+                ESP_LOGW(TAG, "cmd/ota/confirm selhal: %s", esp_err_to_name(result));
+            } else {
+                ESP_LOGW(TAG, "cmd/ota/confirm prijat, firmware potvrzen");
+            }
+            break;
+        }
+
         default:
             ESP_LOGW(TAG, "Neznamy command topic id: %u", (unsigned)command_id);
             break;
@@ -226,11 +263,42 @@ static void mqtt_commands_event_handler(void *handler_args,
         return;
     }
 
+    char topic_preview[96] = {0};
+    if (event->topic != nullptr && event->topic_len > 0) {
+        const int topic_copy_len = (event->topic_len < (int)(sizeof(topic_preview) - 1))
+                                       ? event->topic_len
+                                       : (int)(sizeof(topic_preview) - 1);
+        memcpy(topic_preview, event->topic, (size_t)topic_copy_len);
+        topic_preview[topic_copy_len] = '\0';
+    }
+
+    char data_preview[96] = {0};
+    if (event->data != nullptr && event->data_len > 0) {
+        const int data_copy_len = (event->data_len < (int)(sizeof(data_preview) - 1))
+                                      ? event->data_len
+                                      : (int)(sizeof(data_preview) - 1);
+        memcpy(data_preview, event->data, (size_t)data_copy_len);
+        data_preview[data_copy_len] = '\0';
+    }
+
     ESP_LOGI(TAG,
-             "MQTT event prijat: id=%ld topic_len=%d data_len=%d",
+             "MQTT event detail: type=%s id=%ld msg_id=%d topic_len=%d data_len=%d offset=%d total=%d client=%p",
+             mqtt_event_name(event_id),
              (long)event_id,
+             event->msg_id,
              event->topic_len,
-             event->data_len);
+             event->data_len,
+             event->current_data_offset,
+             event->total_data_len,
+             (void *)event->client);
+
+    if (topic_preview[0] != '\0') {
+        ESP_LOGI(TAG, "MQTT event topic preview: %s", topic_preview);
+    }
+
+    if (data_preview[0] != '\0') {
+        ESP_LOGI(TAG, "MQTT event payload preview: %s", data_preview);
+    }
 
     if (event_id == MQTT_EVENT_CONNECTED) {
         ESP_LOGI(TAG, "MQTT connected event -> subscribe command topicu");

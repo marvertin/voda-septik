@@ -55,6 +55,8 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_CMD_DEBUG_STOP,                    "cmd/debug/stop",                   SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_DEBUG_INTERVAL_MS,             "cmd/debug/interval_ms",            SUBSCRIBE_ONLY, NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_CMD_DEBUG_SENSORS,                 "cmd/debug/sensors",                SUBSCRIBE_ONLY, TEXT,    1, false),
+    TOPIC_ENTRY(TOPIC_CMD_OTA_START,                     "cmd/ota/start",                    SUBSCRIBE_ONLY, TEXT,    1, false),
+    TOPIC_ENTRY(TOPIC_CMD_OTA_CONFIRM,                   "cmd/ota/confirm",                  SUBSCRIBE_ONLY, TEXT,    1, false),
 
     TOPIC_ENTRY(TOPIC_DEBUG_RAW,                         "debug/raw",                        PUBLISH_ONLY,   TEXT,    0, false),
     TOPIC_ENTRY(TOPIC_DEBUG_INTERMEDIATE,                "debug/intermediate",               PUBLISH_ONLY,   TEXT,    0, false),
