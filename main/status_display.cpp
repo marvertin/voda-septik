@@ -6,6 +6,7 @@ extern "C" {
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "driver/gpio.h"
 #include "tm1637.h"
 #include "esp_log.h"
@@ -22,6 +23,8 @@ extern "C" {
 
 static const char *TAG = "status_display";
 static constexpr TickType_t STATUS_DISPLAY_TASK_PERIOD = pdMS_TO_TICKS(100);
+static constexpr uint32_t MQTT_ACTIVITY_COLON_ON_MS = 200;
+static constexpr uint32_t MQTT_ACTIVITY_COLON_OFF_MS = 30;
 
 static tm1637_config_t s_tm1637_config = {
     .clk_pin = TM_CLK,
@@ -37,7 +40,14 @@ static bool s_text_latched = false;
 static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
 
+static bool s_mqtt_activity_timer_running = false;
+
 static void errorled_fallback_signal(void);
+
+StaticTimer_t s_mqtt_activity_colon_on_timer_buffer;
+StaticTimer_t s_mqtt_activity_colon_off_timer_buffer;
+TimerHandle_t s_mqtt_activity_colon_on_timer = nullptr; 
+TimerHandle_t s_mqtt_activity_colon_off_timer = nullptr;
 
 //
 static constexpr struct {
@@ -49,7 +59,7 @@ static constexpr struct {
     [SYS_NET_DOWN]        = { 80,  80,  3, 200},
     [SYS_NET_WIFI_ONLY]   = {200,  80,  2, 300},
     [SYS_NET_IP_ONLY]     = {300, 100,  1, 500},
-    [SYS_NET_MQTT_READY]  = {1000,  0,  1, 0},
+    [SYS_NET_MQTT_READY]  = {200,  0,  0, 0},
     [SYS_NET_AP_CONFIG]   = {400,  200, 20, 500},
 };
 
@@ -95,7 +105,6 @@ static void blink_pattern_blocking(system_network_level_t level)
 }
 
 
-
 /**
  * Zobrazí na stavovém displeji indikaci aktuálního stavu sítě. 
  * Pokud zobrazení není dostupné, bude místo toho použita chybová LED pro indikaci stavu.
@@ -120,6 +129,12 @@ static void status_display_task(void *pvParameters)
             taskENTER_CRITICAL(&s_status_mux);
             level_snapshot = s_network_level;
             taskEXIT_CRITICAL(&s_status_mux);
+
+            if (level_snapshot == SYS_NET_MQTT_READY) {
+                set_colon(true);
+                vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
+                continue;
+            }
 
             for (int i = 0; i < 2; ++i) {
                 blink_pattern_blocking(level_snapshot);
@@ -176,39 +191,6 @@ static void app_error_code_log_handler(const char *error_code)
     show_error_code_on_tm1637(error_code);
 }
 
-/**
- * Inicializuje stavový displej a spustí úlohu pro aktualizaci zobrazení.
- * Pokud inicializace displeje selže, bude místo toho použita chybová LED pro indikaci stavu.
- */
-void status_display_init(void)
-{
-    esp_err_t init_result = tm1637_init(&s_tm1637_config, &s_tm1637_display);
-    if (init_result != ESP_OK) {
-        s_tm1637_display = nullptr;
-        s_tm1637_available = false;
-        ESP_LOGE(TAG, "TM1637 init selhal, displej nebude pouzit: %s", esp_err_to_name(init_result));
-        errorled_fallback_signal();
-    } else {
-        esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, 7, true);
-        if (brightness_result != ESP_OK) {
-            s_tm1637_available = false;
-            ESP_LOGE(TAG, "TM1637 brightness selhal, displej nebude pouzit: %s", esp_err_to_name(brightness_result));
-            errorled_fallback_signal();
-        } else {
-            esp_err_t startup_result = tm1637_startup_animation_play_preset(s_tm1637_display, TM1637_STARTUP_ANIMATION_FAST);
-            if (startup_result != ESP_OK) {
-                s_tm1637_available = false;
-                ESP_LOGE(TAG, "TM1637 startup sekvence selhala, displej nebude pouzit: %s", esp_err_to_name(startup_result));
-                errorled_fallback_signal();
-            } else {
-                s_tm1637_available = true;
-                xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
-            }
-        }
-    }
-
-    app_error_check_set_handler(app_error_code_log_handler);
-}
 
 /**
  * Nastaví stav sítě pro zobrazení na displeji.
@@ -219,10 +201,58 @@ void status_display_set_network_state(const network_event_t *event)
         return;
     }
 
-    taskENTER_CRITICAL(&s_status_mux);
     s_network_level = event->level;
-    taskEXIT_CRITICAL(&s_status_mux);
 }
+
+/// @brief //////// Poblikáván LED při MQTT aktivitě///////////////////////////////////////////////////////////////////////////////  
+/// @param xTimer 
+
+void mqtt_activiti_led_off_finished ( TimerHandle_t xTimer ) 
+{
+    set_colon(false);
+    xTimerStart(s_mqtt_activity_colon_off_timer, 0);
+}
+
+void mqtt_activiti_led_on_finished ( TimerHandle_t xTimer ) 
+{
+    set_colon(true);
+    s_mqtt_activity_timer_running = false;
+}
+
+
+void status_display_notify_mqtt_activity(void)
+{
+    if (s_error_latched || s_text_latched || s_mqtt_activity_timer_running || s_network_level != SYS_NET_MQTT_READY) {
+        return;
+    }
+
+    s_mqtt_activity_timer_running = true;
+    set_colon(false);
+    xTimerStart(s_mqtt_activity_colon_on_timer, 0);
+
+}
+
+static void mqtt_activity_init_timers(void)
+{
+     s_mqtt_activity_colon_on_timer = xTimerCreateStatic (
+        "mqtt_colon",
+        pdMS_TO_TICKS(MQTT_ACTIVITY_COLON_ON_MS),
+        pdFALSE,
+        nullptr,
+        mqtt_activiti_led_off_finished,
+        &s_mqtt_activity_colon_on_timer_buffer
+    );
+    s_mqtt_activity_colon_off_timer = xTimerCreateStatic (
+        "mqtt_colon_off",
+        pdMS_TO_TICKS(MQTT_ACTIVITY_COLON_OFF_MS),
+        pdFALSE,
+        nullptr,
+        mqtt_activiti_led_on_finished,
+        &s_mqtt_activity_colon_off_timer_buffer
+    );
+}
+
+//////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Zobrazí na displeji indikaci, že zařízení je v režimu přístupového bodu pro konfiguraci Wi-Fi. 
@@ -252,3 +282,59 @@ void status_display_ap_mode()
     set_segments(P_SEGMENTS, 2, true);
     set_segments(DASH_SEGMENTS, 3, true);
 }
+
+
+/**
+ * Inicializuje stavový displej a spustí úlohu pro aktualizaci zobrazení.
+ * Pokud inicializace displeje selže, bude místo toho použita chybová LED pro indikaci stavu.
+ */
+void status_display_init(void)
+{
+
+    mqtt_activity_init_timers();
+
+    esp_err_t init_result = tm1637_init(&s_tm1637_config, &s_tm1637_display);
+    if (init_result != ESP_OK) {
+        s_tm1637_display = nullptr;
+        s_tm1637_available = false;
+        ESP_LOGE(TAG, "TM1637 init selhal, displej nebude pouzit: %s", esp_err_to_name(init_result));
+        errorled_fallback_signal();
+    } else {
+        esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, 7, true);
+        if (brightness_result != ESP_OK) {
+            s_tm1637_available = false;
+            ESP_LOGE(TAG, "TM1637 brightness selhal, displej nebude pouzit: %s", esp_err_to_name(brightness_result));
+            errorled_fallback_signal();
+        } else {
+            esp_err_t startup_result = tm1637_startup_animation_play_preset(s_tm1637_display, TM1637_STARTUP_ANIMATION_FAST);
+            if (startup_result != ESP_OK) {
+                s_tm1637_available = false;
+                ESP_LOGE(TAG, "TM1637 startup sekvence selhala, displej nebude pouzit: %s", esp_err_to_name(startup_result));
+                errorled_fallback_signal();
+            } else {
+                s_tm1637_available = true;
+                xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
+            }
+        }
+    }
+
+    app_error_check_set_handler(app_error_code_log_handler);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
