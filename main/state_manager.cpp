@@ -5,7 +5,9 @@ extern "C" {
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "driver/gpio.h"
+#include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 
 #ifdef __cplusplus
 }
@@ -22,6 +24,33 @@ extern "C" {
 #include <tm1637.h>
 
 static const char *TAG = "state";
+
+static void publish_boot_diagnostics_once(void)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    const esp_err_t state_result = (running != nullptr)
+                                     ? esp_ota_get_state_partition(running, &state)
+                                     : ESP_ERR_INVALID_STATE;
+
+    const char *boot_mode = "normal";
+    if (state_result == ESP_OK && state == ESP_OTA_IMG_PENDING_VERIFY) {
+        boot_mode = "ota";
+    }
+
+    esp_err_t boot_mode_result = mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_SYSTEM_BOOT_MODE, boot_mode);
+    if (boot_mode_result != ESP_OK) {
+        ESP_LOGW(TAG, "Publikace boot mode selhala: %s", esp_err_to_name(boot_mode_result));
+    }
+
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    if (app_desc != nullptr) {
+        esp_err_t fw_result = mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_FW_VERSION, app_desc->version);
+        if (fw_result != ESP_OK) {
+            ESP_LOGW(TAG, "Publikace fw_version selhala: %s", esp_err_to_name(fw_result));
+        }
+    }
+}
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
@@ -84,6 +113,7 @@ static void state_manager_task(void *pvParameters)
     app_event_t event = {};
     char debug_line[128];
     bool mqtt_ready_published = false;
+    bool boot_diagnostics_published = false;
 
     while (true) {
         if (!sensor_events_receive(&event, portMAX_DELAY)) {
@@ -155,6 +185,11 @@ static void state_manager_task(void *pvParameters)
                 if (mqtt_ready) {
                     esp_log_level_set("*", ESP_LOG_WARN);        // default pro vše
                     esp_log_level_set("mqtt_cmd", ESP_LOG_DEBUG); // detailní síť
+                    if (!boot_diagnostics_published) {
+                        publish_boot_diagnostics_once();
+                        boot_diagnostics_published = true;
+                    }
+
                     if (!mqtt_ready_published) {
                         esp_err_t enqueue_result = mqtt_publisher_enqueue_text(
                             mqtt_topic_id_t::TOPIC_SYSTEM_STATUS,
@@ -168,6 +203,7 @@ static void state_manager_task(void *pvParameters)
                     }
                 } else {
                     mqtt_ready_published = false;
+                    boot_diagnostics_published = false;
                 }
                 break;
             }

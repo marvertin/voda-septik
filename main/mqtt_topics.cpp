@@ -30,6 +30,9 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_STAV_PUMPA_ENERGIE_JALOVA_KVARH,   "stav/pumpa/energie_jalova_kvarh",  PUBLISH_ONLY,   NUMBER,  1, true),
 
     TOPIC_ENTRY(TOPIC_SYSTEM_STATUS,                     "system/status",                    PUBLISH_ONLY,   TEXT,    1, true),
+    TOPIC_ENTRY(TOPIC_SYSTEM_BOOT_MODE,                  "system/boot_mode",                 PUBLISH_ONLY,   TEXT,    1, true),
+    TOPIC_ENTRY(TOPIC_SYSTEM_OTA_EVENT,                  "system/ota/event",                 PUBLISH_ONLY,   TEXT,    1, false),
+    TOPIC_ENTRY(TOPIC_SYSTEM_OTA_PROGRESS,               "system/ota/progress",              PUBLISH_ONLY,   NUMBER,  1, false),
     TOPIC_ENTRY(TOPIC_SYSTEM_REBOOT_REASON,              "system/reboot_reason",             PUBLISH_ONLY,   TEXT,    1, true),
     TOPIC_ENTRY(TOPIC_SYSTEM_REBOOT_COUNTER,             "system/reboot_counter",            PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_SYSTEM_LAST_DISCONNECT_DURATION_S, "system/last_disconnect_duration_s", PUBLISH_ONLY,  NUMBER,  1, true),

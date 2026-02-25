@@ -31,6 +31,9 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 │
 ├── system/
 │    ├── status                     [-] online/offline (řešeno přes LWT). HA: binary_sensor (device_class: connectivity)
+│    ├── boot_mode                  [text] Rezim startu firmware: `ota` (pending verify) / `normal`
+│    ├── ota/event                  [text] Prubeh OTA operace (start/download/rebooting/confirmed/error_...)
+│    ├── ota/progress               [%] Prubeh OTA stahovani a zapisu (0-100)
 │    ├── reboot_reason              [text] Důvod posledního rebootu (esp_reset_reason). HA: sensor
 │    ├── reboot_counter             [count] Počet rebootů od instalace. HA: sensor (state_class: total_increasing)
 │    └── last_disconnect_duration_s [s] Doba posledního výpadku spojení. HA: sensor
