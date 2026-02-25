@@ -11,7 +11,6 @@
 #include "pcf8574.h"
 
 #include "pins.h"
-#include "blikaniled.h"
 #include "lcd-demo.h"
 #include "prutokomer.h"
 #include "teplota-demo.h"
@@ -220,7 +219,6 @@ void cpp_app_main(void)
     prutokomer_init();
 
     // vytvoření paralelních tasků
-    blikaniled_init();
     teplota_demo_init();
     hladina_demo_init();
 
