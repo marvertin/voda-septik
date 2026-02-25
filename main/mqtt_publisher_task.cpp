@@ -90,16 +90,16 @@ static void flush_cached_values(void)
 
 static bool value_type_matches_topic(mqtt_payload_kind_t payload_kind, mqtt_publish_value_type_t value_type)
 {
-    static constexpr bool COMPAT[(size_t)mqtt_payload_kind_t::JSON + 1][(size_t)mqtt_publish_value_type_t::TEXT + 1] = {
-        /* NUMBER  */ {false, true,  true,  false},
-        /* BOOLEAN */ {true,  false, false, false},
-        /* TEXT    */ {false, false, false, true },
-        /* JSON    */ {false, false, false, true },
+    static constexpr bool COMPAT[(size_t)mqtt_payload_kind_t::JSON + 1][(size_t)mqtt_publish_value_type_t::EMPTY + 1] = {
+        /* NUMBER  */ {false, true,  true,  false, true },
+        /* BOOLEAN */ {true,  false, false, false, true },
+        /* TEXT    */ {false, false, false, true,  true },
+        /* JSON    */ {false, false, false, true,  true },
     };
 
     const size_t payload_index = (size_t)payload_kind;
     const size_t value_index = (size_t)value_type;
-    if (payload_index > (size_t)mqtt_payload_kind_t::JSON || value_index > (size_t)mqtt_publish_value_type_t::TEXT) {
+    if (payload_index > (size_t)mqtt_payload_kind_t::JSON || value_index > (size_t)mqtt_publish_value_type_t::EMPTY) {
         return false;
     }
 
@@ -148,6 +148,9 @@ static esp_err_t build_payload_string(const mqtt_publish_event_t &event, char *p
             return ESP_OK;
         case mqtt_publish_value_type_t::TEXT:
             snprintf(payload, payload_len, "%s", event.value.as_text);
+            return ESP_OK;
+        case mqtt_publish_value_type_t::EMPTY:
+            payload[0] = '\0';
             return ESP_OK;
         default:
             return ESP_ERR_INVALID_ARG;
@@ -303,6 +306,8 @@ esp_err_t mqtt_publisher_enqueue(const mqtt_publish_event_t *event, TickType_t t
             strncpy(item.event.value.as_text, event->value.as_text, MQTT_PUBLISH_TEXT_MAX_LEN - 1);
             item.event.value.as_text[MQTT_PUBLISH_TEXT_MAX_LEN - 1] = '\0';
             break;
+        case mqtt_publish_value_type_t::EMPTY:
+            break;
         default:
             return ESP_ERR_INVALID_ARG;
     }
@@ -352,6 +357,15 @@ esp_err_t mqtt_publisher_enqueue_text(mqtt_topic_id_t topic_id, const char *valu
     event.value_type = mqtt_publish_value_type_t::TEXT;
     strncpy(event.value.as_text, value, MQTT_PUBLISH_TEXT_MAX_LEN - 1);
     event.value.as_text[MQTT_PUBLISH_TEXT_MAX_LEN - 1] = '\0';
+    return mqtt_publisher_enqueue(&event, MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS);
+}
+
+esp_err_t mqtt_publisher_enqueue_empty(mqtt_topic_id_t topic_id)
+{
+    mqtt_publish_event_t event;
+    memset(&event, 0, sizeof(event));
+    event.topic_id = topic_id;
+    event.value_type = mqtt_publish_value_type_t::EMPTY;
     return mqtt_publisher_enqueue(&event, MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS);
 }
 

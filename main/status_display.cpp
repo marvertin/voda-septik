@@ -271,11 +271,13 @@ void status_display_init(void)
     esp_err_t init_result = tm1637_init(&s_tm1637_config, &s_tm1637_display);
     if (init_result != ESP_OK) {
         s_tm1637_display = nullptr;
-        s_tm1637_available = false;
         ESP_LOGE(TAG, "TM1637 init selhal, displej nebude pouzit: %s", esp_err_to_name(init_result));
-    } 
-    esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, 7, true);
-    esp_err_t startup_result = tm1637_startup_animation_play_preset(s_tm1637_display, TM1637_STARTUP_ANIMATION_FAST);
+    } else {
+        esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, 7, true);
+        esp_err_t startup_result = tm1637_startup_animation_play_preset(s_tm1637_display, TM1637_STARTUP_ANIMATION_FAST);
+        (void)brightness_result;
+        (void)startup_result;
+    }
 
     xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
 

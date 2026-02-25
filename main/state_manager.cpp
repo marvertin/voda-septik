@@ -69,12 +69,21 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
 static void publish_level_to_outputs(const sensor_event_t &event)
 {
     char text[16];
-    snprintf(text, sizeof(text), "H:%3.0fcm ", event.data.level.height_m * 100.0f);
-    lcd_print(8, 1, text, false, 0);
+    esp_err_t enqueue_result;
+    if (event.data.level.raw_value == 0) {
+        snprintf(text, sizeof(text), "H: ---  ");
+        lcd_print(8, 1, text, false, 0);
 
-    esp_err_t enqueue_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_OBJEM,
-        (double)event.data.level.height_m);
+        enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_OBJEM);
+    } else {
+        snprintf(text, sizeof(text), "H:%3.0fcm ", event.data.level.height_m * 100.0f);
+        lcd_print(8, 1, text, false, 0);
+
+        enqueue_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_OBJEM,
+            (double)event.data.level.height_m);
+    }
+
     if (enqueue_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue hladiny/objemu selhalo: %s", esp_err_to_name(enqueue_result));
     }
