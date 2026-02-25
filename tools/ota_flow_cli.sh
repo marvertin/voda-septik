@@ -9,6 +9,7 @@ TOPIC_ROOT="${TOPIC_ROOT:-zalivka/nadrz}"
 MQTT_PASS_FILE="${MQTT_PASS_FILE:-$HOME/.zalevaci-nadrz/mqtt_password}"
 HTTP_PORT="${OTA_HTTP_PORT:-8000}"
 BIN_PATH_DEFAULT="${OTA_BIN_PATH:-build/zalevaci-nadrz.bin}"
+OTA_WAIT_TIMEOUT_SEC="${OTA_WAIT_TIMEOUT_SEC:-300}"
 
 SERVER_PID=""
 
@@ -25,6 +26,49 @@ require_cmd() {
     echo "Chyba: chybi prikaz '$cmd'." >&2
     exit 1
   fi
+}
+
+wait_for_ota_boot() {
+  local timeout_sec="$1"
+  local line topic payload
+  local started_at=$SECONDS
+
+  echo
+  echo "Sleduji OTA eventy (timeout ${timeout_sec}s)..."
+
+  coproc OTA_SUB {
+    mosquitto_sub \
+      -h "$MQTT_HOST" \
+      -p "$MQTT_PORT" \
+      -u "$MQTT_USER" \
+      -P "$MQTT_PASS" \
+      -v \
+      -t "$TOPIC_ROOT/system/ota/#" \
+      -t "$TOPIC_ROOT/system/boot_mode" \
+      -t "$TOPIC_ROOT/diag/fw_version"
+  }
+
+  while true; do
+    if IFS= read -r -t 1 line <&"${OTA_SUB[0]}"; then
+      echo "[MQTT] $line"
+      topic="${line%% *}"
+      payload="${line#* }"
+
+      if [[ "$topic" == "$TOPIC_ROOT/system/boot_mode" && "$payload" == "ota" ]]; then
+        echo "Detekovan boot_mode=ota (novy OTA firmware nabootovan)."
+        kill "$OTA_SUB_PID" >/dev/null 2>&1 || true
+        wait "$OTA_SUB_PID" 2>/dev/null || true
+        return 0
+      fi
+    fi
+
+    if (( SECONDS - started_at >= timeout_sec )); then
+      echo "Timeout: neobjevil se system/boot_mode=ota do ${timeout_sec}s." >&2
+      kill "$OTA_SUB_PID" >/dev/null 2>&1 || true
+      wait "$OTA_SUB_PID" 2>/dev/null || true
+      return 1
+    fi
+  done
 }
 
 load_or_ask_password() {
@@ -109,6 +153,7 @@ stop_http_server() {
 
 main() {
   require_cmd mosquitto_pub
+  require_cmd mosquitto_sub
   require_cmd python3
 
   load_or_ask_password
@@ -148,8 +193,13 @@ main() {
   echo "Firmware URL pro OTA: $firmware_url"
   pub_cmd "$TOPIC_ROOT/cmd/ota/start" "$firmware_url"
 
+  if ! wait_for_ota_boot "$OTA_WAIT_TIMEOUT_SEC"; then
+    stop_http_server
+    exit 1
+  fi
+
   echo
-  echo "OTA command odeslan. Pockej na stazeni, flash a reboot zarizeni."
+  echo "OTA reboot byl detekovan."
   printf "Je nove FW v poradku a chces ho POTVRDIT? [y/N]: "
   if [[ -r /dev/tty ]]; then
     read -r confirm </dev/tty
