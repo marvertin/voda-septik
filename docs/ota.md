@@ -18,6 +18,7 @@ Nejjednodussi postup je pouzit interaktivni helper:
 4. Skript spusti lokalni HTTP server, posle `cmd/ota/start` a vypisuje OTA eventy.
 5. Po rebootu noveho firmware skript pocka na signal bootu OTA image (`system/boot_mode = ota`) a teprve potom se zepta na potvrzeni.
 6. Pokud vse funguje, potvrd novy firmware (skript posle `cmd/ota/confirm`).
+7. Po vyhodnoceni potvrzovaci otazky skript vzdy pocka 0.5 s a posle `cmd/reboot` (jak pri potvrzeni, tak i bez potvrzeni).
 
 Rucni postup bez helper skriptu:
 

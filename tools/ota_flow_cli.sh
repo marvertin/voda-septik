@@ -217,6 +217,11 @@ main() {
       ;;
   esac
 
+  echo "Pockam 0.5 s a poslu reboot command..."
+  sleep 0.5
+  pub_cmd "$TOPIC_ROOT/cmd/reboot" "1"
+  echo "Reboot command odeslan."
+
   stop_http_server
 }
 
