@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "mqtt_publish.h"
+#include "status_display.h"
 
 static const char *TAG = "mqtt_pub_task";
 static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
@@ -207,6 +208,7 @@ static esp_err_t publish_if_changed(const mqtt_publish_event_t &event)
     const mqtt_publish_event_t &event_to_publish = changed ? event : last.event;
     esp_err_t publish_result = publish_event_now(event_to_publish);
     if (publish_result == ESP_OK) {
+        status_display_notify_mqtt_activity();
         mark_published(last, now_ticks);
     }
 

@@ -19,6 +19,7 @@ extern "C" {
 #include "mqtt_topics.h"
 #include "network_init.h"
 #include "ota_manager.h"
+#include "status_display.h"
 #include "webapp_startup.h"
 
 static const char *TAG = "mqtt_cmd";
@@ -423,6 +424,8 @@ static void mqtt_commands_event_handler(void *handler_args,
              (data_preview[0] != '\0') ? data_preview : "(empty)",
              event->data_len,
              event->retain);
+
+    status_display_notify_mqtt_activity();
 
     if (event->retain != 0) {
         ESP_LOGW(TAG, "Retained command zprava ignorovana: topic=%s", (topic_preview[0] != '\0') ? topic_preview : "(empty)");
