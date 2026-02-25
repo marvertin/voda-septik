@@ -100,6 +100,14 @@ Volitelne lze prepsat parametry pres promenne prostredi:
 MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=zalivka/nadrz ./tools/mqtt_cmd_cli.sh
 ```
 
+Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij:
+
+```bash
+./tools/clear_retained_cmds.sh
+```
+
+Skript vycisti retained zpravy na `zalivka/nadrz/cmd/*`.
+
 Nize jsou priklady pro `mosquitto_sub` a `mosquitto_pub`.
 
 Nejdriv si nastav promenne (uprav podle sveho brokeru):

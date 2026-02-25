@@ -387,6 +387,17 @@ static void mqtt_commands_event_handler(void *handler_args,
         return;
     }
 
+    if (event_id == MQTT_EVENT_CONNECTED) {
+        ESP_LOGI(TAG, "MQTT connected event -> subscribe command topicu");
+        subscribe_command_topics(event->client);
+        return;
+    }
+
+    if (event_id != MQTT_EVENT_DATA) {
+        ESP_LOGV(TAG, "MQTT event id=%ld (%s) neni DATA, preskakuji", (long)event_id, mqtt_event_name(event_id));
+        return;
+    }
+
     char topic_preview[96] = {0};
     if (event->topic != nullptr && event->topic_len > 0) {
         const int topic_copy_len = (event->topic_len < (int)(sizeof(topic_preview) - 1))
@@ -406,32 +417,15 @@ static void mqtt_commands_event_handler(void *handler_args,
     }
 
     ESP_LOGI(TAG,
-             "MQTT event detail: type=%s id=%ld msg_id=%d topic_len=%d data_len=%d offset=%d total=%d client=%p",
-             mqtt_event_name(event_id),
-             (long)event_id,
+             "MQTT DATA event: msg_id=%d topic=%s payload=%s len=%d retained=%d",
              event->msg_id,
-             event->topic_len,
+             (topic_preview[0] != '\0') ? topic_preview : "(empty)",
+             (data_preview[0] != '\0') ? data_preview : "(empty)",
              event->data_len,
-             event->current_data_offset,
-             event->total_data_len,
-             (void *)event->client);
+             event->retain);
 
-    if (topic_preview[0] != '\0') {
-        ESP_LOGI(TAG, "MQTT event topic preview: %s", topic_preview);
-    }
-
-    if (data_preview[0] != '\0') {
-        ESP_LOGI(TAG, "MQTT event payload preview: %s", data_preview);
-    }
-
-    if (event_id == MQTT_EVENT_CONNECTED) {
-        ESP_LOGI(TAG, "MQTT connected event -> subscribe command topicu");
-        subscribe_command_topics(event->client);
-        return;
-    }
-
-    if (event_id != MQTT_EVENT_DATA) {
-        ESP_LOGI(TAG, "MQTT event id=%ld neni DATA, preskakuji", (long)event_id);
+    if (event->retain != 0) {
+        ESP_LOGW(TAG, "Retained command zprava ignorovana: topic=%s", (topic_preview[0] != '\0') ? topic_preview : "(empty)");
         return;
     }
 

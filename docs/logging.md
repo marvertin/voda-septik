@@ -59,6 +59,16 @@ V menu je volba `log/level`.
 
 Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`.
 
+### Vycisteni starych retained commandu
+
+Pokud broker drzi stare retained zpravy na `cmd/*`, vycisti je jednim prikazem:
+
+```bash
+./tools/clear_retained_cmds.sh
+```
+
+Skript posle pro vsechny command topicy retained null zpravu (`-r -n`) a tim je na brokeru smaze.
+
 ## Jak to funguje uvnitr
 
 - MQTT topic `cmd/log/level` je registrovany v centralni tabulce topicu (`main/mqtt_topics.h/.cpp`).
