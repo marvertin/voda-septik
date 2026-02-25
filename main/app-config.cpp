@@ -218,6 +218,8 @@ esp_err_t app_config_ensure_defaults(void)
 
     if (changed) {
         result = nvs_commit(handle);
+    } else {
+        result = ESP_OK;
     }
     nvs_close(handle);
     return result;
