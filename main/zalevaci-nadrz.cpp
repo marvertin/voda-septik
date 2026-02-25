@@ -221,12 +221,12 @@ void cpp_app_main(void)
     state_manager_start();
     
     // initialize sensor producer tasks
-    //prutokomer_init();
+    prutokomer_init();
 
     // vytvoření paralelních tasků
     blikaniled_init();
-    //teplota_demo_init();
-    //hladina_demo_init();
+    teplota_demo_init();
+    hladina_demo_init();
 
 
 }
