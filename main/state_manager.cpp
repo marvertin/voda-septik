@@ -183,8 +183,7 @@ static void state_manager_task(void *pvParameters)
                 }
 
                 if (mqtt_ready) {
-                    esp_log_level_set("*", ESP_LOG_WARN);        // default pro vše
-                    esp_log_level_set("mqtt_cmd", ESP_LOG_DEBUG); // detailní síť
+
                     if (!boot_diagnostics_published) {
                         publish_boot_diagnostics_once();
                         boot_diagnostics_published = true;

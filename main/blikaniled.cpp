@@ -13,6 +13,8 @@ extern "C" {
 #endif
 #include <esp_log.h>
 
+static const char *TAG = "blikaniled";
+
 static void led_task(void *pvParameters)
 {
     while (1) {
@@ -20,8 +22,7 @@ static void led_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(LED2_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(300));
-        esp_log_level_set("ledky", ESP_LOG_DEBUG); // detailní síť
-        ESP_LOGI("ledky", "LED toggle 6");
+        ESP_LOGI(TAG, "LED toggle 6");
     }
 }
 

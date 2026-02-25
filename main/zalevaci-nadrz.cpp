@@ -38,6 +38,8 @@ extern "C" {
     void cpp_app_main(void);
 }
 
+static const char *TAG = "main";
+
 static bool is_error_reset_reason(esp_reset_reason_t reason)
 {
     switch (reason) {
@@ -61,7 +63,7 @@ static void indicate_error_reset_if_needed(void)
         return;
     }
 
-    ESP_LOGW("main", "Detekovan chybovy reset (reason=%d), spoustim chybovou LED sekvenci", static_cast<int>(reason));
+    ESP_LOGW(TAG, "Detekovan chybovy reset (reason=%d), spoustim chybovou LED sekvenci", static_cast<int>(reason));
 
     gpio_reset_pin(ERRORLED_PIN);
     gpio_set_direction(ERRORLED_PIN, GPIO_MODE_OUTPUT);
@@ -89,12 +91,12 @@ static void log_config_webapp_url(void)
     if (ap_netif != NULL) {
         esp_netif_ip_info_t ip_info = {};
         if (esp_netif_get_ip_info(ap_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
-            ESP_LOGI("main", "Konfiguracni aplikace bezi na: http://" IPSTR "/", IP2STR(&ip_info.ip));
+            ESP_LOGI(TAG, "Konfiguracni aplikace bezi na: http://" IPSTR "/", IP2STR(&ip_info.ip));
             return;
         }
     }
 
-    ESP_LOGI("main", "Konfiguracni aplikace bezi na: http://192.168.4.1/");
+    ESP_LOGI(TAG, "Konfiguracni aplikace bezi na: http://192.168.4.1/");
 }
 
 static bool s_ap_switch_done = false;
@@ -107,15 +109,15 @@ static void on_boot_button_pressed(void *ctx)
         return;
     }
 
-    ESP_LOGW("main", "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
+    ESP_LOGW(TAG, "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
     esp_err_t ap_result = network_init_ap("zalevaci-config", "");
     if (ap_result == ESP_OK) {
         s_ap_switch_done = true;
-        ESP_LOGI("main", "Konfiguracni AP rezim aktivni");
+        ESP_LOGI(TAG, "Konfiguracni AP rezim aktivni");
         vTaskDelay(pdMS_TO_TICKS(300));
         log_config_webapp_url();
     } else {
-        ESP_LOGE("main", "Prepnuti do AP rezimu selhalo: %s", esp_err_to_name(ap_result));
+        ESP_LOGE(TAG, "Prepnuti do AP rezimu selhalo: %s", esp_err_to_name(ap_result));
     }
 }
 
@@ -163,9 +165,9 @@ void cpp_app_main(void)
     APP_ERROR_CHECK("E103", app_config_load_runtime_flags());
 
     if (app_config_is_service_mode()) {
-        ESP_LOGW("main", "System bezi v SERVISNIM rezimu");
+        ESP_LOGW(TAG, "System bezi v SERVISNIM rezimu");
     } else {
-        ESP_LOGI("main", "System bezi v normalnim rezimu");
+        ESP_LOGI(TAG, "System bezi v normalnim rezimu");
     }
 
     sensor_events_init(32);
@@ -198,7 +200,7 @@ void cpp_app_main(void)
         .retain = true,
     };
 
-    ESP_LOGI("main",
+    ESP_LOGI(TAG,
              "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, status_topic=%s",
              mqtt_uri,
              (mqtt_username[0] != '\0') ? mqtt_username : "(none)",

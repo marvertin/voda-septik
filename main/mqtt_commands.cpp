@@ -151,6 +151,126 @@ static void command_set_debug_sensors(const char *payload)
     ESP_LOGI(TAG, "Debug sensors filter: %s", s_debug_sensors);
 }
 
+static char *trim_in_place(char *text)
+{
+    if (text == nullptr) {
+        return nullptr;
+    }
+
+    while (*text != '\0' && isspace((unsigned char)*text) != 0) {
+        ++text;
+    }
+
+    char *end = text + strlen(text);
+    while (end > text && isspace((unsigned char)*(end - 1)) != 0) {
+        --end;
+    }
+    *end = '\0';
+
+    return text;
+}
+
+static bool parse_log_level(const char *text, esp_log_level_t *out_level)
+{
+    if (text == nullptr || out_level == nullptr) {
+        return false;
+    }
+
+    if (strcasecmp(text, "none") == 0 || strcmp(text, "0") == 0) {
+        *out_level = ESP_LOG_NONE;
+        return true;
+    }
+    if (strcasecmp(text, "error") == 0 || strcasecmp(text, "err") == 0 || strcmp(text, "1") == 0) {
+        *out_level = ESP_LOG_ERROR;
+        return true;
+    }
+    if (strcasecmp(text, "warn") == 0 || strcasecmp(text, "warning") == 0 || strcmp(text, "2") == 0) {
+        *out_level = ESP_LOG_WARN;
+        return true;
+    }
+    if (strcasecmp(text, "info") == 0 || strcmp(text, "3") == 0) {
+        *out_level = ESP_LOG_INFO;
+        return true;
+    }
+    if (strcasecmp(text, "debug") == 0 || strcmp(text, "4") == 0) {
+        *out_level = ESP_LOG_DEBUG;
+        return true;
+    }
+    if (strcasecmp(text, "verbose") == 0 || strcasecmp(text, "trace") == 0 || strcmp(text, "5") == 0) {
+        *out_level = ESP_LOG_VERBOSE;
+        return true;
+    }
+
+    return false;
+}
+
+static const char *log_level_name(esp_log_level_t level)
+{
+    switch (level) {
+        case ESP_LOG_NONE: return "NONE";
+        case ESP_LOG_ERROR: return "ERROR";
+        case ESP_LOG_WARN: return "WARN";
+        case ESP_LOG_INFO: return "INFO";
+        case ESP_LOG_DEBUG: return "DEBUG";
+        case ESP_LOG_VERBOSE: return "VERBOSE";
+        default: return "UNKNOWN";
+    }
+}
+
+static void command_set_log_level(const char *payload)
+{
+    if (payload == nullptr || payload[0] == '\0') {
+        ESP_LOGW(TAG, "cmd/log/level: prazdny payload, ocekavam 'tag=level' nebo 'tag level'");
+        return;
+    }
+
+    char buffer[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
+    strncpy(buffer, payload, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    char *cursor = trim_in_place(buffer);
+    if (cursor == nullptr || cursor[0] == '\0') {
+        ESP_LOGW(TAG, "cmd/log/level: prazdny payload po trimu");
+        return;
+    }
+
+    char *separator = strchr(cursor, '=');
+    if (separator == nullptr) {
+        separator = strchr(cursor, ':');
+    }
+    if (separator == nullptr) {
+        for (char *scan = cursor; *scan != '\0'; ++scan) {
+            if (isspace((unsigned char)*scan) != 0) {
+                separator = scan;
+                break;
+            }
+        }
+    }
+
+    if (separator == nullptr) {
+        ESP_LOGW(TAG, "cmd/log/level: neplatny payload '%s', ocekavam oddeleni tag/level", cursor);
+        return;
+    }
+
+    *separator = '\0';
+    char *tag = trim_in_place(cursor);
+    char *level_text = trim_in_place(separator + 1);
+
+    if (tag == nullptr || tag[0] == '\0' || level_text == nullptr || level_text[0] == '\0') {
+        ESP_LOGW(TAG, "cmd/log/level: neplatny payload '%s'", payload);
+        return;
+    }
+
+    esp_log_level_t level = ESP_LOG_INFO;
+    if (!parse_log_level(level_text, &level)) {
+        ESP_LOGW(TAG, "cmd/log/level: neznama uroven '%s'", level_text);
+        return;
+    }
+
+    esp_log_level_set(tag, level);
+    ESP_LOGW(TAG, "Log level nastaven: tag='%s' level=%s", tag, log_level_name(level));
+}
+
 static void handle_command(mqtt_topic_id_t command_id, const char *payload)
 {
     ESP_LOGI(TAG,
@@ -198,6 +318,10 @@ static void handle_command(mqtt_topic_id_t command_id, const char *payload)
 
         case mqtt_topic_id_t::TOPIC_CMD_DEBUG_SENSORS:
             command_set_debug_sensors(payload);
+            break;
+
+        case mqtt_topic_id_t::TOPIC_CMD_LOG_LEVEL:
+            command_set_log_level(payload);
             break;
 
         case mqtt_topic_id_t::TOPIC_CMD_OTA_START: {
