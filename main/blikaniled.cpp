@@ -11,14 +11,17 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+#include <esp_log.h>
 
-static void led_task_2(void *pvParameters)
+static void led_task(void *pvParameters)
 {
     while (1) {
         gpio_set_level(LED2_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(1370));
+        vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(LED2_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(1370));
+        vTaskDelay(pdMS_TO_TICKS(300));
+        esp_log_level_set("ledky", ESP_LOG_DEBUG); // detailní síť
+        ESP_LOGI("ledky", "LED toggle 222");
     }
 }
 
@@ -29,5 +32,5 @@ void blikaniled_init(void)
     gpio_reset_pin(LED2_PIN);
     gpio_set_direction(LED2_PIN, GPIO_MODE_OUTPUT);
 
-    xTaskCreate(led_task_2, "led_task_2", 2048, NULL, 5, NULL);
+    xTaskCreate(led_task, "led_task", 2048, NULL, 5, NULL);
 }
