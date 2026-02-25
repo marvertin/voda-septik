@@ -4,7 +4,6 @@
 #include <cstring>
 
 static const char *APP_CFG_NAMESPACE = "app_cfg";
-static bool s_service_mode = false;
 
 static const config_item_t APP_CORE_CONFIG_ITEMS[] = {
     {
@@ -32,21 +31,6 @@ static const config_item_t APP_CORE_CONFIG_ITEMS[] = {
         .default_float = 0.0f,
         .default_bool = false,
         .max_string_len = 63,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
-        .key = "service_mode",
-        .label = "Servisni rezim",
-        .description = "Zapne servisni rezim systemu po restartu.",
-        .type = CONFIG_VALUE_BOOL,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
         .min_int = 0,
         .max_int = 0,
         .min_float = 0.0f,
@@ -224,6 +208,14 @@ esp_err_t app_config_ensure_defaults(void)
         }
     }
 
+    result = nvs_erase_key(handle, "service_mode");
+    if (result == ESP_OK) {
+        changed = true;
+    } else if (result != ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(handle);
+        return result;
+    }
+
     if (changed) {
         result = nvs_commit(handle);
     }
@@ -254,29 +246,6 @@ esp_err_t app_config_load_wifi_credentials(char *ssid, size_t ssid_len, char *pa
     result = nvs_get_str(handle, "wifi_pass", password, &pass_required);
     nvs_close(handle);
     return result;
-}
-
-esp_err_t app_config_load_runtime_flags(void)
-{
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open(APP_CFG_NAMESPACE, NVS_READONLY, &handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    uint8_t service_mode = 0;
-    result = nvs_get_u8(handle, "service_mode", &service_mode);
-    nvs_close(handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND) {
-        s_service_mode = false;
-        return ESP_OK;
-    }
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    s_service_mode = (service_mode != 0);
-    return ESP_OK;
 }
 
 esp_err_t app_config_load_mqtt_uri(char *uri, size_t uri_len)
@@ -320,9 +289,4 @@ esp_err_t app_config_load_mqtt_credentials(char *username, size_t username_len, 
     result = nvs_get_str(handle, "mqtt_pass", password, &pass_required);
     nvs_close(handle);
     return result;
-}
-
-bool app_config_is_service_mode(void)
-{
-    return s_service_mode;
 }

@@ -162,13 +162,7 @@ void cpp_app_main(void)
     APP_ERROR_CHECK("E101", nvs_result);
 
     APP_ERROR_CHECK("E102", app_config_ensure_defaults());
-    APP_ERROR_CHECK("E103", app_config_load_runtime_flags());
-
-    if (app_config_is_service_mode()) {
-        ESP_LOGW(TAG, "System bezi v SERVISNIM rezimu");
-    } else {
-        ESP_LOGI(TAG, "System bezi v normalnim rezimu");
-    }
+    ESP_LOGI(TAG, "System bezi v normalnim rezimu");
 
     sensor_events_init(32);
     network_event_bridge_init();

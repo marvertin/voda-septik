@@ -75,9 +75,6 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
       └── intermediate              [text] Mezivýsledky filtrace a výpočtů. HA: sensor
 ```      
 
-* home/water_tank/cmd/service_mode
-
-
 ## Ovladani pres Mosquitto CLI
 
 Podrobny navod k logovani je v dokumentu [Logovani a log levely](docs/logging.md).
