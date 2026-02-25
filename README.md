@@ -1,5 +1,10 @@
 # zalevaci-nadrz
 
+## Dokumentace
+
+- [OTA aktualizace](docs/ota.md)
+- [Logovani a log levely](docs/logging.md)
+
 ## Struktura mqtt topiků.
 
 Poznamka (migrace):
@@ -61,6 +66,7 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 │    ├── debug/stop                 [-] Zastavení debug režimu. HA: button
 │    ├── debug/interval_ms          [ms] Po kolika milisekundách se mají do "debug" posílat MQTT data. HA: number
 │    ├── debug/sensors              [text/json] Seznam senzorů, pro které se posílají ladicí data. HA: text
+│    ├── log/level                  [text] Nastaveni log levelu per tag (payload: tag=level)
 │    ├── ota/start                  [url] URL na binarni obraz firmware (http/https)
 │    └── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
 │
@@ -73,6 +79,8 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 
 
 ## Ovladani pres Mosquitto CLI
+
+Podrobny navod k logovani je v dokumentu [Logovani a log levely](docs/logging.md).
 
 Pro pohodlne ovladani je v projektu interaktivni skript:
 
@@ -174,6 +182,8 @@ mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v
 
 
 ## OTA helper skript
+
+Podrobny navod k OTA je v dokumentu [OTA aktualizace](docs/ota.md).
 
 V projektu je interaktivni helper, ktery:
 - spusti jednoduchy HTTP server nad vybranym `.bin` souborem,
