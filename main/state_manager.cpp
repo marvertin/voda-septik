@@ -13,6 +13,7 @@ extern "C" {
 }
 #endif
 
+#include <cmath>
 #include <stdio.h>
 
 #include "state_manager.h"
@@ -55,12 +56,21 @@ static void publish_boot_diagnostics_once(void)
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
     char text[16];
-    snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
-    lcd_print(8, 0, text, false, 0);
+    esp_err_t enqueue_result;
+    if (std::isnan(event.data.temperature.temperature_c)) {
+        snprintf(text, sizeof(text), "T: --.- ");
+        lcd_print(8, 0, text, false, 0);
 
-    esp_err_t enqueue_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA,
-        (double)event.data.temperature.temperature_c);
+        enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA);
+    } else {
+        snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
+        lcd_print(8, 0, text, false, 0);
+
+        enqueue_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA,
+            (double)event.data.temperature.temperature_c);
+    }
+
     if (enqueue_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue teploty vody selhalo: %s", esp_err_to_name(enqueue_result));
     }

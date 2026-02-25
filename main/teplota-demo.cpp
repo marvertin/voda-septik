@@ -3,6 +3,7 @@ extern "C" {
 #endif
 
 #include <inttypes.h>
+#include <math.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <onewire.h>
@@ -135,6 +136,25 @@ static void temperature_task(void *pvParameters)
             }
         } else {
             ESP_LOGE(TAG, "Nebylo možno přečíst teplotu");
+
+            app_event_t event = {
+                .event_type = EVT_SENSOR,
+                .timestamp_us = esp_timer_get_time(),
+                .data = {
+                    .sensor = {
+                        .sensor_type = SENSOR_EVENT_TEMPERATURE,
+                        .data = {
+                            .temperature = {
+                                .temperature_c = NAN,
+                            },
+                        },
+                    },
+                },
+            };
+
+            if (!sensor_events_publish(&event, pdMS_TO_TICKS(50))) {
+                ESP_LOGW(TAG, "Fronta sensor eventu je plna, teplota (invalid) zahozena");
+            }
         }
         
         // Čtení každou sekundu
