@@ -140,6 +140,11 @@ cleanup:
 
 esp_err_t ota_manager_start_from_url(const char *url)
 {
+#if !CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    ESP_LOGW(TAG,
+             "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE je vypnuto - neconfirmovany FW se po resetu nevrati");
+#endif
+
     if (url == nullptr || url[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }

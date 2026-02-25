@@ -21,7 +21,7 @@ static void led_task(void *pvParameters)
         gpio_set_level(LED2_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(300));
         esp_log_level_set("ledky", ESP_LOG_DEBUG); // detailní síť
-        ESP_LOGI("ledky", "LED toggle 222");
+        ESP_LOGI("ledky", "LED toggle 6");
     }
 }
 
