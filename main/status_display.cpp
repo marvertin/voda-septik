@@ -37,8 +37,7 @@ static tm1637_config_t s_tm1637_config = {
 };
 
 static tm1637_handle_t s_tm1637_display = nullptr;
-static bool s_error_latched = false;
-static bool s_text_latched = false;
+static bool s_display_latched = false;
 
 static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
@@ -83,7 +82,7 @@ static constexpr float FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN = 0.20f;
 static constexpr float FLOW_SPINNER_SPEED_MAX_FLOW_L_MIN = 30.0f;
 static constexpr uint32_t FLOW_SPINNER_MIN_PERIOD_MS = 80;
 static constexpr uint32_t FLOW_SPINNER_MAX_PERIOD_MS = 450;
-static constexpr TickType_t FLOW_SPINNER_IDLE_POLL_DELAY = pdMS_TO_TICKS(30);
+static constexpr TickType_t FLOW_SPINNER_IDLE_POLL_DELAY = pdMS_TO_TICKS(200);
 
 static constexpr uint8_t FLOW_SPINNER_SEGMENT_MASK_POS0 = static_cast<uint8_t>(
     TM1637_SEG_A | TM1637_SEG_D | TM1637_SEG_E | TM1637_SEG_F);
@@ -116,11 +115,6 @@ static void set_error_led(bool on) {
     gpio_set_level(ERRORLED_PIN, on ? 1 : 0);
 }
 
-static bool is_system_ok_for_dimmed_brightness(void)
-{
-    return !s_text_latched &&
-           !s_error_latched;
-}
 
 static void apply_brightness(uint8_t level)
 {
@@ -155,9 +149,9 @@ static void brightness_alert_hold_timer_cb(TimerHandle_t timer)
         // Pokud není síť v pořádku, držíme jas na maximu, aby byla chyba dobře vidět a znovu pustíme timer
         refresh_brightness(true); // Pro jistotu znovu nastavíme jas na maximum, i když už tam je, aby se obnovil případný timer pro držení této úrovně jasu
         restart_brightness_alert_hold_timer();
-        return;
-    }
-    if (is_system_ok_for_dimmed_brightness()) {
+    } else 
+    {
+        // Pokud je síť v pořádku, můžeme snížit jas, protože už není potřeba upozorňovat na chybu
         refresh_brightness(false);
     }
 }
@@ -254,6 +248,9 @@ static void flow_spinner_show_frame(uint8_t frame_index)
 
 void set_segments(const uint8_t segments, uint8_t position, bool on) 
 {
+    if (s_display_latched) { // Display se nachází v latched stavu, což znamená, že zobrazuje důležitou informaci (například chybu), kterou nechceme přepsat běžnými aktualizacemi segmentů, dokud nebude zařízení restartováno nebo dokud se znovu nezobrazí jiná informace, která tento latched stav přepíše. V tomto stavu ignorujeme všechny pokusy o změnu segmentů, aby nedošlo k nechtěné změně zobrazení důležité informace.
+        return;
+    }
     if (position < 4) {
         const uint8_t updated_segments = on ? (svitici_segmenty[position] | segments)
                                             : (svitici_segmenty[position] & ~segments);
@@ -296,69 +293,52 @@ static void blink_pattern_blocking(system_network_level_t level)
  * Zobrazí na stavovém displeji indikaci aktuálního stavu sítě. 
  * Pokud zobrazení není dostupné, bude místo toho použita chybová LED pro indikaci stavu.
  */
-static void status_display_task(void *pvParameters)
+static void network_colon_status_display_task(void *pvParameters)
 {
     (void)pvParameters;
 
-
-    /*
-    set_segments(TM1637_SEG_A, 0, true);
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 5; ++j) {
-            blink_pattern_blocking(static_cast<system_network_level_t>(i));
-        }
-    }
-        */
     while (true) {
-        const bool runtime_display_allowed = !s_error_latched && !s_text_latched;
-        uint32_t spinner_period_ms = 0;
-        const float flow_snapshot = status_display_get_flow_rate();
-        const bool spinner_enabled = runtime_display_allowed &&
-                                     flow_spinner_compute_period_ms(flow_snapshot, &spinner_period_ms);
+        system_network_level_t level_snapshot;
 
-        if (spinner_enabled) {
-            const TickType_t now_ticks = xTaskGetTickCount();
+        level_snapshot = s_network_level;
 
-            if (!s_flow_spinner_active) {
-                s_flow_spinner_active = true;
-                s_flow_spinner_frame_index = 0;
-                flow_spinner_show_frame(s_flow_spinner_frame_index);
-                s_flow_spinner_next_tick = now_ticks + pdMS_TO_TICKS(spinner_period_ms);
-            } else if ((int32_t)(now_ticks - s_flow_spinner_next_tick) >= 0) {
-                s_flow_spinner_frame_index =
-                    (uint8_t)((s_flow_spinner_frame_index + 1) % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0])));
-                flow_spinner_show_frame(s_flow_spinner_frame_index);
-                s_flow_spinner_next_tick = now_ticks + pdMS_TO_TICKS(spinner_period_ms);
-            }
-
-            vTaskDelay(FLOW_SPINNER_IDLE_POLL_DELAY);
+        if (level_snapshot == SYS_NET_MQTT_READY) {
+            set_colon(true);
+            vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
             continue;
         }
 
-        if (s_flow_spinner_active) {
-            flow_spinner_clear();
-            s_flow_spinner_active = false;
-        }
-
-        if (runtime_display_allowed) {
-            system_network_level_t level_snapshot;
-
-            level_snapshot = s_network_level;
-
-            if (level_snapshot == SYS_NET_MQTT_READY) {
-                set_colon(true);
-                vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
-                continue;
-            }
-
-            for (int i = 0; i < 2; ++i) {
-                blink_pattern_blocking(level_snapshot);
-            }
-        } else {
-            vTaskDelay(STATUS_DISPLAY_TASK_PERIOD);
+        for (int i = 0; i < 2; ++i) {
+            blink_pattern_blocking(level_snapshot);
         }
     }
 }
+
+/**
+ * Zobrazí na stavovém displeji indikaci aktuálního stavu sítě. 
+ * Pokud zobrazení není dostupné, bude místo toho použita chybová LED pro indikaci stavu.
+ */
+static void flow_spinner_status_display_task(void *pvParameters)
+{
+    (void)pvParameters;
+    while (true) {
+        uint32_t spinner_period_ms = 0;
+        const float flow_snapshot = status_display_get_flow_rate();
+        const bool spinner_enabled = flow_spinner_compute_period_ms(flow_snapshot, &spinner_period_ms);
+        if (spinner_enabled) {
+            ESP_LOGE(TAG, "Flow spinner - flow=%.3f l/min, enabled=%d, period=%lu ms", flow_snapshot, spinner_enabled ? 1 : 0, (unsigned long)spinner_period_ms);
+            s_flow_spinner_frame_index =
+                (uint8_t)((s_flow_spinner_frame_index + 1) % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0])));
+            flow_spinner_show_frame(s_flow_spinner_frame_index);
+            vTaskDelay(pdMS_TO_TICKS(spinner_period_ms));
+
+        } else {
+            flow_spinner_clear();
+            vTaskDelay(FLOW_SPINNER_IDLE_POLL_DELAY);
+        }
+    }
+}
+
 
 
 /**
@@ -367,6 +347,7 @@ static void status_display_task(void *pvParameters)
  */
 static void show_error_code_on_tm1637(const char *error_code)
 {
+    s_display_latched = true;
     if (error_code == nullptr || s_tm1637_display == nullptr) {
         return;
     }
@@ -426,7 +407,7 @@ void mqtt_activiti_led_on_finished ( TimerHandle_t xTimer )
 
 void status_display_notify_mqtt_activity(void)
 {
-    if (s_error_latched || s_text_latched || s_mqtt_activity_timer_running || s_network_level != SYS_NET_MQTT_READY) {
+    if (s_mqtt_activity_timer_running || s_network_level != SYS_NET_MQTT_READY) {
         return;
     }
 
@@ -472,25 +453,12 @@ static void mqtt_activity_init_timers(void)
 void status_display_ap_mode()
 {
 
-    s_text_latched = true;
+    s_display_latched = true;
     apply_brightness(BRIGHTNESS_LEVEL_HIGH);
 
-    static constexpr uint8_t ALL_SEGMENTS = static_cast<uint8_t>(
-        TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_D |
-        TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G | TM1637_SEG_DP);
-    static constexpr uint8_t DASH_SEGMENTS = TM1637_SEG_G;
-    static constexpr uint8_t A_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
-    static constexpr uint8_t P_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
-
+    tm1637_write_string(s_tm1637_display, "-AP-");
+    set_error_led(true);
     apply_brightness(BRIGHTNESS_LEVEL_HIGH);
-    for (uint8_t position = 0; position < 4; ++position) {
-        set_segments(ALL_SEGMENTS, position, false);
-    }
-
-    set_segments(DASH_SEGMENTS, 0, true);
-    set_segments(A_SEGMENTS, 1, true);
-    set_segments(P_SEGMENTS, 2, true);
-    set_segments(DASH_SEGMENTS, 3, true);
 }
 
 
@@ -518,7 +486,10 @@ void status_display_init(void)
         (void)startup_result;
     }
 
-    xTaskCreate(status_display_task, "status_display", 3072, NULL, 3, NULL);
+    xTaskCreate(network_colon_status_display_task, "network_colon_status_display", 3072, NULL, 3, NULL);
+    xTaskCreate(flow_spinner_status_display_task, "flow_spinner_status_display", 3072, NULL, 3, NULL);
+
+
 
     app_error_check_set_handler(app_error_code_log_handler);
 }
