@@ -26,29 +26,13 @@ extern "C" {
 
 static const char *TAG = "state";
 
-static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 2;
-static constexpr uint8_t SENSOR_FAULT_LEVEL_POS = 2;
-static constexpr uint8_t SENSOR_FAULT_FLOW_POS = 3;
 
-static constexpr uint8_t SENSOR_FAULT_TEMP_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_B | TM1637_SEG_C);
-static constexpr uint8_t SENSOR_FAULT_LEVEL_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_E | TM1637_SEG_F);
-static constexpr uint8_t SENSOR_FAULT_FLOW_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G);
 
 static void set_sensor_fault_indicator(sensor_event_type_t sensor_type, bool is_fault)
 {
-    switch (sensor_type) {
-        case SENSOR_EVENT_TEMPERATURE:
-            set_segments(SENSOR_FAULT_TEMP_SEGMENTS, SENSOR_FAULT_TEMP_POS, is_fault);
-            break;
-        case SENSOR_EVENT_LEVEL:
-            set_segments(SENSOR_FAULT_LEVEL_SEGMENTS, SENSOR_FAULT_LEVEL_POS, is_fault);
-            break;
-        case SENSOR_EVENT_FLOW:
-            set_segments(SENSOR_FAULT_FLOW_SEGMENTS, SENSOR_FAULT_FLOW_POS, is_fault);
-            break;
-        default:
-            break;
-    }
+    status_display_set_sensor_fault(sensor_type, is_fault);
+
+
 }
 
 static void publish_boot_diagnostics_once(void)

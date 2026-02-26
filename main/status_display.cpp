@@ -26,6 +26,9 @@ static const char *TAG = "status_display";
 static constexpr TickType_t STATUS_DISPLAY_TASK_PERIOD = pdMS_TO_TICKS(100);
 static constexpr uint32_t MQTT_ACTIVITY_COLON_ON_MS = 200;
 static constexpr uint32_t MQTT_ACTIVITY_COLON_OFF_MS = 30;
+static constexpr uint32_t BRIGHTNESS_ALERT_HOLD_MS = 2000;
+static constexpr uint8_t BRIGHTNESS_LEVEL_LOW = 1;
+static constexpr uint8_t BRIGHTNESS_LEVEL_HIGH = 7;
 
 static tm1637_config_t s_tm1637_config = {
     .clk_pin = TM_CLK,
@@ -42,12 +45,22 @@ static system_network_level_t s_network_level = SYS_NET_DOWN;
 
 static bool s_mqtt_activity_timer_running = false;
 static float s_flow_l_min = 0.0f;
+static uint8_t s_current_brightness_level = BRIGHTNESS_LEVEL_HIGH;
 
+static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 2;
+static constexpr uint8_t SENSOR_FAULT_LEVEL_POS = 2;
+static constexpr uint8_t SENSOR_FAULT_FLOW_POS = 3;
+
+static constexpr uint8_t SENSOR_FAULT_TEMP_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_B | TM1637_SEG_C);
+static constexpr uint8_t SENSOR_FAULT_LEVEL_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_E | TM1637_SEG_F);
+static constexpr uint8_t SENSOR_FAULT_FLOW_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G);
 
 StaticTimer_t s_mqtt_activity_colon_on_timer_buffer;
 StaticTimer_t s_mqtt_activity_colon_off_timer_buffer;
 TimerHandle_t s_mqtt_activity_colon_on_timer = nullptr; 
 TimerHandle_t s_mqtt_activity_colon_off_timer = nullptr;
+StaticTimer_t s_brightness_alert_hold_timer_buffer;
+TimerHandle_t s_brightness_alert_hold_timer = nullptr;
 
 //
 static constexpr struct {
@@ -97,8 +110,56 @@ static uint8_t s_flow_spinner_frame_index = 0;
 static TickType_t s_flow_spinner_next_tick = 0;
 static bool s_flow_spinner_active = false;
 
+static void set_max_briteness_for_some_time(void);
+
 static void set_error_led(bool on) {
     gpio_set_level(ERRORLED_PIN, on ? 1 : 0);
+}
+
+static bool is_system_ok_for_dimmed_brightness(void)
+{
+    return !s_text_latched &&
+           !s_error_latched;
+}
+
+static void apply_brightness(uint8_t level)
+{
+    if (s_current_brightness_level == level) {
+        return;
+    }
+    tm1637_set_brightness(s_tm1637_display, level, true);
+    s_current_brightness_level = level;
+}
+
+static void restart_brightness_alert_hold_timer(void)
+{
+    xTimerReset(s_brightness_alert_hold_timer, 0);
+}
+
+static void refresh_brightness(bool trigger_alert_hold)
+{
+    if (trigger_alert_hold) {
+        apply_brightness(BRIGHTNESS_LEVEL_HIGH);
+    } else {
+        apply_brightness(BRIGHTNESS_LEVEL_LOW);
+    }
+}
+
+/**
+ * Timer vypíná. po určité době zvýšené jasnosti, která je spuštěna při detekci chybového stavu, aby nedošlo k trvalému vypálení displeje.
+ */
+static void brightness_alert_hold_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    if (s_network_level != SYS_NET_MQTT_READY) {
+        // Pokud není síť v pořádku, držíme jas na maximu, aby byla chyba dobře vidět a znovu pustíme timer
+        refresh_brightness(true); // Pro jistotu znovu nastavíme jas na maximum, i když už tam je, aby se obnovil případný timer pro držení této úrovně jasu
+        restart_brightness_alert_hold_timer();
+        return;
+    }
+    if (is_system_ok_for_dimmed_brightness()) {
+        refresh_brightness(false);
+    }
 }
 
 void status_display_set_flow_rate(float flow_l_min)
@@ -106,6 +167,32 @@ void status_display_set_flow_rate(float flow_l_min)
     taskENTER_CRITICAL(&s_status_mux);
     s_flow_l_min = flow_l_min;
     taskEXIT_CRITICAL(&s_status_mux);
+}
+
+void status_display_set_sensor_fault(sensor_event_type_t sensor_type, bool is_fault)
+{
+    switch (sensor_type) {
+        case SENSOR_EVENT_TEMPERATURE:
+            set_segments(SENSOR_FAULT_TEMP_SEGMENTS, SENSOR_FAULT_TEMP_POS, is_fault);
+            break;
+        case SENSOR_EVENT_LEVEL:
+            set_segments(SENSOR_FAULT_LEVEL_SEGMENTS, SENSOR_FAULT_LEVEL_POS, is_fault);
+            break;
+        case SENSOR_EVENT_FLOW:
+            set_segments(SENSOR_FAULT_FLOW_SEGMENTS, SENSOR_FAULT_FLOW_POS, is_fault);
+            break;
+        default:
+            break;
+    }
+    if (is_fault) {
+        set_max_briteness_for_some_time();
+    }
+    
+}
+static void set_max_briteness_for_some_time(void)
+{
+    refresh_brightness(true);
+    restart_brightness_alert_hold_timer();
 }
 
 static float status_display_get_flow_rate(void)
@@ -291,7 +378,8 @@ static void show_error_code_on_tm1637(const char *error_code)
 
     tm1637_handle_t display = s_tm1637_display;
     s_tm1637_display = nullptr; // zabrani dalsim pokusum o pouziti displeje, kdyz už na nem bude číslo chyby, bude stejně abort a chyba na displeji musí zůstat vidět
-    esp_err_t write_result = tm1637_write_string(display, display_text);
+    tm1637_write_string(display, display_text);
+    tm1637_set_brightness(display, BRIGHTNESS_LEVEL_HIGH, true);
 }
 
 static void app_error_code_log_handler(const char *error_code)
@@ -310,7 +398,14 @@ void status_display_set_network_state(const network_event_t *event)
         return;
     }
 
+    taskENTER_CRITICAL(&s_status_mux);
     s_network_level = event->level;
+    taskEXIT_CRITICAL(&s_status_mux);
+
+    const bool network_problem = (event->level != SYS_NET_MQTT_READY);
+    if (network_problem) {  
+       set_max_briteness_for_some_time();
+    }   
 }
 
 /// @brief //////// Poblikáván LED při MQTT aktivitě///////////////////////////////////////////////////////////////////////////////  
@@ -359,6 +454,13 @@ static void mqtt_activity_init_timers(void)
         mqtt_activiti_led_on_finished,
         &s_mqtt_activity_colon_off_timer_buffer
     );
+    s_brightness_alert_hold_timer = xTimerCreateStatic(
+        "disp_bright_hold",
+        pdMS_TO_TICKS(BRIGHTNESS_ALERT_HOLD_MS),
+        pdFALSE,
+        nullptr,
+        brightness_alert_hold_timer_cb,
+        &s_brightness_alert_hold_timer_buffer);
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +473,7 @@ void status_display_ap_mode()
 {
 
     s_text_latched = true;
+    apply_brightness(BRIGHTNESS_LEVEL_HIGH);
 
     static constexpr uint8_t ALL_SEGMENTS = static_cast<uint8_t>(
         TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_D |
@@ -379,6 +482,7 @@ void status_display_ap_mode()
     static constexpr uint8_t A_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
     static constexpr uint8_t P_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_E | TM1637_SEG_F | TM1637_SEG_G);
 
+    apply_brightness(BRIGHTNESS_LEVEL_HIGH);
     for (uint8_t position = 0; position < 4; ++position) {
         set_segments(ALL_SEGMENTS, position, false);
     }
@@ -407,7 +511,8 @@ void status_display_init(void)
         s_tm1637_display = nullptr;
         ESP_LOGE(TAG, "TM1637 init selhal, displej nebude pouzit: %s", esp_err_to_name(init_result));
     } else {
-        esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, 7, true);
+        s_current_brightness_level = BRIGHTNESS_LEVEL_HIGH;
+        esp_err_t brightness_result = tm1637_set_brightness(s_tm1637_display, BRIGHTNESS_LEVEL_HIGH, true);
         esp_err_t startup_result = tm1637_startup_animation_play_preset(s_tm1637_display, TM1637_STARTUP_ANIMATION_FAST);
         (void)brightness_result;
         (void)startup_result;
