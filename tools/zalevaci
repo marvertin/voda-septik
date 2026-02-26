@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import time
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Iterable, List, Optional, Set
+
+DEFAULT_TOPIC_ROOT = os.environ.get("TOPIC_ROOT", "voda/septik")
+DEFAULT_HOST = os.environ.get("MQTT_HOST", "mqtt.home.arpa")
+DEFAULT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+DEFAULT_USER = os.environ.get("MQTT_USER", "ha")
+DEFAULT_QOS = int(os.environ.get("MQTT_QOS", "1"))
+DEFAULT_PASS_FILE = Path(os.environ.get("MQTT_PASS_FILE", str(Path.home() / ".zalevaci-nadrz" / "mqtt_password")))
+DEFAULT_BIN_PATH = os.environ.get("OTA_BIN_PATH", "build/zalevaci-nadrz.bin")
+DEFAULT_HTTP_PORT = int(os.environ.get("OTA_HTTP_PORT", "8000"))
+DEFAULT_OTA_TIMEOUT = int(os.environ.get("OTA_WAIT_TIMEOUT_SEC", "300"))
+DEFAULT_SCAN_ROOTS = ["main", "components", "managed_components"]
+
+CMD_TOPICS = [
+    "cmd/reboot",
+    "cmd/webapp/start",
+    "cmd/webapp/stop",
+    "cmd/debug/start",
+    "cmd/debug/stop",
+    "cmd/log/level",
+    "cmd/ota/start",
+    "cmd/ota/confirm",
+]
+
+TAG_PATTERNS = [
+    re.compile(r"static\s+const\s+char\s*\*\s*TAG\s*=\s*\"([^\"]+)\""),
+    re.compile(r"#define\s+TAG\s+\"([^\"]+)\""),
+    re.compile(r"ESP_(?:EARLY_|DRAM_)?LOG[EWIDV]\s*\(\s*\"([^\"]+)\""),
+]
+
+VALID_LEVELS = {
+    "NONE": "NONE",
+    "0": "NONE",
+    "ERROR": "ERROR",
+    "ERR": "ERROR",
+    "1": "ERROR",
+    "WARN": "WARN",
+    "WARNING": "WARN",
+    "2": "WARN",
+    "INFO": "INFO",
+    "3": "INFO",
+    "DEBUG": "DEBUG",
+    "4": "DEBUG",
+    "VERBOSE": "VERBOSE",
+    "TRACE": "VERBOSE",
+    "5": "VERBOSE",
+}
+
+SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp"}
+
+
+def require_cmd(cmd: str) -> None:
+    if shutil_which(cmd) is None:
+        raise RuntimeError(f"Chyba: chybi prikaz '{cmd}'.")
+
+
+def ensure_password(pass_file: Path) -> str:
+    pass_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if pass_file.exists() and pass_file.stat().st_size > 0:
+        return pass_file.read_text(encoding="utf-8", errors="ignore").strip()
+
+    password = getpass.getpass(f"Zadej MQTT heslo pro uzivatele '{DEFAULT_USER}': ").strip()
+    if not password:
+        raise RuntimeError("Heslo nesmi byt prazdne.")
+
+    pass_file.write_text(password, encoding="utf-8")
+    os.chmod(pass_file, 0o600)
+    print(f"Heslo ulozeno do: {pass_file}")
+    return password
+
+
+def mqtt_pub(host: str,
+             port: int,
+             user: str,
+             password: str,
+             qos: int,
+             topic: str,
+             payload: str,
+             retained: bool = False,
+             null_payload: bool = False,
+             debug: bool = True) -> None:
+    cmd = ["mosquitto_pub"]
+    if debug:
+        cmd.append("-d")
+    cmd += [
+        "-h", host,
+        "-p", str(port),
+        "-u", user,
+        "-P", password,
+        "-q", str(qos),
+    ]
+    if retained:
+        cmd.append("-r")
+    if null_payload:
+        cmd.append("-n")
+    cmd += ["-t", topic]
+    if not null_payload:
+        cmd += ["-m", payload]
+
+    print(f"-> topic={topic} payload={'' if null_payload else payload}")
+    subprocess.run(cmd, check=True)
+
+
+def mqtt_command_menu(host: str, port: int, user: str, password: str, qos: int, topic_root: str) -> None:
+    while True:
+        print("""
+MQTT command menu
+-----------------
+  1) reboot
+  2) webapp/start
+  3) webapp/stop
+  4) debug/start
+  5) debug/stop
+  6) log/level
+  7) custom cmd topic
+  8) zpet
+""")
+        choice = input("Volba [1-8]: ").strip()
+
+        try:
+            if choice == "1":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/reboot", "1")
+            elif choice == "2":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp/start", "1")
+            elif choice == "3":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp/stop", "1")
+            elif choice == "4":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug/start", "1")
+            elif choice == "5":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug/stop", "1")
+            elif choice == "6":
+                set_log_level(host, port, user, password, qos, topic_root)
+            elif choice == "7":
+                sub = input(f"Cast za '{topic_root}/cmd/' (napr. webapp/start): ").strip()
+                if not sub:
+                    print("Topic nesmi byt prazdny.")
+                    continue
+                payload = input("Payload [1]: ").strip() or "1"
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/{sub}", payload)
+            elif choice == "8":
+                return
+            else:
+                print("Neplatna volba.")
+        except subprocess.CalledProcessError as exc:
+            print(f"Chyba pri publish: {exc}")
+
+
+def clear_retained_commands(host: str, port: int, user: str, password: str, qos: int, topic_root: str) -> None:
+    for suffix in CMD_TOPICS:
+        topic = f"{topic_root}/{suffix}"
+        print(f"Cistim retained: {topic}")
+        mqtt_pub(host, port, user, password, qos, topic, "", retained=True, null_payload=True, debug=False)
+    print("Hotovo: retained command topiky byly vycisteny.")
+
+
+def iter_source_files(roots: Iterable[Path]) -> Iterable[Path]:
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES:
+                yield path
+
+
+def discover_tags(project_root: Path) -> List[str]:
+    tags: Set[str] = set()
+    roots = [project_root / p for p in DEFAULT_SCAN_ROOTS]
+    for source in iter_source_files(roots):
+        try:
+            content = source.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for pattern in TAG_PATTERNS:
+            for match in pattern.finditer(content):
+                tag = match.group(1).strip()
+                if tag:
+                    tags.add(tag)
+    return sorted(tags)
+
+
+def normalize_level(value: str) -> str:
+    key = value.strip().upper()
+    if key not in VALID_LEVELS:
+        raise ValueError("Neplatna log uroven. Povolené: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE (nebo 0..5)")
+    return VALID_LEVELS[key]
+
+
+def choose_tag(project_root: Path) -> str:
+    tags = discover_tags(project_root)
+    if not tags:
+        entered = input("Tag nebyl nalezen automaticky, zadej tag (nebo *): ").strip()
+        if not entered:
+            raise RuntimeError("Tag nesmi byt prazdny.")
+        return entered
+
+    print("Nalezene log tagy:")
+    for i, tag in enumerate(tags, start=1):
+        print(f"  {i:>3}) {tag}")
+    print("  ---")
+    print("  *  ) vsechny tagy")
+
+    while True:
+        value = input("Vyber cislo, * nebo napis vlastni tag: ").strip()
+        if not value:
+            continue
+        if value == "*":
+            return "*"
+        if value.isdigit():
+            idx = int(value)
+            if 1 <= idx <= len(tags):
+                return tags[idx - 1]
+            print("Neplatne cislo.")
+            continue
+        return value
+
+
+def set_log_level(host: str, port: int, user: str, password: str, qos: int, topic_root: str) -> None:
+    tag = choose_tag(Path.cwd())
+    level_input = input("Uroven [NONE|ERROR|WARN|INFO|DEBUG|VERBOSE]: ").strip()
+    level = normalize_level(level_input)
+    mqtt_set_log_level(host, port, user, password, qos, topic_root, tag, level)
+    print(f"Nastaveno: {tag}={level}")
+
+
+def mqtt_set_log_level(host: str,
+                       port: int,
+                       user: str,
+                       password: str,
+                       qos: int,
+                       topic_root: str,
+                       tag: str,
+                       level: str) -> None:
+    normalized_level = normalize_level(level)
+    mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/log/level", f"{tag}={normalized_level}")
+    print(f"Nastaveno: {tag}={normalized_level}")
+
+
+class OtaHttpServer:
+    def __init__(self, serve_dir: Path, port: int):
+        self.serve_dir = serve_dir
+        self.port = port
+        self.server: Optional[ThreadingHTTPServer] = None
+
+    def start(self) -> None:
+        handler = lambda *args, **kwargs: SimpleHTTPRequestHandler(*args, directory=str(self.serve_dir), **kwargs)
+        self.server = ThreadingHTTPServer(("0.0.0.0", self.port), handler)
+        self.server.daemon_threads = True
+
+        import threading
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+
+    def stop(self) -> None:
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
+            self.server = None
+
+
+def default_local_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return ""
+    finally:
+        s.close()
+
+
+def wait_for_ota_boot(host: str,
+                      port: int,
+                      user: str,
+                      password: str,
+                      topic_root: str,
+                      timeout_sec: int) -> bool:
+    print(f"Sleduji OTA eventy (timeout {timeout_sec}s)...")
+    cmd = [
+        "mosquitto_sub",
+        "-h", host,
+        "-p", str(port),
+        "-u", user,
+        "-P", password,
+        "-v",
+        "-t", f"{topic_root}/system/ota/#",
+        "-t", f"{topic_root}/system/boot_mode",
+        "-t", f"{topic_root}/diag/fw_version",
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    start = time.time()
+    try:
+        while True:
+            if time.time() - start >= timeout_sec:
+                return False
+
+            line = proc.stdout.readline() if proc.stdout else ""
+            if not line:
+                time.sleep(0.2)
+                continue
+
+            line = line.strip()
+            print(f"[MQTT] {line}")
+            if not line:
+                continue
+
+            topic, _, payload = line.partition(" ")
+            if topic == f"{topic_root}/system/boot_mode" and payload == "ota":
+                return True
+    finally:
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def ota_flow(host: str, port: int, user: str, password: str, qos: int, topic_root: str) -> None:
+    require_cmd("mosquitto_sub")
+
+    bin_input = input(f"Cesta k firmware bin [{DEFAULT_BIN_PATH}]: ").strip() or DEFAULT_BIN_PATH
+    bin_path = Path(bin_input).expanduser().resolve()
+    if not bin_path.exists():
+        raise RuntimeError(f"Soubor neexistuje: {bin_path}")
+
+    local_ip = default_local_ip()
+    host_ip = input(f"IP adresa tohoto stroje pro ESP [{local_ip}]: ").strip() or local_ip
+    if not host_ip:
+        raise RuntimeError("IP adresa je povinna.")
+
+    port_input = input(f"HTTP port [{DEFAULT_HTTP_PORT}]: ").strip()
+    http_port = int(port_input) if port_input else DEFAULT_HTTP_PORT
+
+    server = OtaHttpServer(bin_path.parent, http_port)
+    server.start()
+    try:
+        firmware_url = f"http://{host_ip}:{http_port}/{bin_path.name}"
+        print(f"Firmware URL pro OTA: {firmware_url}")
+        mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/ota/start", firmware_url)
+
+        if not wait_for_ota_boot(host, port, user, password, topic_root, DEFAULT_OTA_TIMEOUT):
+            raise RuntimeError(f"Timeout: neobjevil se system/boot_mode=ota do {DEFAULT_OTA_TIMEOUT}s.")
+
+        confirm = input("Je nove FW v poradku a chces ho POTVRDIT? [y/N]: ").strip().lower()
+        if confirm in {"y", "yes"}:
+            mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/ota/confirm", "1")
+            print("Firmware potvrzen pres MQTT.")
+        else:
+            print("Firmware NEPOTVRZEN.")
+
+        time.sleep(0.5)
+        mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/reboot", "1")
+        print("Reboot command odeslan.")
+    finally:
+        server.stop()
+
+
+def ota_flow_noninteractive(host: str,
+                            port: int,
+                            user: str,
+                            password: str,
+                            qos: int,
+                            topic_root: str,
+                            bin_path: Path,
+                            host_ip: str,
+                            http_port: int,
+                            confirm: bool,
+                            reboot: bool,
+                            timeout_sec: int) -> None:
+    require_cmd("mosquitto_sub")
+    if not bin_path.exists():
+        raise RuntimeError(f"Soubor neexistuje: {bin_path}")
+    if not host_ip:
+        raise RuntimeError("IP adresa je povinna.")
+
+    server = OtaHttpServer(bin_path.parent, http_port)
+    server.start()
+    try:
+        firmware_url = f"http://{host_ip}:{http_port}/{bin_path.name}"
+        print(f"Firmware URL pro OTA: {firmware_url}")
+        mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/ota/start", firmware_url)
+
+        if not wait_for_ota_boot(host, port, user, password, topic_root, timeout_sec):
+            raise RuntimeError(f"Timeout: neobjevil se system/boot_mode=ota do {timeout_sec}s.")
+
+        if confirm:
+            mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/ota/confirm", "1")
+            print("Firmware potvrzen pres MQTT.")
+        else:
+            print("Firmware NEPOTVRZEN (bez --confirm).")
+
+        if reboot:
+            time.sleep(0.5)
+            mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/reboot", "1")
+            print("Reboot command odeslan.")
+    finally:
+        server.stop()
+
+
+def print_header(host: str, port: int, user: str, qos: int, topic_root: str, pass_file: Path) -> None:
+    print("""
+zalevaci tools
+--------------""")
+    print(f"Host:       {host}")
+    print(f"Port:       {port}")
+    print(f"User:       {user}")
+    print(f"QoS:        {qos}")
+    print(f"Topic root: {topic_root}")
+    print(f"Pass file:  {pass_file}")
+
+
+def interactive_main(host: str, port: int, user: str, password: str, qos: int, topic_root: str, pass_file: Path) -> int:
+    while True:
+        print_header(host, port, user, qos, topic_root, pass_file)
+        print("""
+Vyber akci:
+  1) MQTT command menu
+  2) Nastavit log level
+  3) Vycistit retained cmd/*
+  4) OTA flow
+  5) Konec
+""")
+        choice = input("Volba [1-5]: ").strip()
+
+        try:
+            if choice == "1":
+                mqtt_command_menu(host, port, user, password, qos, topic_root)
+            elif choice == "2":
+                set_log_level(host, port, user, password, qos, topic_root)
+            elif choice == "3":
+                clear_retained_commands(host, port, user, password, qos, topic_root)
+            elif choice == "4":
+                ota_flow(host, port, user, password, qos, topic_root)
+            elif choice == "5":
+                print("Konec.")
+                return 0
+            else:
+                print("Neplatna volba.")
+        except (RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
+            print(f"Chyba: {exc}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="zalevaci",
+        description="Interaktivni i neinteraktivni MQTT/OTA helper pro projekt zalevaci-nadrz.",
+    )
+
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"MQTT host (default: {DEFAULT_HOST})")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"MQTT port (default: {DEFAULT_PORT})")
+    parser.add_argument("--user", default=DEFAULT_USER, help=f"MQTT user (default: {DEFAULT_USER})")
+    parser.add_argument("--qos", type=int, default=DEFAULT_QOS, help=f"MQTT qos (default: {DEFAULT_QOS})")
+    parser.add_argument("--topic-root", default=DEFAULT_TOPIC_ROOT, help=f"Topic root (default: {DEFAULT_TOPIC_ROOT})")
+    parser.add_argument("--pass-file", type=Path, default=DEFAULT_PASS_FILE, help=f"Soubor s MQTT heslem (default: {DEFAULT_PASS_FILE})")
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    cmd_parser = subparsers.add_parser("cmd", help="Publikuje command do cmd/*")
+    cmd_parser.add_argument("action", help="Napriklad reboot, webapp/start, debug/stop, ota/confirm")
+    cmd_parser.add_argument("payload", nargs="?", default="1", help="Payload (default: 1)")
+
+    log_parser = subparsers.add_parser("log", help="Nastavi log level")
+    log_parser.add_argument("--tag", required=True, help="Log tag, nebo *")
+    log_parser.add_argument("--level", required=True, help="NONE|ERROR|WARN|INFO|DEBUG|VERBOSE nebo 0..5")
+
+    subparsers.add_parser("clear-retained", help="Vycisti retained zpravy na cmd/*")
+    subparsers.add_parser("tags", help="Vypise nalezene log tagy ve zdrojacich")
+
+    ota_parser = subparsers.add_parser("ota", help="Spusti OTA flow neinteraktivne")
+    ota_parser.add_argument("--bin", required=True, type=Path, dest="bin_path", help="Cesta k firmware .bin")
+    ota_parser.add_argument("--host-ip", required=True, help="IP adresa tohoto stroje dostupna pro ESP")
+    ota_parser.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT, help=f"HTTP port (default: {DEFAULT_HTTP_PORT})")
+    ota_parser.add_argument("--timeout", type=int, default=DEFAULT_OTA_TIMEOUT, help=f"OTA timeout v sekundach (default: {DEFAULT_OTA_TIMEOUT})")
+    ota_parser.add_argument("--confirm", action="store_true", help="Po OTA posle cmd/ota/confirm")
+    ota_parser.add_argument("--no-reboot", action="store_true", help="Neposila zaverecny cmd/reboot")
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    try:
+        require_cmd("mosquitto_pub")
+        password = ensure_password(args.pass_file)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        if args.command is None:
+            return interactive_main(args.host, args.port, args.user, password, args.qos, args.topic_root, args.pass_file)
+
+        if args.command == "cmd":
+            action = args.action.strip("/")
+            mqtt_pub(args.host, args.port, args.user, password, args.qos, f"{args.topic_root}/cmd/{action}", args.payload)
+            return 0
+
+        if args.command == "log":
+            mqtt_set_log_level(args.host, args.port, args.user, password, args.qos, args.topic_root, args.tag, args.level)
+            return 0
+
+        if args.command == "clear-retained":
+            clear_retained_commands(args.host, args.port, args.user, password, args.qos, args.topic_root)
+            return 0
+
+        if args.command == "tags":
+            for tag in discover_tags(Path.cwd()):
+                print(tag)
+            return 0
+
+        if args.command == "ota":
+            ota_flow_noninteractive(
+                host=args.host,
+                port=args.port,
+                user=args.user,
+                password=password,
+                qos=args.qos,
+                topic_root=args.topic_root,
+                bin_path=args.bin_path.expanduser().resolve(),
+                host_ip=args.host_ip,
+                http_port=args.http_port,
+                confirm=args.confirm,
+                reboot=not args.no_reboot,
+                timeout_sec=args.timeout,
+            )
+            return 0
+
+        parser.print_help()
+        return 2
+    except (RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
+        print(f"Chyba: {exc}", file=sys.stderr)
+        return 1
+
+
+def shutil_which(cmd: str) -> Optional[str]:
+    for dir_path in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(dir_path) / cmd
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -68,9 +68,4 @@ log/
 ha/homeassistant/.HA_VERSION
 ha/homeassistant/.ha_run.lock
 ha/mosquitto/data/mosquitto.db
-tools/clear_retained_cmds.sh
-tools/mqtt_cmd_cli.sh
-tools/mqtt_log_level_cli.py
-tools/ota_flow_cli.sh
-tools/zalevaci
-tools/__pycache__/zalevacicpython-314.pyc
+tools/__pycache__
