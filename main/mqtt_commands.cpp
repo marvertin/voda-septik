@@ -11,6 +11,7 @@ extern "C" {
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 }
 
 #include "mqtt_client.h"
@@ -25,13 +26,40 @@ extern "C" {
 
 static const char *TAG = "mqtt_cmd";
 static constexpr TickType_t REGISTER_RETRY_DELAY_TICKS = pdMS_TO_TICKS(500);
-static constexpr uint32_t DEBUG_INTERVAL_MIN_MS = 100;
-static constexpr uint32_t DEBUG_INTERVAL_MAX_MS = 600000;
+static constexpr uint32_t DEBUG_AUTO_OFF_MS = 2U * 60U * 60U * 1000U;
 
 static bool s_handler_registered = false;
-static uint32_t s_debug_interval_ms = 5000;
-static char s_debug_sensors[MQTT_PUBLISH_TEXT_MAX_LEN] = "all";
 static portMUX_TYPE s_debug_mux = portMUX_INITIALIZER_UNLOCKED;
+static TimerHandle_t s_debug_auto_off_timer = nullptr;
+
+static void debug_auto_off_timer_callback(TimerHandle_t timer)
+{
+    (void)timer;
+
+    taskENTER_CRITICAL(&s_debug_mux);
+    g_debug_enabled = false;
+    taskEXIT_CRITICAL(&s_debug_mux);
+
+    ESP_LOGW(TAG, "Debug režim automaticky vypnut po 2 hodinach");
+}
+
+static void ensure_debug_auto_off_timer(void)
+{
+    if (s_debug_auto_off_timer != nullptr) {
+        return;
+    }
+
+    s_debug_auto_off_timer = xTimerCreate(
+        "dbg_auto_off",
+        pdMS_TO_TICKS(DEBUG_AUTO_OFF_MS),
+        pdFALSE,
+        nullptr,
+        debug_auto_off_timer_callback);
+
+    if (s_debug_auto_off_timer == nullptr) {
+        ESP_LOGE(TAG, "Nelze vytvorit debug auto-off timer");
+    }
+}
 
 static const char *mqtt_event_name(int32_t event_id)
 {
@@ -102,53 +130,23 @@ static bool payload_is_truthy(const char *payload)
 
 static void command_set_debug_enabled(bool enabled)
 {
+    ensure_debug_auto_off_timer();
+
     taskENTER_CRITICAL(&s_debug_mux);
     g_debug_enabled = enabled;
     taskEXIT_CRITICAL(&s_debug_mux);
 
+    if (s_debug_auto_off_timer != nullptr) {
+        if (enabled) {
+            xTimerStop(s_debug_auto_off_timer, 0);
+            xTimerChangePeriod(s_debug_auto_off_timer, pdMS_TO_TICKS(DEBUG_AUTO_OFF_MS), 0);
+            xTimerStart(s_debug_auto_off_timer, 0);
+        } else {
+            xTimerStop(s_debug_auto_off_timer, 0);
+        }
+    }
+
     ESP_LOGI(TAG, "Debug režim: %s", enabled ? "ON" : "OFF");
-}
-
-static void command_set_debug_interval(const char *payload)
-{
-    if (payload == nullptr || payload[0] == '\0') {
-        ESP_LOGW(TAG, "cmd/debug/interval_ms: prazdny payload");
-        return;
-    }
-
-    char *endptr = nullptr;
-    long value = strtol(payload, &endptr, 10);
-    if (endptr == payload) {
-        ESP_LOGW(TAG, "cmd/debug/interval_ms: neplatna hodnota '%s'", payload);
-        return;
-    }
-
-    if (value < (long)DEBUG_INTERVAL_MIN_MS) {
-        value = (long)DEBUG_INTERVAL_MIN_MS;
-    }
-    if (value > (long)DEBUG_INTERVAL_MAX_MS) {
-        value = (long)DEBUG_INTERVAL_MAX_MS;
-    }
-
-    taskENTER_CRITICAL(&s_debug_mux);
-    s_debug_interval_ms = (uint32_t)value;
-    taskEXIT_CRITICAL(&s_debug_mux);
-
-    ESP_LOGI(TAG, "Debug interval nastaven na %lu ms", (unsigned long)value);
-}
-
-static void command_set_debug_sensors(const char *payload)
-{
-    if (payload == nullptr) {
-        return;
-    }
-
-    taskENTER_CRITICAL(&s_debug_mux);
-    strncpy(s_debug_sensors, payload, sizeof(s_debug_sensors) - 1);
-    s_debug_sensors[sizeof(s_debug_sensors) - 1] = '\0';
-    taskEXIT_CRITICAL(&s_debug_mux);
-
-    ESP_LOGI(TAG, "Debug sensors filter: %s", s_debug_sensors);
 }
 
 static char *trim_in_place(char *text)
@@ -310,14 +308,6 @@ static void handle_command(mqtt_topic_id_t command_id, const char *payload)
 
         case mqtt_topic_id_t::TOPIC_CMD_DEBUG_STOP:
             command_set_debug_enabled(false);
-            break;
-
-        case mqtt_topic_id_t::TOPIC_CMD_DEBUG_INTERVAL_MS:
-            command_set_debug_interval(payload);
-            break;
-
-        case mqtt_topic_id_t::TOPIC_CMD_DEBUG_SENSORS:
-            command_set_debug_sensors(payload);
             break;
 
         case mqtt_topic_id_t::TOPIC_CMD_LOG_LEVEL:

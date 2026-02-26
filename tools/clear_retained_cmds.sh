@@ -15,8 +15,6 @@ CMD_TOPICS=(
   "cmd/webapp/stop"
   "cmd/debug/start"
   "cmd/debug/stop"
-  "cmd/debug/interval_ms"
-  "cmd/debug/sensors"
   "cmd/log/level"
   "cmd/ota/start"
   "cmd/ota/confirm"

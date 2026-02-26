@@ -60,12 +60,10 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 │
 ├── cmd/
 │    ├── reboot                     [-] Reboot zařízení, čímž se vypnou všechny debugy. HA: button
-│    ├── webapp/start               [-] Nastartování konfigurační aplikace. Sama se po hodině vypne. HA: button
+│    ├── webapp/start               [-] Nastartování konfigurační aplikace. Implicitně je vypnutá, po startu se sama po 2 hodinách vypne. HA: button
 │    ├── webapp/stop                [-] Vypnutí webové aplikace. HA: button
 │    ├── debug/start                [-] Nastartování debug režimu, začnou se produkovat debug data. HA: button
 │    ├── debug/stop                 [-] Zastavení debug režimu. HA: button
-│    ├── debug/interval_ms          [ms] Po kolika milisekundách se mají do "debug" posílat MQTT data. HA: number
-│    ├── debug/sensors              [text/json] Seznam senzorů, pro které se posílají ladicí data. HA: text
 │    ├── log/level                  [text] Nastaveni log levelu per tag (payload: tag=level)
 │    ├── ota/start                  [url] URL na binarni obraz firmware (http/https)
 │    └── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
@@ -87,7 +85,7 @@ Skript:
 - pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `zalivka/nadrz`,
 - cte heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`,
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
-- nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/*`, ...).
+- nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...).
 
 Volitelne lze prepsat parametry pres promenne prostredi:
 
@@ -151,18 +149,6 @@ mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t
 
 ```bash
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/stop" -m "1"
-```
-
-`cmd/debug/interval_ms` (perioda debug publish):
-
-```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/interval_ms" -m "2000"
-```
-
-`cmd/debug/sensors` (filtr/profil debug senzoru):
-
-```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/sensors" -m "all"
 ```
 
 `cmd/ota/start` (spusti OTA z URL):

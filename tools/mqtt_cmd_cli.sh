@@ -76,11 +76,9 @@ Vyber akci:
   3) webapp/stop
   4) debug/start
   5) debug/stop
-  6) debug/interval_ms
-  7) debug/sensors
-  8) log/level
-  9) custom cmd topic
- 10) konec
+  6) log/level
+  7) custom cmd topic
+  8) konec
 EOF
 }
 
@@ -106,30 +104,20 @@ handle_choice() {
       publish_cmd "$TOPIC_ROOT/cmd/debug/stop" "1"
       ;;
     6)
-      read -r -p "Zadej interval v ms: " value
-      [[ -n "$value" ]] || { echo "Interval nesmi byt prazdny."; return; }
-      publish_cmd "$TOPIC_ROOT/cmd/debug/interval_ms" "$value"
-      ;;
-    7)
-      read -r -p "Zadej sensors filtr (napr. all): " value
-      [[ -n "$value" ]] || { echo "Hodnota nesmi byt prazdna."; return; }
-      publish_cmd "$TOPIC_ROOT/cmd/debug/sensors" "$value"
-      ;;
-    8)
       read -r -p "Zadej tag (napr. mqtt_cmd nebo *): " topic
       [[ -n "$topic" ]] || { echo "Tag nesmi byt prazdny."; return; }
       read -r -p "Zadej uroven (NONE|ERROR|WARN|INFO|DEBUG|VERBOSE): " value
       [[ -n "$value" ]] || { echo "Uroven nesmi byt prazdna."; return; }
       publish_cmd "$TOPIC_ROOT/cmd/log/level" "$topic=$value"
       ;;
-    9)
+    7)
       read -r -p "Zadej cmd topic cast za '$TOPIC_ROOT/cmd/' (napr. webapp/start): " topic
       [[ -n "$topic" ]] || { echo "Topic nesmi byt prazdny."; return; }
       read -r -p "Zadej payload (default 1): " value
       value="${value:-1}"
       publish_cmd "$TOPIC_ROOT/cmd/$topic" "$value"
       ;;
-    10)
+    8)
       echo "Konec."
       exit 0
       ;;
@@ -146,7 +134,7 @@ main() {
   while true; do
     print_header
     menu
-    read -r -p "Volba [1-10]: " choice
+    read -r -p "Volba [1-8]: " choice
     handle_choice "$choice"
   done
 }

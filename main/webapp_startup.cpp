@@ -1,5 +1,16 @@
 #include "webapp_startup.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "app-config.h"
 #include "config_webapp.h"
 #include "esp_log.h"
@@ -8,31 +19,66 @@
 
 static const char *TAG = "webapp_startup";
 static bool s_webapp_started = false;
+static TimerHandle_t s_webapp_auto_stop_timer = nullptr;
+static constexpr uint32_t WEBAPP_AUTO_STOP_MS = 2U * 60U * 60U * 1000U;
 
-static bool network_event_has_connectivity(const network_event_t *event)
+static void webapp_auto_stop_timer_cb(TimerHandle_t timer)
 {
-    if (event == nullptr) {
-        return false;
+    (void)timer;
+
+    if (!s_webapp_started) {
+        return;
     }
 
-    return event->level == SYS_NET_IP_ONLY || event->level == SYS_NET_MQTT_READY;
+    esp_err_t stop_result = config_webapp_stop();
+    if (stop_result == ESP_OK) {
+        s_webapp_started = false;
+        ESP_LOGI(TAG, "Config web app automaticky vypnuta po 2 hodinach");
+    } else {
+        ESP_LOGW(TAG, "Automaticke vypnuti config web app selhalo: %s", esp_err_to_name(stop_result));
+    }
+}
+
+static void ensure_webapp_auto_stop_timer(void)
+{
+    if (s_webapp_auto_stop_timer != nullptr) {
+        return;
+    }
+
+    s_webapp_auto_stop_timer = xTimerCreate(
+        "webapp_auto_off",
+        pdMS_TO_TICKS(WEBAPP_AUTO_STOP_MS),
+        pdFALSE,
+        nullptr,
+        webapp_auto_stop_timer_cb);
+
+    if (s_webapp_auto_stop_timer == nullptr) {
+        ESP_LOGE(TAG, "Nelze vytvorit webapp auto-off timer");
+    }
+}
+
+static void restart_webapp_auto_stop_timer(void)
+{
+    ensure_webapp_auto_stop_timer();
+    if (s_webapp_auto_stop_timer == nullptr) {
+        return;
+    }
+
+    xTimerStop(s_webapp_auto_stop_timer, 0);
+    xTimerChangePeriod(s_webapp_auto_stop_timer, pdMS_TO_TICKS(WEBAPP_AUTO_STOP_MS), 0);
+    xTimerStart(s_webapp_auto_stop_timer, 0);
 }
 
 void webapp_startup_on_network_event(const network_event_t *event)
 {
-    if (s_webapp_started || !network_event_has_connectivity(event)) {
-        return;
-    }
-
-    esp_err_t start_result = webapp_startup_start();
-    if (start_result != ESP_OK) {
-        ESP_LOGW(TAG, "Config web app se nepodarilo spustit: %s", esp_err_to_name(start_result));
-    }
+    (void)event;
+    // Webova aplikace je implicitne vypnuta, startuje se pouze explicitnim commandem.
 }
 
 esp_err_t webapp_startup_start(void)
 {
     if (s_webapp_started) {
+        restart_webapp_auto_stop_timer();
         return ESP_OK;
     }
 
@@ -80,7 +126,8 @@ esp_err_t webapp_startup_start(void)
 
     if (start_result == ESP_OK) {
         s_webapp_started = true;
-        ESP_LOGI(TAG, "Config web app spustena po pripojeni site");
+        restart_webapp_auto_stop_timer();
+        ESP_LOGI(TAG, "Config web app spustena (auto-stop za 2 hodiny)");
     } else {
         ESP_LOGW(TAG, "Config web app se nepodarilo spustit: %s", esp_err_to_name(start_result));
     }
@@ -93,6 +140,9 @@ esp_err_t webapp_startup_stop(void)
     esp_err_t stop_result = config_webapp_stop();
     if (stop_result == ESP_OK) {
         s_webapp_started = false;
+        if (s_webapp_auto_stop_timer != nullptr) {
+            xTimerStop(s_webapp_auto_stop_timer, 0);
+        }
         ESP_LOGI(TAG, "Config web app zastavena");
     } else {
         ESP_LOGW(TAG, "Zastaveni config web app selhalo: %s", esp_err_to_name(stop_result));
