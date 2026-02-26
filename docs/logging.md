@@ -64,7 +64,7 @@ zalevaci
 zalevaci log --tag mqtt_cmd --level DEBUG
 ```
 
-Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`.
+Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.voda-septik/mqtt_password`.
 
 ### Vycisteni starych retained commandu
 

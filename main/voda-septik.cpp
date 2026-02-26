@@ -109,7 +109,7 @@ static void on_boot_button_pressed(void *ctx)
     }
 
     ESP_LOGW(TAG, "BOOT tlacitko stisknuto, prepinam do konfiguracniho AP rezimu");
-    esp_err_t ap_result = network_init_ap("zalevaci-config", "");
+    esp_err_t ap_result = network_init_ap("voda-septik-config", "");
     if (ap_result == ESP_OK) {
         s_ap_switch_done = true;
         ESP_LOGI(TAG, "Konfiguracni AP rezim aktivni");

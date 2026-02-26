@@ -1,4 +1,4 @@
-# zalevaci-nadrz
+# voda-septik
 
 ## Dokumentace
 
@@ -113,7 +113,7 @@ zalevaci tags
 
 Skript:
 - pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `voda/septik`,
-- cte heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`,
+- cte heslo ze souboru `~/.voda-septik/mqtt_password`,
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
 - nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...),
 - umi nastavit log level (vcetne volby tagu nalezenych ve zdrojacich),
@@ -181,7 +181,7 @@ mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t
 `cmd/ota/start` (spusti OTA z URL):
 
 ```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/ota/start" -m "http://192.168.1.10:8000/zalevaci-nadrz.bin"
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/ota/start" -m "http://192.168.1.10:8000/voda-septik.bin"
 ```
 
 `cmd/ota/confirm` (potvrdi novy firmware po rebootu):

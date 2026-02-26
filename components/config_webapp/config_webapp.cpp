@@ -321,13 +321,16 @@ static std::string read_value_for_html(nvs_handle_t nvs_handle, const config_ite
 
 static std::string build_config_page_html()
 {
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const std::string project_name = (app_desc != nullptr && app_desc->project_name[0] != '\0') ? app_desc->project_name : "projekt";
+
     nvs_handle_t nvs_handle;
     esp_err_t result = nvs_open(s_ctx.nvs_namespace, NVS_READONLY, &nvs_handle);
 
     std::string html;
     html.reserve(4096);
     html += "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>Konfigurace</title>";
+    html += "<title>" + html_escape(project_name) + " - Konfigurace</title>";
     html += "<style>body{font-family:sans-serif;max-width:760px;margin:20px auto;padding:0 12px;}";
     html += "label{font-weight:600;display:block;margin-bottom:4px;}";
     html += "small{display:block;color:#666;margin-top:4px;}";
@@ -336,7 +339,7 @@ static std::string build_config_page_html()
     html += ".actions{display:flex;gap:8px;flex-wrap:wrap;}";
     html += "button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;}";
     html += "</style></head><body>";
-    html += "<h1>Konfigurace zařízení</h1>";
+    html += "<h1>Konfigurace zařízení - " + html_escape(project_name) + "</h1>";
     html += "<p><a href='/'>← Zpět na systémový přehled</a></p>";
     html += "<form id='cfgForm' method='post' action='/config/save'>";
 
@@ -404,12 +407,13 @@ static std::string build_root_page_html()
     esp_chip_info(&chip_info);
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
+    const std::string project_name = (app_desc != nullptr && app_desc->project_name[0] != '\0') ? app_desc->project_name : "projekt";
     uint32_t uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
 
     std::string html;
     html.reserve(3000);
     html += "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>Systémový přehled</title>";
+    html += "<title>" + html_escape(project_name) + " - Systémový přehled</title>";
     html += "<style>body{font-family:sans-serif;max-width:760px;margin:20px auto;padding:0 12px;}";
     html += ".card{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;}";
     html += "h1,h2{margin-top:0;}";
@@ -417,7 +421,7 @@ static std::string build_root_page_html()
     html += "li{margin-bottom:6px;}";
     html += "a.button{display:inline-block;padding:10px 14px;border-radius:8px;border:1px solid #333;text-decoration:none;color:#111;}";
     html += "</style></head><body>";
-    html += "<h1>Systémový přehled</h1>";
+    html += "<h1>Systémový přehled - " + html_escape(project_name) + "</h1>";
 
     if (s_has_network_info) {
         html += "<div class='card'><h2>Síťový režim</h2><ul>";
@@ -437,7 +441,7 @@ static std::string build_root_page_html()
     }
 
     html += "<div class='card'><h2>Systémové informace</h2><ul>";
-    html += "<li>Projekt: <strong>" + std::string(app_desc->project_name) + "</strong></li>";
+    html += "<li>Projekt: <strong>" + html_escape(project_name) + "</strong></li>";
     html += "<li>Verze aplikace: <strong>" + std::string(app_desc->version) + "</strong></li>";
     html += "<li>ESP-IDF: <strong>" + std::string(esp_get_idf_version()) + "</strong></li>";
     html += "<li>Chip model: <strong>ESP32</strong></li>";

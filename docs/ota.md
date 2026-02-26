@@ -13,7 +13,7 @@ Nejjednodussi postup je pouzit interaktivni helper:
 
 3. Ve skriptu vyber:
    - MQTT broker a prihlaseni,
-   - soubor firmware (`build/zalevaci-nadrz.bin`),
+  - soubor firmware (`build/voda-septik.bin`),
    - sitovou adresu, odkud si ESP muze stahnout `.bin`.
 4. Skript spusti lokalni HTTP server, posle `cmd/ota/start` a vypisuje OTA eventy.
 5. Po rebootu noveho firmware skript pocka na signal bootu OTA image (`system/boot_mode = ota`) a teprve potom se zepta na potvrzeni.
@@ -26,7 +26,7 @@ Rucni postup bez helper skriptu:
 # start OTA
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
   -t "voda/septik/cmd/ota/start" \
-  -m "http://IP_SERVERU:8000/zalevaci-nadrz.bin"
+  -m "http://IP_SERVERU:8000/voda-septik.bin"
 
 # sledovani OTA eventu
 mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v \

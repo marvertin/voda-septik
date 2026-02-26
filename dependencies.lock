@@ -125,6 +125,6 @@ direct_dependencies:
 - esp-idf-lib/pcf8574
 - heronet/tm1637
 - idf
-manifest_hash: bff06a9276dce137b10139447f7e5961f2017bc6d34d14b40374f875c179934b
+manifest_hash: 39d306c036178c60b68c4bbb4deff8e437845b105ff8140d732a270447fa1888
 target: esp32
 version: 2.0.0

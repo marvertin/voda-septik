@@ -1,6 +1,6 @@
 version: "1.0.0"
 description: "Generic ESP-IDF network core (Wi-Fi + MQTT lifecycle + publish API + network state callback)."
-url: "https://github.com/marvertin/zalevaci-nadrz"
+url: "https://github.com/marvertin/voda-septik"
 license: "MIT"
 maintainers:
   - "Martin Veverka <martin.veverka@email.cz>"
