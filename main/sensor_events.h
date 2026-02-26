@@ -23,8 +23,14 @@ typedef enum {
     SENSOR_EVENT_FLOW,
 } sensor_event_type_t;
 
+typedef enum {
+    SENSOR_TEMPERATURE_PROBE_WATER = 0,
+    SENSOR_TEMPERATURE_PROBE_AIR,
+} sensor_temperature_probe_t;
+
 typedef struct {
     float temperature_c;
+    sensor_temperature_probe_t probe;
 } sensor_temperature_data_t;
 
 typedef struct {

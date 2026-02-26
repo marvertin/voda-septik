@@ -26,6 +26,9 @@ extern "C" {
 
 static const char *TAG = "state";
 
+static bool s_temp_probe_fault_water = false;
+static bool s_temp_probe_fault_air = false;
+
 
 
 static void set_sensor_fault_indicator(sensor_event_type_t sensor_type, bool is_fault)
@@ -64,27 +67,44 @@ static void publish_boot_diagnostics_once(void)
 
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
+    const sensor_temperature_probe_t probe = event.data.temperature.probe;
     char text[16];
     esp_err_t enqueue_result;
     const bool sensor_fault = std::isnan(event.data.temperature.temperature_c);
-    set_sensor_fault_indicator(SENSOR_EVENT_TEMPERATURE, sensor_fault);
+
+    if (probe == SENSOR_TEMPERATURE_PROBE_AIR) {
+        s_temp_probe_fault_air = sensor_fault;
+    } else {
+        s_temp_probe_fault_water = sensor_fault;
+    }
+    set_sensor_fault_indicator(SENSOR_EVENT_TEMPERATURE, s_temp_probe_fault_water || s_temp_probe_fault_air);
+
+    const mqtt_topic_id_t topic_id =
+        (probe == SENSOR_TEMPERATURE_PROBE_AIR)
+            ? mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_NADRZ
+            : mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA;
 
     if (sensor_fault) {
-        snprintf(text, sizeof(text), "T: --.- ");
-        lcd_print(8, 0, text, false, 0);
+        if (probe == SENSOR_TEMPERATURE_PROBE_WATER) {
+            snprintf(text, sizeof(text), "T: --.- ");
+            lcd_print(8, 0, text, false, 0);
+        }
 
-        enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA);
+        enqueue_result = mqtt_publisher_enqueue_empty(topic_id);
     } else {
-        snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
-        lcd_print(8, 0, text, false, 0);
+        if (probe == SENSOR_TEMPERATURE_PROBE_WATER) {
+            snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
+            lcd_print(8, 0, text, false, 0);
+        }
 
         enqueue_result = mqtt_publisher_enqueue_double(
-            mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA,
+            topic_id,
             (double)event.data.temperature.temperature_c);
     }
 
     if (enqueue_result != ESP_OK) {
-        ESP_LOGW(TAG, "Enqueue teploty vody selhalo: %s", esp_err_to_name(enqueue_result));
+        const char *probe_name = (probe == SENSOR_TEMPERATURE_PROBE_AIR) ? "vzduchu" : "vody";
+        ESP_LOGW(TAG, "Enqueue teploty %s selhalo: %s", probe_name, esp_err_to_name(enqueue_result));
     }
 }
 

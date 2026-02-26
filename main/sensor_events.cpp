@@ -24,6 +24,18 @@ static const char *event_type_to_string(event_type_t event_type)
     }
 }
 
+static const char *temperature_probe_to_string(sensor_temperature_probe_t probe)
+{
+    switch (probe) {
+        case SENSOR_TEMPERATURE_PROBE_WATER:
+            return "water";
+        case SENSOR_TEMPERATURE_PROBE_AIR:
+            return "air";
+        default:
+            return "unknown";
+    }
+}
+
 void sensor_events_init(size_t queue_length)
 {
     if (s_sensor_events_queue != nullptr) {
@@ -72,8 +84,9 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_TEMPERATURE:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=temperature ts=%lld temp=%.2fC",
+                             "event=%s type=temperature probe=%s ts=%lld temp=%.2fC",
                              event_type_to_string(event->event_type),
+                             temperature_probe_to_string(event->data.sensor.data.temperature.probe),
                              (long long)event->timestamp_us,
                              event->data.sensor.data.temperature.temperature_c);
                     break;
