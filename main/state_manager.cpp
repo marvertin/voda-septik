@@ -81,7 +81,7 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
 
     const mqtt_topic_id_t topic_id =
         (probe == SENSOR_TEMPERATURE_PROBE_AIR)
-            ? mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_NADRZ
+            ? mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VZDUCH
             : mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA;
 
     if (sensor_fault) {

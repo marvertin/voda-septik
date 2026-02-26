@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Set
 
-DEFAULT_TOPIC_ROOT = os.environ.get("TOPIC_ROOT", "zalivka/nadrz")
+DEFAULT_TOPIC_ROOT = os.environ.get("TOPIC_ROOT", "voda/septik")
 DEFAULT_HOST = os.environ.get("MQTT_HOST", "mqtt.home.arpa")
 DEFAULT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 DEFAULT_USER = os.environ.get("MQTT_USER", "ha")

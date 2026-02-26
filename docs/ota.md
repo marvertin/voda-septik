@@ -25,30 +25,30 @@ Rucni postup bez helper skriptu:
 ```bash
 # start OTA
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "zalivka/nadrz/cmd/ota/start" \
+  -t "voda/septik/cmd/ota/start" \
   -m "http://IP_SERVERU:8000/zalevaci-nadrz.bin"
 
 # sledovani OTA eventu
 mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v \
-  -t "zalivka/nadrz/system/ota/#" -t "zalivka/nadrz/system/boot_mode"
+  -t "voda/septik/system/ota/#" -t "voda/septik/system/boot_mode"
 
 # potvrzeni po uspesnem nabootovani a overeni funkcnosti
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "zalivka/nadrz/cmd/ota/confirm" -m "1"
+  -t "voda/septik/cmd/ota/confirm" -m "1"
 ```
 
 ## Jak to funguje uvnitr
 
-- OTA se spousti MQTT commandem `zalivka/nadrz/cmd/ota/start`.
+- OTA se spousti MQTT commandem `voda/septik/cmd/ota/start`.
 - Command handler v `main/mqtt_commands.cpp` vola OTA manager (`ota_manager_start_from_url`).
 - OTA manager (`main/ota_manager.cpp`) stahuje image pres HTTP(S), zapisuje ji do OTA partition a po dokonceni restartuje zarizeni.
 - Pri behu publikuje stav do:
-  - `zalivka/nadrz/system/ota/event`
-  - `zalivka/nadrz/system/ota/progress`
-- Po startu noveho firmware se publikuje `zalivka/nadrz/system/boot_mode`:
+  - `voda/septik/system/ota/event`
+  - `voda/septik/system/ota/progress`
+- Po startu noveho firmware se publikuje `voda/septik/system/boot_mode`:
   - `ota` = firmware je ve stavu pending verify
   - `normal` = standardni, potvrzeny start
-- Potvrzeni probiha commandem `zalivka/nadrz/cmd/ota/confirm`, ktery vola `ota_manager_confirm_running_firmware()`.
+- Potvrzeni probiha commandem `voda/septik/cmd/ota/confirm`, ktery vola `ota_manager_confirm_running_firmware()`.
 - Pokud firmware neni potvrzen a je aktivni rollback, bootloader vrati predchozi potvrzenou verzi.
 
 ## Poznamky k provozu

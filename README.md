@@ -9,17 +9,17 @@
 
 Poznamka (migrace):
 - Konfiguracni polozka `mqtt_topic` byla odstranena.
-- Korenny topic je nyni pevne dany v registru topiku (`main/mqtt_topics.*`) jako `zalivka/nadrz`.
+- Korenny topic je nyni pevne dany v registru topiku (`main/mqtt_topics.*`) jako `voda/septik`.
 
 ```
-zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku + vodu ze studny
+voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsich budoucih pouziti (napr. bazen)
 
 ├── stav/
 │    ├── objem                      [l] Aktuální objem vody v nádrži. HA: sensor (state_class: measurement)
 │    ├── prutok                     [l/min] Aktuální průtok vody. HA: sensor (state_class: measurement)
 │    ├── cerpano_celkem             [l] Celkové vyčerpané množství vody od počátku. HA: sensor (state_class: total_increasing)
 │    ├── teplota_voda               [°C] Aktuální teplota vody v nádrži. HA: sensor (device_class: temperature)
-│    ├── teplota_nadrz              [°C] Aktuální teplota vzduchu v šachtě u potrubí v blízkosti tlakové nádoby. HA: sensor (device_class: temperature)
+│    ├── teplota_vzduch             [°C] Aktuální teplota vzduchu v šachtě u potrubí v blízkosti tlakové nádoby. HA: sensor (device_class: temperature)
 │    ├── tlak_pred_filtrem          [bar] Aktuální tlak vody před filtrem. HA: sensor (device_class: pressure)
 │    ├── tlak_za_filtrem            [bar] Aktuální tlak vody za filtrem. HA: sensor (device_class: pressure)
 │    ├── rozdil_tlaku_filtru        [bar] Rozdíl tlaku před a za filtrem. HA: sensor (state_class: measurement)
@@ -82,7 +82,7 @@ Pro pohodlne ovladani je v projektu interaktivni skript:
 ```
 
 Skript:
-- pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `zalivka/nadrz`,
+- pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `voda/septik`,
 - cte heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`,
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
 - nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...).
@@ -90,7 +90,7 @@ Skript:
 Volitelne lze prepsat parametry pres promenne prostredi:
 
 ```bash
-MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=zalivka/nadrz ./tools/mqtt_cmd_cli.sh
+MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=voda/septik ./tools/mqtt_cmd_cli.sh
 ```
 
 Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij:
@@ -99,7 +99,7 @@ Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij:
 ./tools/clear_retained_cmds.sh
 ```
 
-Skript vycisti retained zpravy na `zalivka/nadrz/cmd/*`.
+Skript vycisti retained zpravy na `voda/septik/cmd/*`.
 
 Nize jsou priklady pro `mosquitto_sub` a `mosquitto_pub`.
 
@@ -110,7 +110,7 @@ MQTT_HOST=192.168.1.10
 MQTT_PORT=1883
 MQTT_USER="uzivatel"
 MQTT_PASS="heslo"
-TOPIC_ROOT="zalivka/nadrz"
+TOPIC_ROOT="voda/septik"
 ```
 
 ### Odběr vsech dat ze zarizeni

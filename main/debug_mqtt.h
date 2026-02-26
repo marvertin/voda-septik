@@ -7,7 +7,7 @@ extern bool g_debug_enabled;
 
 void debug_mqtt_publish(const char *topic, const char *text);
 
-#define TOPIC_ROOT  "zalivka/nadrz"
+#define TOPIC_ROOT  "voda/septik"
 #define DEBUG_BASE  TOPIC_ROOT "/debug/"
 #define DEBUG_TOPIC(x) DEBUG_BASE x
 #define DEBUG_FILE_BASENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)

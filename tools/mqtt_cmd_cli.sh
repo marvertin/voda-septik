@@ -5,7 +5,7 @@ MQTT_HOST="${MQTT_HOST:-mqtt.home.arpa}"
 MQTT_PORT="${MQTT_PORT:-1883}"
 MQTT_USER="${MQTT_USER:-ha}"
 MQTT_QOS="${MQTT_QOS:-1}"
-TOPIC_ROOT="${TOPIC_ROOT:-zalivka/nadrz}"
+TOPIC_ROOT="${TOPIC_ROOT:-voda/septik}"
 MQTT_PASS_FILE="${MQTT_PASS_FILE:-$HOME/.zalevaci-nadrz/mqtt_password}"
 
 ensure_dependencies() {

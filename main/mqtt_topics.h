@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static constexpr const char *MQTT_TOPIC_ROOT = "zalivka/nadrz";
+static constexpr const char *MQTT_TOPIC_ROOT = "voda/septik";
 
 enum class mqtt_topic_id_t : uint16_t {
     TOPIC_STAV_OBJEM = 0,
     TOPIC_STAV_PRUTOK,
     TOPIC_STAV_CERPANO_CELKEM,
     TOPIC_STAV_TEPLOTA_VODA,
-    TOPIC_STAV_TEPLOTA_NADRZ,
+    TOPIC_STAV_TEPLOTA_VZDUCH,
     TOPIC_STAV_TLAK_PRED_FILTREM,
     TOPIC_STAV_TLAK_ZA_FILTREM,
     TOPIC_STAV_ROZDIL_TLAKU_FILTRU,

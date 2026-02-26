@@ -6,14 +6,14 @@
 
 Pro zmenu log levelu konkretniho tagu publikuj command na topic:
 
-- topic: `zalivka/nadrz/cmd/log/level`
+- topic: `voda/septik/cmd/log/level`
 - payload: `TAG=LEVEL`
 
 Priklad:
 
 ```bash
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "zalivka/nadrz/cmd/log/level" \
+  -t "voda/septik/cmd/log/level" \
   -m "mqtt_cmd=DEBUG"
 ```
 
@@ -30,7 +30,7 @@ Lze nastavit i globalni uroven:
 
 ```bash
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "zalivka/nadrz/cmd/log/level" \
+  -t "voda/septik/cmd/log/level" \
   -m "*=WARN"
 ```
 

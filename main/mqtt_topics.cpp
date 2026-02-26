@@ -3,7 +3,7 @@
 #define TOPIC_ENTRY(ID, PATH, DIR, KIND, QOS_VALUE, RETAIN_VALUE) \
     { \
         mqtt_topic_id_t::ID, \
-        "zalivka/nadrz/" PATH, \
+        "voda/septik/" PATH, \
         mqtt_topic_direction_t::DIR, \
         mqtt_payload_kind_t::KIND, \
         QOS_VALUE, \
@@ -15,7 +15,7 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_STAV_PRUTOK,                       "stav/prutok",                      PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_CERPANO_CELKEM,               "stav/cerpano_celkem",              PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_TEPLOTA_VODA,                 "stav/teplota_voda",                PUBLISH_ONLY,   NUMBER,  1, true),
-    TOPIC_ENTRY(TOPIC_STAV_TEPLOTA_NADRZ,                "stav/teplota_nadrz",               PUBLISH_ONLY,   NUMBER,  1, true),
+    TOPIC_ENTRY(TOPIC_STAV_TEPLOTA_VZDUCH,               "stav/teplota_vzduch",              PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_TLAK_PRED_FILTREM,            "stav/tlak_pred_filtrem",           PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_TLAK_ZA_FILTREM,              "stav/tlak_za_filtrem",             PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_ROZDIL_TLAKU_FILTRU,          "stav/rozdil_tlaku_filtru",         PUBLISH_ONLY,   NUMBER,  1, true),
