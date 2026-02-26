@@ -3,6 +3,7 @@ extern "C" {
 #endif
 
 #include <string.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -40,6 +41,7 @@ static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
 
 static bool s_mqtt_activity_timer_running = false;
+static float s_flow_l_min = 0.0f;
 
 
 StaticTimer_t s_mqtt_activity_colon_on_timer_buffer;
@@ -63,8 +65,104 @@ static constexpr struct {
 
 static uint8_t svitici_segmenty[] = { 0, 0, 0, 0 };
 
+static constexpr float FLOW_SPINNER_START_THRESHOLD_L_MIN = 0.05f;
+static constexpr float FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN = 0.20f;
+static constexpr float FLOW_SPINNER_SPEED_MAX_FLOW_L_MIN = 30.0f;
+static constexpr uint32_t FLOW_SPINNER_MIN_PERIOD_MS = 80;
+static constexpr uint32_t FLOW_SPINNER_MAX_PERIOD_MS = 450;
+static constexpr TickType_t FLOW_SPINNER_IDLE_POLL_DELAY = pdMS_TO_TICKS(30);
+
+static constexpr uint8_t FLOW_SPINNER_SEGMENT_MASK_POS0 = static_cast<uint8_t>(
+    TM1637_SEG_A | TM1637_SEG_D | TM1637_SEG_E | TM1637_SEG_F);
+static constexpr uint8_t FLOW_SPINNER_SEGMENT_MASK_POS1 = static_cast<uint8_t>(
+    TM1637_SEG_A | TM1637_SEG_B | TM1637_SEG_C | TM1637_SEG_D);
+
+struct flow_spinner_frame_t {
+    uint8_t seg_pos0;
+    uint8_t seg_pos1;
+};
+
+static constexpr flow_spinner_frame_t FLOW_SPINNER_FRAMES[] = {
+    {TM1637_SEG_A, 0},
+    {0, TM1637_SEG_A},
+    {0, TM1637_SEG_B},
+    {0, TM1637_SEG_C},
+    {0, TM1637_SEG_D},
+    {TM1637_SEG_D, 0},
+    {TM1637_SEG_E, 0},
+    {TM1637_SEG_F, 0},
+};
+
+static uint8_t s_flow_spinner_frame_index = 0;
+static TickType_t s_flow_spinner_next_tick = 0;
+static bool s_flow_spinner_active = false;
+
 static void set_error_led(bool on) {
     gpio_set_level(ERRORLED_PIN, on ? 1 : 0);
+}
+
+void status_display_set_flow_rate(float flow_l_min)
+{
+    taskENTER_CRITICAL(&s_status_mux);
+    s_flow_l_min = flow_l_min;
+    taskEXIT_CRITICAL(&s_status_mux);
+}
+
+static float status_display_get_flow_rate(void)
+{
+    float flow_snapshot = 0.0f;
+    taskENTER_CRITICAL(&s_status_mux);
+    flow_snapshot = s_flow_l_min;
+    taskEXIT_CRITICAL(&s_status_mux);
+    return flow_snapshot;
+}
+
+static bool flow_spinner_compute_period_ms(float flow_l_min, uint32_t *out_period_ms)
+{
+    if (out_period_ms == nullptr) {
+        return false;
+    }
+
+    if (!isfinite(flow_l_min) || flow_l_min <= FLOW_SPINNER_START_THRESHOLD_L_MIN) {
+        return false;
+    }
+
+    float clamped_flow = flow_l_min;
+    if (clamped_flow < FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN) {
+        clamped_flow = FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN;
+    }
+    if (clamped_flow > FLOW_SPINNER_SPEED_MAX_FLOW_L_MIN) {
+        clamped_flow = FLOW_SPINNER_SPEED_MAX_FLOW_L_MIN;
+    }
+
+    const float normalized =
+        (clamped_flow - FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN) /
+        (FLOW_SPINNER_SPEED_MAX_FLOW_L_MIN - FLOW_SPINNER_SPEED_MIN_FLOW_L_MIN);
+
+    const float period = (float)FLOW_SPINNER_MAX_PERIOD_MS -
+                         normalized * (float)(FLOW_SPINNER_MAX_PERIOD_MS - FLOW_SPINNER_MIN_PERIOD_MS);
+
+    *out_period_ms = (uint32_t)period;
+    return true;
+}
+
+static void flow_spinner_clear(void)
+{
+    set_segments(FLOW_SPINNER_SEGMENT_MASK_POS0, 0, false);
+    set_segments(FLOW_SPINNER_SEGMENT_MASK_POS1, 1, false);
+}
+
+static void flow_spinner_show_frame(uint8_t frame_index)
+{
+    flow_spinner_clear();
+
+    const flow_spinner_frame_t &frame = FLOW_SPINNER_FRAMES[frame_index % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0]))];
+    if (frame.seg_pos0 != 0) {
+        set_segments(frame.seg_pos0, 0, true);
+    }
+    if (frame.seg_pos1 != 0) {
+        set_segments(frame.seg_pos1, 1, true);
+    }
 }
 
 void set_segments(const uint8_t segments, uint8_t position, bool on) 
@@ -125,7 +223,37 @@ static void status_display_task(void *pvParameters)
     }
         */
     while (true) {
-        if ( !s_error_latched && !s_text_latched) {
+        const bool runtime_display_allowed = !s_error_latched && !s_text_latched;
+        uint32_t spinner_period_ms = 0;
+        const float flow_snapshot = status_display_get_flow_rate();
+        const bool spinner_enabled = runtime_display_allowed &&
+                                     flow_spinner_compute_period_ms(flow_snapshot, &spinner_period_ms);
+
+        if (spinner_enabled) {
+            const TickType_t now_ticks = xTaskGetTickCount();
+
+            if (!s_flow_spinner_active) {
+                s_flow_spinner_active = true;
+                s_flow_spinner_frame_index = 0;
+                flow_spinner_show_frame(s_flow_spinner_frame_index);
+                s_flow_spinner_next_tick = now_ticks + pdMS_TO_TICKS(spinner_period_ms);
+            } else if ((int32_t)(now_ticks - s_flow_spinner_next_tick) >= 0) {
+                s_flow_spinner_frame_index =
+                    (uint8_t)((s_flow_spinner_frame_index + 1) % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0])));
+                flow_spinner_show_frame(s_flow_spinner_frame_index);
+                s_flow_spinner_next_tick = now_ticks + pdMS_TO_TICKS(spinner_period_ms);
+            }
+
+            vTaskDelay(FLOW_SPINNER_IDLE_POLL_DELAY);
+            continue;
+        }
+
+        if (s_flow_spinner_active) {
+            flow_spinner_clear();
+            s_flow_spinner_active = false;
+        }
+
+        if (runtime_display_allowed) {
             system_network_level_t level_snapshot;
 
             level_snapshot = s_network_level;

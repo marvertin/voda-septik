@@ -26,7 +26,7 @@ extern "C" {
 
 static const char *TAG = "state";
 
-static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 0;
+static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 2;
 static constexpr uint8_t SENSOR_FAULT_LEVEL_POS = 2;
 static constexpr uint8_t SENSOR_FAULT_FLOW_POS = 3;
 
@@ -134,6 +134,7 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
 {
     const bool sensor_fault = !std::isfinite(event.data.flow.flow_l_min) || !std::isfinite(event.data.flow.total_volume_l);
     set_sensor_fault_indicator(SENSOR_EVENT_FLOW, sensor_fault);
+    status_display_set_flow_rate(event.data.flow.flow_l_min);
 
     char liters_text[16];
     snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.total_volume_l);
