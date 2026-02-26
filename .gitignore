@@ -8,12 +8,6 @@ Makefile
 compile_commands.json
 
 # SDK config and generated config artifacts
-sdkconfig
-sdkconfig.*
-!sdkconfig.defaults
-!sdkconfig.defaults.*
-sdkconfig.cmake
-config.env
 
 # Partition table and bootloader build artifacts
 partition_table/
