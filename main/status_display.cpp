@@ -106,8 +106,6 @@ static constexpr flow_spinner_frame_t FLOW_SPINNER_FRAMES[] = {
 };
 
 static uint8_t s_flow_spinner_frame_index = 0;
-static TickType_t s_flow_spinner_next_tick = 0;
-static bool s_flow_spinner_active = false;
 
 static void set_max_briteness_for_some_time(void);
 

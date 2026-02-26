@@ -9,7 +9,7 @@
 
 static const char *TAG = "mqtt_pub_task";
 static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
-static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(6 * 1000);
+static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(60 * 1000);
 
 static QueueHandle_t s_publish_queue = nullptr;
 static TaskHandle_t s_publish_task = nullptr;
