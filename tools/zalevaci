@@ -3,6 +3,7 @@ import argparse
 import getpass
 import os
 import re
+import shlex
 import signal
 import socket
 import subprocess
@@ -411,6 +412,54 @@ def ota_flow_noninteractive(host: str,
         server.stop()
 
 
+def subscribe_all_topics(host: str,
+                         port: int,
+                         user: str,
+                         password: str,
+                         qos: int,
+                         topic_root: str) -> None:
+    require_cmd("mosquitto_sub")
+
+    cmd = [
+        "mosquitto_sub",
+        "-h", host,
+        "-p", str(port),
+        "-u", user,
+        "-P", password,
+        "-q", str(qos),
+        "-v",
+        "-t", f"{topic_root}/#",
+    ]
+
+    manual_cmd = (
+        f"mosquitto_sub -h {shlex.quote(host)} -p {port} -u {shlex.quote(user)} "
+        f"-P \"$MQTT_PASS\" -q {qos} -v -t {shlex.quote(f'{topic_root}/#')}"
+    )
+
+    print("\nPrikaz pro rucni spusteni (muzete upravit):")
+    print(f"  {manual_cmd}")
+    print("\nSpoustim subscriber... ukonceni: Ctrl+C\n")
+
+    try:
+        subprocess.run(cmd, check=True)
+    except KeyboardInterrupt:
+        print("\nSubscriber ukoncen.")
+
+
+def print_subscribe_command_with_password(host: str,
+                                          port: int,
+                                          user: str,
+                                          password: str,
+                                          qos: int,
+                                          topic_root: str) -> None:
+    cmd = (
+        f"mosquitto_sub -h {shlex.quote(host)} -p {port} -u {shlex.quote(user)} "
+        f"-P {shlex.quote(password)} -q {qos} -v -t {shlex.quote(f'{topic_root}/#')}"
+    )
+    print("\nPrikaz s heslem natvrdo (lokalni pouziti, nedavat do git):")
+    print(f"  {cmd}")
+
+
 def print_header(host: str, port: int, user: str, qos: int, topic_root: str, pass_file: Path) -> None:
     print("""
 voda-septik tools
@@ -432,9 +481,11 @@ Vyber akci:
   2) Nastavit log level
   3) Vycistit retained cmd/*
   4) OTA flow
-  5) Konec
+  5) Odbirat vse (mosquitto_sub)
+  6) Vypsat sub prikaz s heslem
+  7) Konec
 """)
-        choice = input("Volba [1-5]: ").strip()
+        choice = input("Volba [1-7]: ").strip()
 
         try:
             if choice == "1":
@@ -446,6 +497,10 @@ Vyber akci:
             elif choice == "4":
                 ota_flow(host, port, user, password, qos, topic_root)
             elif choice == "5":
+                subscribe_all_topics(host, port, user, password, qos, topic_root)
+            elif choice == "6":
+                print_subscribe_command_with_password(host, port, user, password, qos, topic_root)
+            elif choice == "7":
                 print("Konec.")
                 return 0
             else:
