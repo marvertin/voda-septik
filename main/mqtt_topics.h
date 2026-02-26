@@ -57,9 +57,6 @@ enum class mqtt_topic_id_t : uint16_t {
     TOPIC_CMD_OTA_START,
     TOPIC_CMD_OTA_CONFIRM,
 
-    TOPIC_DEBUG_RAW,
-    TOPIC_DEBUG_INTERMEDIATE,
-
     COUNT,
 };
 

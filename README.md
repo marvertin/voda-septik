@@ -70,10 +70,8 @@ zalivka/nadrz                       Týká se zálivky a nádrže na dešťovku 
 │    ├── ota/start                  [url] URL na binarni obraz firmware (http/https)
 │    └── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
 │
-└── debug/
-      ├── raw                       [text] Surová data přímo ze senzorů před filtrací. HA: sensor
-      └── intermediate              [text] Mezivýsledky filtrace a výpočtů. HA: sensor
-```      
+└── debug
+
 
 ## Ovladani pres Mosquitto CLI
 

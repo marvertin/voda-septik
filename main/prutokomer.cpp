@@ -16,6 +16,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "flash_monotonic_counter.h"
 #include "app_error_check.h"
+#include "debug_mqtt.h"
 
 #define TAG "FLOW"
 
@@ -117,9 +118,21 @@ static void pocitani_pulsu(void *pvParameters)
             },
         };
 
-        if (!sensor_events_publish(&event, pdMS_TO_TICKS(20))) {
+        bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
+        if (!queued) {
             ESP_LOGW(TAG, "Fronta sensor eventu je plna, prutok zahozen");
         }
+
+        DEBUG_PUBLISH("flow",
+                      "queued=%d ts=%lld new_pulses=%lu elapsed_us=%lld raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",
+                      queued ? 1 : 0,
+                      (long long)now_us,
+                      (unsigned long)new_pulses,
+                      (long long)elapsed_us,
+                      (double)raw_flow_l_min,
+                      (double)s_flow_l_min_ema,
+                      (double)total_volume_l,
+                      (unsigned long long)s_persisted_counter_steps);
     }
 }
 

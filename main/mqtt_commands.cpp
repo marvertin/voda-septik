@@ -21,15 +21,14 @@ extern "C" {
 #include "ota_manager.h"
 #include "status_display.h"
 #include "webapp_startup.h"
+#include "debug_mqtt.h"
 
 static const char *TAG = "mqtt_cmd";
 static constexpr TickType_t REGISTER_RETRY_DELAY_TICKS = pdMS_TO_TICKS(500);
-static constexpr TickType_t DEBUG_IDLE_DELAY_TICKS = pdMS_TO_TICKS(500);
 static constexpr uint32_t DEBUG_INTERVAL_MIN_MS = 100;
 static constexpr uint32_t DEBUG_INTERVAL_MAX_MS = 600000;
 
 static bool s_handler_registered = false;
-static bool s_debug_enabled = false;
 static uint32_t s_debug_interval_ms = 5000;
 static char s_debug_sensors[MQTT_PUBLISH_TEXT_MAX_LEN] = "all";
 static portMUX_TYPE s_debug_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -104,7 +103,7 @@ static bool payload_is_truthy(const char *payload)
 static void command_set_debug_enabled(bool enabled)
 {
     taskENTER_CRITICAL(&s_debug_mux);
-    s_debug_enabled = enabled;
+    g_debug_enabled = enabled;
     taskEXIT_CRITICAL(&s_debug_mux);
 
     ESP_LOGI(TAG, "Debug režim: %s", enabled ? "ON" : "OFF");
@@ -486,57 +485,6 @@ static void mqtt_commands_register_task(void *param)
     vTaskDelete(nullptr);
 }
 
-static void mqtt_debug_publish_task(void *param)
-{
-    (void)param;
-
-    ESP_LOGI(TAG, "Start mqtt_debug_publish_task");
-
-    char sensors_copy[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
-    char debug_line[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
-    bool last_enabled = false;
-
-    while (true) {
-        bool enabled = false;
-        uint32_t interval_ms = 0;
-
-        taskENTER_CRITICAL(&s_debug_mux);
-        enabled = s_debug_enabled;
-        interval_ms = s_debug_interval_ms;
-        strncpy(sensors_copy, s_debug_sensors, sizeof(sensors_copy) - 1);
-        sensors_copy[sizeof(sensors_copy) - 1] = '\0';
-        taskEXIT_CRITICAL(&s_debug_mux);
-
-        if (enabled != last_enabled) {
-            ESP_LOGI(TAG, "Debug publisher stav: %s", enabled ? "ENABLED" : "DISABLED");
-            last_enabled = enabled;
-        }
-
-        if (!enabled) {
-            vTaskDelay(DEBUG_IDLE_DELAY_TICKS);
-            continue;
-        }
-
-        int64_t uptime_s = esp_timer_get_time() / 1000000LL;
-        snprintf(debug_line,
-                 sizeof(debug_line),
-                 "{\"uptime_s\":%lld,\"heap\":%u,\"sensors\":\"%.48s\"}",
-                 (long long)uptime_s,
-                 (unsigned)esp_get_free_heap_size(),
-                 sensors_copy);
-
-        (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DEBUG_INTERMEDIATE, debug_line);
-        (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DEBUG_RAW, sensors_copy);
-
-        ESP_LOGI(TAG,
-                 "Debug publish odeslan (interval=%lu ms, sensors='%s')",
-                 (unsigned long)interval_ms,
-                 sensors_copy);
-
-        vTaskDelay(pdMS_TO_TICKS(interval_ms));
-    }
-}
-
 esp_err_t mqtt_commands_start(void)
 {
     ESP_LOGI(TAG, "mqtt_commands_start() volano");
@@ -553,17 +501,14 @@ esp_err_t mqtt_commands_start(void)
 
     ESP_LOGI(TAG, "Task mqtt_cmd_reg vytvoren");
 
-    if (xTaskCreate(mqtt_debug_publish_task,
-                    "mqtt_cmd_dbg",
-                    configMINIMAL_STACK_SIZE * 4,
-                    nullptr,
-                    4,
-                    nullptr) != pdPASS) {
-        ESP_LOGE(TAG, "Nelze vytvorit mqtt_cmd_dbg task");
-        return ESP_ERR_NO_MEM;
-    }
-
-    ESP_LOGI(TAG, "Task mqtt_cmd_dbg vytvoren");
-
     return ESP_OK;
+}
+
+bool mqtt_commands_debug_enabled(void)
+{
+    bool enabled = false;
+    taskENTER_CRITICAL(&s_debug_mux);
+    enabled = g_debug_enabled;
+    taskEXIT_CRITICAL(&s_debug_mux);
+    return enabled;
 }

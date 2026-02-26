@@ -16,6 +16,7 @@ extern "C" {
 #include "trimmed_mean.hpp"
 #include "config_webapp.h"
 #include "sensor_events.h"
+#include "debug_mqtt.h"
 
 #define TAG "LEVEL_DEMO"
 
@@ -255,9 +256,21 @@ static void level_task(void *pvParameters)
             },
         };
 
-        if (!sensor_events_publish(&event, pdMS_TO_TICKS(20))) {
+        bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
+        if (!queued) {
             ESP_LOGW(TAG, "Fronta sensor eventu je plna, hladina zahozena");
         }
+
+        DEBUG_PUBLISH("level",
+                      "queued=%d ts=%lld raw=%lu height=%.6f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
+                      queued ? 1 : 0,
+                      (long long)event.timestamp_us,
+                      (unsigned long)raw_value,
+                      (double)height,
+                      (long)g_level_config.adc_raw_min,
+                      (long)g_level_config.adc_raw_max,
+                      (double)g_level_config.height_min,
+                      (double)g_level_config.height_max);
         
         // Čtení každou sekundu
         vTaskDelay(pdMS_TO_TICKS(20));

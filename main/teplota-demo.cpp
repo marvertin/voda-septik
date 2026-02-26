@@ -19,6 +19,7 @@ extern "C" {
 #include "pins.h"
 #include "sensor_events.h"
 #include <app_error_check.h>
+#include "debug_mqtt.h"
 
 #define TAG "TEMP_DEMO"
 
@@ -45,7 +46,7 @@ typedef struct {
  * @param temp ukazatel na float kde se uloží výsledek
  * @return true pokud se podařilo, false pokud chyba
  */
-static bool ds18b20_read_temperature(gpio_num_t gpio, float *temp)
+static bool ds18b20_read_temperature(gpio_num_t gpio, float *temp, int16_t *raw_temp_out)
 {
     if (!temp) return false;
     
@@ -99,6 +100,9 @@ static bool ds18b20_read_temperature(gpio_num_t gpio, float *temp)
     // DS18B20 formát: MSB je integer část, LSB je frakční část
     // Frakční část je v horních 4 bitech LSB
     int16_t raw_temp = ((int16_t)scratch.temp_msb << 8) | scratch.temp_lsb;
+    if (raw_temp_out != nullptr) {
+        *raw_temp_out = raw_temp;
+    }
     *temp = (float)(raw_temp >> 4) + ((float)(raw_temp & 0x0F)) / 16.0f;
     
     return true;
@@ -110,10 +114,11 @@ static void temperature_task(void *pvParameters)
     gpio_set_pull_mode(SENSOR_GPIO, GPIO_PULLUP_ONLY);
     
     float temperature;
+    int16_t raw_temp = 0;
     
     while (1)
     {
-        if (ds18b20_read_temperature(SENSOR_GPIO, &temperature)) {
+        if (ds18b20_read_temperature(SENSOR_GPIO, &temperature, &raw_temp)) {
             ESP_LOGI(TAG, "Teplota: %.2f °C", temperature);
 
             app_event_t event = {
@@ -131,9 +136,18 @@ static void temperature_task(void *pvParameters)
                 },
             };
 
-            if (!sensor_events_publish(&event, pdMS_TO_TICKS(50))) {
+            bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(50));
+            if (!queued) {
                 ESP_LOGW(TAG, "Fronta sensor eventu je plna, teplota zahozena");
             }
+
+            DEBUG_PUBLISH("temperature",
+                          "queued=%d ts=%lld temp_c=%.4f raw_temp=%d gpio=%d",
+                          queued ? 1 : 0,
+                          (long long)event.timestamp_us,
+                          (double)temperature,
+                          (int)raw_temp,
+                          (int)SENSOR_GPIO);
         } else {
             ESP_LOGE(TAG, "Nebylo možno přečíst teplotu");
 
@@ -152,9 +166,16 @@ static void temperature_task(void *pvParameters)
                 },
             };
 
-            if (!sensor_events_publish(&event, pdMS_TO_TICKS(50))) {
+            bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(50));
+            if (!queued) {
                 ESP_LOGW(TAG, "Fronta sensor eventu je plna, teplota (invalid) zahozena");
             }
+
+            DEBUG_PUBLISH("temperature",
+                          "queued=%d ts=%lld read_failed=1 gpio=%d",
+                          queued ? 1 : 0,
+                          (long long)event.timestamp_us,
+                          (int)SENSOR_GPIO);
         }
         
         // Čtení každou sekundu
