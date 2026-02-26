@@ -17,8 +17,8 @@ DEFAULT_HOST = os.environ.get("MQTT_HOST", "mqtt.home.arpa")
 DEFAULT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 DEFAULT_USER = os.environ.get("MQTT_USER", "ha")
 DEFAULT_QOS = int(os.environ.get("MQTT_QOS", "1"))
-DEFAULT_PASS_FILE = Path(os.environ.get("MQTT_PASS_FILE", str(Path.home() / ".zalevaci-nadrz" / "mqtt_password")))
-DEFAULT_BIN_PATH = os.environ.get("OTA_BIN_PATH", "build/zalevaci-nadrz.bin")
+DEFAULT_PASS_FILE = Path(os.environ.get("MQTT_PASS_FILE", str(Path.home() / ".voda-septik" / "mqtt_password")))
+DEFAULT_BIN_PATH = os.environ.get("OTA_BIN_PATH", "build/voda-septik.bin")
 DEFAULT_HTTP_PORT = int(os.environ.get("OTA_HTTP_PORT", "8000"))
 DEFAULT_OTA_TIMEOUT = int(os.environ.get("OTA_WAIT_TIMEOUT_SEC", "300"))
 DEFAULT_SCAN_ROOTS = ["main", "components", "managed_components"]
@@ -413,7 +413,7 @@ def ota_flow_noninteractive(host: str,
 
 def print_header(host: str, port: int, user: str, qos: int, topic_root: str, pass_file: Path) -> None:
     print("""
-zalevaci tools
+voda-septik tools
 --------------""")
     print(f"Host:       {host}")
     print(f"Port:       {port}")
@@ -457,7 +457,7 @@ Vyber akci:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zalevaci",
-        description="Interaktivni i neinteraktivni MQTT/OTA helper pro projekt zalevaci-nadrz.",
+        description="Interaktivni i neinteraktivni MQTT/OTA helper pro projekt voda-septik.",
     )
 
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"MQTT host (default: {DEFAULT_HOST})")
