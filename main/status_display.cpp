@@ -70,7 +70,13 @@ static void set_error_led(bool on) {
 void set_segments(const uint8_t segments, uint8_t position, bool on) 
 {
     if (position < 4) {
-        svitici_segmenty[position] = on ? (svitici_segmenty[position] | segments) : (svitici_segmenty[position] & ~segments);
+        const uint8_t updated_segments = on ? (svitici_segmenty[position] | segments)
+                                            : (svitici_segmenty[position] & ~segments);
+        if (updated_segments == svitici_segmenty[position]) {
+            return;
+        }
+
+        svitici_segmenty[position] = updated_segments;
         tm1637_set_segments(s_tm1637_display, svitici_segmenty, 4, 0);
         set_error_led(svitici_segmenty[1] & TM1637_SEG_DP); // pokud se mění segment DP, aktualizuj i error LED, která je s ním propojená
     }
