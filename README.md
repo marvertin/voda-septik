@@ -75,31 +75,58 @@ voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsic
 
 Podrobny navod k logovani je v dokumentu [Logovani a log levely](docs/logging.md).
 
-Pro pohodlne ovladani je v projektu interaktivni skript:
+Pro pohodlne ovladani je v projektu jednotny interaktivni skript:
 
 ```bash
-./tools/mqtt_cmd_cli.sh
+zalevaci
+```
+
+Pokud jeste nemas aktivni `direnv`, udelej jednorazove:
+
+```bash
+direnv allow
+```
+
+Potom bude `tools/` automaticky v `PATH` pri vstupu do adresare projektu a prikaz `zalevaci` bude dostupny primo.
+
+Napoveda a neinteraktivni rezim:
+
+```bash
+zalevaci --help
+```
+
+Priklady (vhodne pro skripty/CI):
+
+```bash
+# command publish
+zalevaci cmd reboot
+
+# log level
+zalevaci log --tag mqtt_cmd --level DEBUG
+
+# vycisteni retained cmd topiku
+zalevaci clear-retained
+
+# vypis nalezenych log tagu
+zalevaci tags
 ```
 
 Skript:
 - pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `voda/septik`,
 - cte heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`,
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
-- nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...).
+- nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...),
+- umi nastavit log level (vcetne volby tagu nalezenych ve zdrojacich),
+- umi vycistit retained command topiky,
+- umi projit OTA flow (HTTP server + `cmd/ota/start` + potvrzeni).
 
 Volitelne lze prepsat parametry pres promenne prostredi:
 
 ```bash
-MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=voda/septik ./tools/mqtt_cmd_cli.sh
+MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=voda/septik zalevaci
 ```
 
-Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij:
-
-```bash
-./tools/clear_retained_cmds.sh
-```
-
-Skript vycisti retained zpravy na `voda/septik/cmd/*`.
+Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij volbu `Vycistit retained cmd/*` v menu skriptu `zalevaci`.
 
 Nize jsou priklady pro `mosquitto_sub` a `mosquitto_pub`.
 
@@ -174,7 +201,7 @@ mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v
 
 Podrobny navod k OTA je v dokumentu [OTA aktualizace](docs/ota.md).
 
-V projektu je interaktivni helper, ktery:
+V projektu je interaktivni helper (soucast `zalevaci`), ktery:
 - spusti jednoduchy HTTP server nad vybranym `.bin` souborem,
 - posle MQTT command `cmd/ota/start` s URL na firmware,
 - po rebootu se zepta, zda je firmware v poradku,
@@ -183,8 +210,10 @@ V projektu je interaktivni helper, ktery:
 Spusteni:
 
 ```bash
-./tools/ota_flow_cli.sh
+zalevaci
 ```
+
+V menu zvol `OTA flow`.
 
 
 ## Architektura site (po refaktoru)

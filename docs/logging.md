@@ -34,27 +34,34 @@ mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q
   -m "*=WARN"
 ```
 
-### Interaktivni skripty
+### Interaktivni skript
 
-1) Jednoduche menu commandu:
+Jednotny helper spustis prikazem:
 
 ```bash
-./tools/mqtt_cmd_cli.sh
+zalevaci
 ```
 
-V menu je volba `log/level`.
-
-2) Pokrocilejsi helper pro logy (umi najit tagy ve zdrojacich):
+Napoveda a neinteraktivni prikazy:
 
 ```bash
-# vypis nalezenych tagu (prohleda main, components i managed_components)
-./tools/mqtt_log_level_cli.py --list
+zalevaci --help
+```
 
-# nastaveni konkretniho tagu
-./tools/mqtt_log_level_cli.py --tag mqtt_cmd --level DEBUG
+V menu je volba `Nastavit log level`.
 
-# nastaveni globalne
-./tools/mqtt_log_level_cli.py --all --level WARN
+Skript umi najit tagy ve zdrojacich (`main`, `components`, `managed_components`) a nabidnout je interaktivne.
+
+Priklad pouziti:
+
+```bash
+# 1) spust helper
+zalevaci
+# 2) vyber "Nastavit log level"
+# 3) vyber tag (nebo *) a uroven
+
+# nebo neinteraktivne:
+zalevaci log --tag mqtt_cmd --level DEBUG
 ```
 
 Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.zalevaci-nadrz/mqtt_password`.
@@ -64,10 +71,10 @@ Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.zaleva
 Pokud broker drzi stare retained zpravy na `cmd/*`, vycisti je jednim prikazem:
 
 ```bash
-./tools/clear_retained_cmds.sh
+zalevaci
 ```
 
-Skript posle pro vsechny command topicy retained null zpravu (`-r -n`) a tim je na brokeru smaze.
+V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy retained null zpravu (`-r -n`) a tim je na brokeru smaze.
 
 ## Jak to funguje uvnitr
 
