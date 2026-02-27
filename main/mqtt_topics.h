@@ -45,6 +45,7 @@ enum class mqtt_topic_id_t : uint16_t {
     TOPIC_DIAG_HEAP_MIN_FREE_B,
     TOPIC_DIAG_ESP_VCC_MV,
     TOPIC_DIAG_NVS_ERRORS,
+    TOPIC_DIAG_TEPLOTA_SCAN,
 
     TOPIC_CMD_REBOOT,
     TOPIC_CMD_WEBAPP_START,
@@ -54,6 +55,7 @@ enum class mqtt_topic_id_t : uint16_t {
     TOPIC_CMD_LOG_LEVEL,
     TOPIC_CMD_OTA_START,
     TOPIC_CMD_OTA_CONFIRM,
+    TOPIC_CMD_TEPLOTA_SCAN,
 
     COUNT,
 };

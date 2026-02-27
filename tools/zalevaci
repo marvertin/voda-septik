@@ -33,6 +33,7 @@ CMD_TOPICS = [
     "cmd/log/level",
     "cmd/ota/start",
     "cmd/ota/confirm",
+    "cmd/teplota/scan",
 ]
 
 TAG_PATTERNS = [
@@ -126,10 +127,12 @@ MQTT command menu
   4) debug/start
   5) debug/stop
   6) log/level
-  7) custom cmd topic
-  8) zpet
+    7) teplota/scan (ON)
+    8) teplota/scan (OFF)
+    9) custom cmd topic
+ 10) zpet
 """)
-        choice = input("Volba [1-8]: ").strip()
+        choice = input("Volba [1-10]: ").strip()
 
         try:
             if choice == "1":
@@ -145,13 +148,17 @@ MQTT command menu
             elif choice == "6":
                 set_log_level(host, port, user, password, qos, topic_root)
             elif choice == "7":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/teplota/scan", "1")
+            elif choice == "8":
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/teplota/scan", "0")
+            elif choice == "9":
                 sub = input(f"Cast za '{topic_root}/cmd/' (napr. webapp/start): ").strip()
                 if not sub:
                     print("Topic nesmi byt prazdny.")
                     continue
                 payload = input("Payload [1]: ").strip() or "1"
                 mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/{sub}", payload)
-            elif choice == "8":
+            elif choice == "10":
                 return
             else:
                 print("Neplatna volba.")

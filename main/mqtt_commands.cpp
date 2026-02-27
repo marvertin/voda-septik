@@ -21,6 +21,7 @@ extern "C" {
 #include "network_init.h"
 #include "ota_manager.h"
 #include "status_display.h"
+#include "teplota-demo.h"
 #include "webapp_startup.h"
 #include "debug_mqtt.h"
 
@@ -330,6 +331,17 @@ static void handle_command(mqtt_topic_id_t command_id, const char *payload)
                 ESP_LOGW(TAG, "cmd/ota/confirm selhal: %s", esp_err_to_name(result));
             } else {
                 ESP_LOGW(TAG, "cmd/ota/confirm prijat, firmware potvrzen");
+            }
+            break;
+        }
+
+        case mqtt_topic_id_t::TOPIC_CMD_TEPLOTA_SCAN: {
+            const bool enabled = payload_is_truthy(payload);
+            esp_err_t result = teplota_demo_set_scan_enabled(enabled);
+            if (result != ESP_OK) {
+                ESP_LOGW(TAG, "cmd/teplota/scan selhal: %s", esp_err_to_name(result));
+            } else {
+                ESP_LOGW(TAG, "cmd/teplota/scan: %s", enabled ? "ON" : "OFF");
             }
             break;
         }

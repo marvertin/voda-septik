@@ -9,3 +9,5 @@ esp_err_t app_config_ensure_defaults(void);
 esp_err_t app_config_load_wifi_credentials(char *ssid, size_t ssid_len, char *password, size_t password_len);
 esp_err_t app_config_load_mqtt_uri(char *uri, size_t uri_len);
 esp_err_t app_config_load_mqtt_credentials(char *username, size_t username_len, char *password, size_t password_len);
+esp_err_t app_config_load_temperature_addresses(char *water_addr, size_t water_addr_len,
+												char *air_addr, size_t air_addr_len);

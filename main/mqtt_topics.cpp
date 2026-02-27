@@ -50,6 +50,7 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_DIAG_HEAP_MIN_FREE_B,              "diag/heap_min_free_b",             PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_DIAG_ESP_VCC_MV,                   "diag/esp_vcc_mv",                  PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_DIAG_NVS_ERRORS,                   "diag/nvs_errors",                  PUBLISH_ONLY,   NUMBER,  1, true),
+    TOPIC_ENTRY(TOPIC_DIAG_TEPLOTA_SCAN,                 "diag/teplota_scan",                PUBLISH_ONLY,   JSON,    1, false),
 
     TOPIC_ENTRY(TOPIC_CMD_REBOOT,                        "cmd/reboot",                       SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_WEBAPP_START,                  "cmd/webapp/start",                 SUBSCRIBE_ONLY, TEXT,    1, false),
@@ -59,6 +60,7 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_CMD_LOG_LEVEL,                     "cmd/log/level",                    SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_OTA_START,                     "cmd/ota/start",                    SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_OTA_CONFIRM,                   "cmd/ota/confirm",                  SUBSCRIBE_ONLY, TEXT,    1, false),
+    TOPIC_ENTRY(TOPIC_CMD_TEPLOTA_SCAN,                  "cmd/teplota/scan",                 SUBSCRIBE_ONLY, TEXT,    1, false),
 };
 
 #undef TOPIC_ENTRY
