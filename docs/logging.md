@@ -97,3 +97,24 @@ V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy 
 - V beznem provozu nech globalni uroven na `WARN`.
 - Pro kratke ladeni zvys uroven jen na konkretnim tagu (napr. `mqtt_cmd=DEBUG`).
 - Po dodiagnostikovani vrat hodnoty zpet na `WARN`, at se nesnizuje vykon a nezahlcuje serial/MQTT vystup.
+
+## Ladeni tlaku (4-20 mA)
+
+Pro ladeni tlakove vetve nastav tag `PRESSURE` na `DEBUG`:
+
+```bash
+zalevaci log --tag PRESSURE --level DEBUG
+```
+
+V debug logu sleduj zejmena:
+
+- `raw` hodnoty pred/za filtrem (stabilita a sum)
+- prepocitany proud `i=... mA` (zda odpovida realnemu senzoru)
+- tlak `p=... bar` pred/za filtrem
+- rozdil `dP=... bar` a odvozenou `clog=...%`
+
+Prakticky postup pri kalibraci:
+
+1. Pri znamem bodu (4 mA / 20 mA) over `raw` a uprav `tlk_raw_4ma`, `tlk_raw_20ma`.
+2. Over mapovani rozsahu cidla pres `tlk_p_min` a `tlk_p_max`.
+3. Podle realneho stavu filtru dolad `tlk_dp_100`, aby procenta zaneseni sedela.

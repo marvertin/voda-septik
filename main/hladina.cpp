@@ -6,7 +6,6 @@ extern "C" {
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_timer.h>
-#include <esp_adc/adc_oneshot.h>
 #include <driver/gpio.h>
 
 #ifdef __cplusplus
@@ -14,6 +13,7 @@ extern "C" {
 #endif
 
 #include "trimmed_mean.hpp"
+#include "adc_shared.h"
 #include "pins.h"
 #include "config_webapp.h"
 #include "sensor_events.h"
@@ -100,8 +100,6 @@ static level_calibration_config_t g_level_config = {
     .height_max = 0.290f,
 };
 
-static adc_oneshot_unit_handle_t adc_handle = NULL;
-
 // Vytvoříme instanci filtrů pro měření hladiny (31 prvků, 5 oříznutých z obou stran)
 static TrimmedMean<31, 5> level_filter;
 
@@ -140,25 +138,20 @@ static void load_level_calibration_config(void)
  */
 static esp_err_t adc_init(void)
 {
-    adc_oneshot_unit_init_cfg_t init_config;
-    memset(&init_config, 0, sizeof(init_config));
-    init_config.unit_id = LEVEL_SENSOR_ADC_UNIT;
-    
-    if (adc_oneshot_new_unit(&init_config, &adc_handle) != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku");
-        return ESP_FAIL;
+    esp_err_t ret = adc_shared_init(LEVEL_SENSOR_ADC_UNIT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku (%s)", esp_err_to_name(ret));
+        return ret;
     }
-    
-    adc_oneshot_chan_cfg_t config;
-    memset(&config, 0, sizeof(config));
-    config.bitwidth = LEVEL_SENSOR_ADC_BITWIDTH;
-    config.atten = LEVEL_SENSOR_ADC_ATTENUATION;
-    
-    if (adc_oneshot_config_channel(adc_handle, LEVEL_SENSOR_ADC_CHANNEL, &config) != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba: Nelze nakonfigurovat ADC kanál");
-        return ESP_FAIL;
+
+    ret = adc_shared_config_channel(LEVEL_SENSOR_ADC_CHANNEL,
+                                    LEVEL_SENSOR_ADC_BITWIDTH,
+                                    LEVEL_SENSOR_ADC_ATTENUATION);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Chyba: Nelze nakonfigurovat ADC kanál (%s)", esp_err_to_name(ret));
+        return ret;
     }
-    
+
     return ESP_OK;
 }
 
@@ -168,9 +161,9 @@ static esp_err_t adc_init(void)
  */
 static uint32_t adc_read_average(void)
 {
-    int raw_value = 0;  
-    if (adc_oneshot_read(adc_handle, LEVEL_SENSOR_ADC_CHANNEL, &raw_value) != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba při čtení ADC");
+    int raw_value = 0;
+    if (adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw_value) != ESP_OK) {
+        ESP_LOGE(TAG, "Chyba pri cteni ADC");
         return 0;
     }
     

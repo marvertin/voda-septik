@@ -164,6 +164,50 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
 
 }
 
+static void publish_pressure_to_outputs(const sensor_event_t &event)
+{
+    const float pressure_before_bar = event.data.pressure.pressure_before_bar;
+    const float pressure_after_bar = event.data.pressure.pressure_after_bar;
+    const float pressure_diff_bar = event.data.pressure.pressure_diff_bar;
+    const float filter_clogging_percent = event.data.pressure.filter_clogging_percent;
+
+    const bool sensor_fault =
+        !std::isfinite(pressure_before_bar) ||
+        !std::isfinite(pressure_after_bar) ||
+        !std::isfinite(pressure_diff_bar) ||
+        (event.data.pressure.raw_before_filter == 0) ||
+        (event.data.pressure.raw_after_filter == 0);
+    set_sensor_fault_indicator(SENSOR_EVENT_PRESSURE, sensor_fault);
+
+    esp_err_t before_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM,
+        (double)pressure_before_bar);
+    if (before_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue tlaku pred filtrem selhalo: %s", esp_err_to_name(before_result));
+    }
+
+    esp_err_t after_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM,
+        (double)pressure_after_bar);
+    if (after_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue tlaku za filtrem selhalo: %s", esp_err_to_name(after_result));
+    }
+
+    esp_err_t diff_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU,
+        (double)pressure_diff_bar);
+    if (diff_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_result));
+    }
+
+    esp_err_t clog_result = mqtt_publisher_enqueue_double(
+        mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT,
+        (double)filter_clogging_percent);
+    if (clog_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue zanesenosti filtru selhalo: %s", esp_err_to_name(clog_result));
+    }
+}
+
 static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -194,6 +238,9 @@ static void state_manager_task(void *pvParameters)
                         publish_flow_to_outputs(event.data.sensor);
                         break;
                     }
+                    case SENSOR_EVENT_PRESSURE:
+                        publish_pressure_to_outputs(event.data.sensor);
+                        break;
                     default:
                         ESP_LOGW(TAG, "Neznamy sensor event: %d", (int)event.data.sensor.sensor_type);
                         break;

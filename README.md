@@ -5,6 +5,34 @@
 - [OTA aktualizace](docs/ota.md)
 - [Logovani a log levely](docs/logging.md)
 
+## Kalibrace tlaku (webapp)
+
+Modul tlaku (`main/tlak.cpp`) meri dve 4-20 mA cidla (pred filtrem / za filtrem) a hodnoty mapuje pres kalibracni polozky dostupne v konfiguracni webapp.
+
+- `tlk_raw_4ma` (default `745`) - ADC RAW hodnota odpovidajici 4 mA.
+- `tlk_raw_20ma` (default `3722`) - ADC RAW hodnota odpovidajici 20 mA.
+- `tlk_p_min` (default `0.0`) - tlak [bar] pro 4 mA.
+- `tlk_p_max` (default `10.0`) - tlak [bar] pro 20 mA.
+- `tlk_dp_100` (default `1.0`) - rozdil tlaku [bar], ktery odpovida 100 % zanesenosti filtru.
+
+Publikovane MQTT hodnoty:
+- `stav/tlak_pred_filtrem`
+- `stav/tlak_za_filtrem`
+- `stav/rozdil_tlaku_filtru`
+- `stav/zanesenost_filtru_percent`
+
+Doporuceny postup prvotniho nastaveni:
+1. Pri stabilnim tlaku zmerit skutecny proud/RAW a upravit `tlk_raw_4ma` a `tlk_raw_20ma`.
+2. Nastavit realny rozsah cidla (`tlk_p_min`, `tlk_p_max`) podle datasheetu.
+3. Podle provozu filtru doladit `tlk_dp_100`, aby procenta zaneseni odpovidala realnemu stavu.
+
+Kalibracni checklist (rychly postup):
+- [ ] Zapnout debug pro tag `PRESSURE` a overit, ze hodnoty `raw` nekolisaji nestandardne.
+- [ ] Pri referencnim bode 4 mA nastavit `tlk_raw_4ma`.
+- [ ] Pri referencnim bode 20 mA nastavit `tlk_raw_20ma`.
+- [ ] Overit, ze `p=... bar` odpovida manometru, pripadne doladit `tlk_p_min`/`tlk_p_max`.
+- [ ] Pri znamem zanesenem stavu filtru doladit `tlk_dp_100`.
+
 ## Struktura mqtt topiků.
 
 Poznamka (migrace):

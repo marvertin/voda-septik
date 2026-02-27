@@ -21,6 +21,7 @@ typedef enum {
     SENSOR_EVENT_TEMPERATURE = 0,
     SENSOR_EVENT_LEVEL,
     SENSOR_EVENT_FLOW,
+    SENSOR_EVENT_PRESSURE,
 } sensor_event_type_t;
 
 typedef enum {
@@ -44,11 +45,23 @@ typedef struct {
 } sensor_flow_data_t;
 
 typedef struct {
+    uint32_t raw_before_pre_filter;
+    uint32_t raw_after_pre_filter;
+    uint32_t raw_before_filter;
+    uint32_t raw_after_filter;
+    float pressure_before_bar;
+    float pressure_after_bar;
+    float pressure_diff_bar;
+    float filter_clogging_percent;
+} sensor_pressure_data_t;
+
+typedef struct {
     sensor_event_type_t sensor_type;
     union {
         sensor_temperature_data_t temperature;
         sensor_level_data_t level;
         sensor_flow_data_t flow;
+        sensor_pressure_data_t pressure;
     } data;
 } sensor_event_t;
 
