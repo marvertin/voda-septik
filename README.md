@@ -56,7 +56,8 @@ voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsic
 │    ├── heap_free_b                [B] Aktuální počet volných bajtů na heapu. HA: sensor (device_class: data_size)
 │    ├── heap_min_free_b            [B] Nejmenší zaznamenaná hodnota volného heapu od startu. HA: sensor (device_class: data_size)
 │    ├── esp_vcc_mv                 [mV] Napájecí napětí ESP. HA: sensor (device_class: voltage)
-│    └── nvs_errors                 [count] Počet chyb při práci s NVS. HA: sensor (state_class: total_increasing)
+│    ├── nvs_errors                 [count] Počet chyb při práci s NVS. HA: sensor (state_class: total_increasing)
+│    └── teplota_scan               [json] Prubezny report nalezenych DS18B20 adres, teplot a mapovani na konfiguraci
 │
 ├── cmd/
 │    ├── reboot                     [-] Reboot zařízení, čímž se vypnou všechny debugy. HA: button
@@ -66,7 +67,8 @@ voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsic
 │    ├── debug/stop                 [-] Zastavení debug režimu. HA: button
 │    ├── log/level                  [text] Nastaveni log levelu per tag (payload: tag=level)
 │    ├── ota/start                  [url] URL na binarni obraz firmware (http/https)
-│    └── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
+│    ├── ota/confirm                [-] Rucni potvrzeni nahraneho firmware po overeni funkcnosti
+│    └── teplota/scan               [bool] Zapnuti/vypnuti periodickeho skenovani DS18B20 adres (1=true, 0=false)
 │
 └── debug
 
@@ -117,6 +119,7 @@ Skript:
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
 - nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...),
 - umi nastavit log level (vcetne volby tagu nalezenych ve zdrojacich),
+- umi zapnout/vypnout scan teplotnich cidel (`cmd/teplota/scan`),
 - umi vycistit retained command topiky,
 - umi projit OTA flow (HTTP server + `cmd/ota/start` + potvrzeni).
 
@@ -188,6 +191,18 @@ mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q
 
 ```bash
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/ota/confirm" -m "1"
+```
+
+`cmd/teplota/scan` (zapne periodicky scan DS18B20 adres a report na `diag/teplota_scan`):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/teplota/scan" -m "1"
+```
+
+`cmd/teplota/scan` (vypne scan):
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 -t "$TOPIC_ROOT/cmd/teplota/scan" -m "0"
 ```
 
 ### Odběr debug vetve

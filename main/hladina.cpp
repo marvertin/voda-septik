@@ -19,7 +19,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 
-#define TAG "LEVEL_DEMO"
+#define TAG "LEVEL"
 
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 
@@ -202,7 +202,7 @@ static float adc_raw_to_height(uint32_t raw_value)
 
 static void level_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Spouštění demá čtení hladiny...");
+    ESP_LOGI(TAG, "Spousteni cteni hladiny...");
     
     // Inicializace ADC
     if (adc_init() != ESP_OK) {
@@ -271,14 +271,14 @@ static void level_task(void *pvParameters)
     }
 }
 
-void hladina_demo_init(void)
+void hladina_init(void)
 {
     load_level_calibration_config();
 
     xTaskCreate(level_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
 
-config_group_t hladina_demo_get_config_group(void)
+config_group_t hladina_get_config_group(void)
 {
     config_group_t group = {
         .items = LEVEL_CONFIG_ITEMS,

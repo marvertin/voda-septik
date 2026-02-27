@@ -14,7 +14,7 @@ extern "C" {
 #include "app-config.h"
 #include "config_webapp.h"
 #include "esp_log.h"
-#include "hladina-demo.h"
+#include "hladina.h"
 #include "restart_info.h"
 
 static const char *TAG = "webapp_startup";
@@ -96,7 +96,7 @@ esp_err_t webapp_startup_start(void)
 
     const config_group_t config_groups[] = {
         app_config_get_config_group(),
-        hladina_demo_get_config_group(),
+        hladina_get_config_group(),
     };
 
     app_restart_info_t restart_info = {};

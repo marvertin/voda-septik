@@ -13,7 +13,7 @@
 #include "pins.h"
 #include "prutokomer.h"
 #include "teplota.h"
-#include "hladina-demo.h"
+#include "hladina.h"
 #include "app-config.h"
 #include "boot_button.h"
 #include "sensor_events.h"
@@ -176,7 +176,7 @@ void cpp_app_main(void)
 
     const config_group_t config_groups[] = {
         app_config_get_config_group(),
-        hladina_demo_get_config_group(),
+        hladina_get_config_group(),
     };
     APP_ERROR_CHECK("E108", config_webapp_prepare("app_cfg",
                                                     config_groups,
@@ -210,7 +210,7 @@ void cpp_app_main(void)
 
     APP_ERROR_CHECK("E110", boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr));
     
-    lcd_init(); // Inicializace LCD před spuštěním ostatních demo úloh, aby mohly ihned zobrazovat informace
+    lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
 
     state_manager_start();
     
@@ -219,7 +219,7 @@ void cpp_app_main(void)
 
     // vytvoření paralelních tasků
     teplota_init();
-    hladina_demo_init();
+    hladina_init();
 
 
 }
