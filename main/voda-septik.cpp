@@ -11,7 +11,6 @@
 #include "pcf8574.h"
 
 #include "pins.h"
-#include "lcd-demo.h"
 #include "prutokomer.h"
 #include "teplota-demo.h"
 #include "hladina-demo.h"
