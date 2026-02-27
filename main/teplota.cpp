@@ -31,7 +31,7 @@ extern "C" {
 #include <app_error_check.h>
 #include "debug_mqtt.h"
 
-#define TAG "TEMP_DEMO"
+#define TAG "TEMP"
 
 // DS18B20 Commands
 #define DS18B20_CMD_CONVERT_TEMP  0x44       // Start temperature conversion
@@ -589,13 +589,13 @@ static void temperature_task(void *pvParameters)
     }
 }
 
-void teplota_demo_init(void)
+void teplota_init(void)
 {
     xTaskCreate(temperature_task, TAG, configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
     // APP_ERROR_CHECK("E977", ESP_FAIL);
 }
 
-esp_err_t teplota_demo_set_scan_enabled(bool enabled)
+esp_err_t teplota_set_scan_enabled(bool enabled)
 {
     taskENTER_CRITICAL(&s_scan_mux);
     s_scan_enabled = enabled;
@@ -605,7 +605,7 @@ esp_err_t teplota_demo_set_scan_enabled(bool enabled)
     return ESP_OK;
 }
 
-bool teplota_demo_scan_enabled(void)
+bool teplota_scan_enabled(void)
 {
     bool enabled = false;
     taskENTER_CRITICAL(&s_scan_mux);

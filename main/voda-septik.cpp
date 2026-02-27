@@ -12,7 +12,7 @@
 
 #include "pins.h"
 #include "prutokomer.h"
-#include "teplota-demo.h"
+#include "teplota.h"
 #include "hladina-demo.h"
 #include "app-config.h"
 #include "boot_button.h"
@@ -218,7 +218,7 @@ void cpp_app_main(void)
     prutokomer_init();
 
     // vytvoření paralelních tasků
-    teplota_demo_init();
+    teplota_init();
     hladina_demo_init();
 
 
