@@ -156,7 +156,7 @@ void prutokomer_init(void)
 
     // --- Nastavení GPIO pro flow senzor ---
     gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << FLOW_GPIO,
+        .pin_bit_mask = 1ULL << FLOW_SENSOR_GPIO,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -165,7 +165,7 @@ void prutokomer_init(void)
     gpio_config(&io_conf);
 
     gpio_install_isr_service(0);
-    gpio_isr_handler_add(FLOW_GPIO, flow_isr_handler, NULL);
+    gpio_isr_handler_add(FLOW_SENSOR_GPIO, flow_isr_handler, NULL);
 
     ESP_LOGI(TAG, "Startuji měření pulzů...");
 

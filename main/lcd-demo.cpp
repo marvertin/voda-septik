@@ -2,24 +2,16 @@
 extern "C" {
 #endif
 
-#include <inttypes.h>
 #include <stdio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <sys/time.h>
-#include <hd44780.h>
-#include <pcf8574.h>
 
 #ifdef __cplusplus
 }
 #endif
 
-#include "pins.h"
 #include "lcd.h"
-
-static i2c_dev_t pcf8574;
-
-#define CONFIG_EXAMPLE_I2C_ADDR 0x27
 
 static uint32_t get_time_sec()
 {

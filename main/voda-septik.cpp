@@ -64,23 +64,23 @@ static void indicate_error_reset_if_needed(void)
 
     ESP_LOGW(TAG, "Detekovan chybovy reset (reason=%d), spoustim chybovou LED sekvenci", static_cast<int>(reason));
 
-    gpio_reset_pin(ERRORLED_PIN);
-    gpio_set_direction(ERRORLED_PIN, GPIO_MODE_OUTPUT);
+    gpio_reset_pin(STATUS_LED_GPIO);
+    gpio_set_direction(STATUS_LED_GPIO, GPIO_MODE_OUTPUT);
 
     const TickType_t fast_delay = pdMS_TO_TICKS(50);
     const TickType_t fast_total = pdMS_TO_TICKS(10000);
     TickType_t start = xTaskGetTickCount();
 
     while ((xTaskGetTickCount() - start) < fast_total) {
-        gpio_set_level(ERRORLED_PIN, 1);
+        gpio_set_level(STATUS_LED_GPIO, 1);
         vTaskDelay(fast_delay);
-        gpio_set_level(ERRORLED_PIN, 0);
+        gpio_set_level(STATUS_LED_GPIO, 0);
         vTaskDelay(fast_delay);
     }
 
-    gpio_set_level(ERRORLED_PIN, 1);
+    gpio_set_level(STATUS_LED_GPIO, 1);
     vTaskDelay(pdMS_TO_TICKS(500));
-    gpio_set_level(ERRORLED_PIN, 0);
+    gpio_set_level(STATUS_LED_GPIO, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
 }
 

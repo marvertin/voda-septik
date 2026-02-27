@@ -45,7 +45,7 @@ void lcd_init(void)
     APP_ERROR_CHECK("E400", i2cdev_init());
 
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    APP_ERROR_CHECK("E401", pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, SDA_GPIO, SCL_GPIO));
+    APP_ERROR_CHECK("E401", pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO));
 
     lcd.write_cb = write_lcd_data;
     lcd.font = HD44780_FONT_5X8;

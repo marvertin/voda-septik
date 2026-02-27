@@ -14,20 +14,14 @@ extern "C" {
 #endif
 
 #include "trimmed_mean.hpp"
+#include "pins.h"
 #include "config_webapp.h"
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 
 #define TAG "LEVEL_DEMO"
 
-// ADC konfigurace pro senzor hladiny
-// Tlakový pouzdový senzor do 2m s 150Ω šunt odporem
-// Rozsah ADC: 0-3.3V (0-4095 na 12-bit ADC)
-
-// ADC kanál pro senzor hladiny - GPIO3, ADC1_CHANNEL_2
-// Upravte podle vaší skutečné konfigurace
-static const adc_channel_t LEVEL_ADC_CHANNEL = ADC_CHANNEL_6;
-static const adc_unit_t LEVEL_ADC_UNIT = ADC_UNIT_1;
+// ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 
 static const config_item_t LEVEL_CONFIG_ITEMS[] = {
     {
@@ -148,7 +142,7 @@ static esp_err_t adc_init(void)
 {
     adc_oneshot_unit_init_cfg_t init_config;
     memset(&init_config, 0, sizeof(init_config));
-    init_config.unit_id = LEVEL_ADC_UNIT;
+    init_config.unit_id = LEVEL_SENSOR_ADC_UNIT;
     
     if (adc_oneshot_new_unit(&init_config, &adc_handle) != ESP_OK) {
         ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku");
@@ -157,10 +151,10 @@ static esp_err_t adc_init(void)
     
     adc_oneshot_chan_cfg_t config;
     memset(&config, 0, sizeof(config));
-    config.bitwidth = ADC_BITWIDTH_12;
-    config.atten = ADC_ATTEN_DB_12;
+    config.bitwidth = LEVEL_SENSOR_ADC_BITWIDTH;
+    config.atten = LEVEL_SENSOR_ADC_ATTENUATION;
     
-    if (adc_oneshot_config_channel(adc_handle, LEVEL_ADC_CHANNEL, &config) != ESP_OK) {
+    if (adc_oneshot_config_channel(adc_handle, LEVEL_SENSOR_ADC_CHANNEL, &config) != ESP_OK) {
         ESP_LOGE(TAG, "Chyba: Nelze nakonfigurovat ADC kanál");
         return ESP_FAIL;
     }
@@ -175,7 +169,7 @@ static esp_err_t adc_init(void)
 static uint32_t adc_read_average(void)
 {
     int raw_value = 0;  
-    if (adc_oneshot_read(adc_handle, LEVEL_ADC_CHANNEL, &raw_value) != ESP_OK) {
+    if (adc_oneshot_read(adc_handle, LEVEL_SENSOR_ADC_CHANNEL, &raw_value) != ESP_OK) {
         ESP_LOGE(TAG, "Chyba při čtení ADC");
         return 0;
     }

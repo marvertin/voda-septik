@@ -31,8 +31,8 @@ static constexpr uint8_t BRIGHTNESS_LEVEL_LOW = 1;
 static constexpr uint8_t BRIGHTNESS_LEVEL_HIGH = 7;
 
 static tm1637_config_t s_tm1637_config = {
-    .clk_pin = TM_CLK,
-    .dio_pin = TM_DIO,
+    .clk_pin = TM1637_CLK_GPIO,
+    .dio_pin = TM1637_DIO_GPIO,
     .bit_delay_us = 100,
 };
 
@@ -110,7 +110,7 @@ static uint8_t s_flow_spinner_frame_index = 0;
 static void set_max_briteness_for_some_time(void);
 
 static void set_error_led(bool on) {
-    gpio_set_level(ERRORLED_PIN, on ? 1 : 0);
+    gpio_set_level(STATUS_LED_GPIO, on ? 1 : 0);
 }
 
 
@@ -467,8 +467,8 @@ void status_display_ap_mode()
 void status_display_init(void)
 {
 
-    gpio_reset_pin(ERRORLED_PIN);
-    gpio_set_direction(ERRORLED_PIN, GPIO_MODE_OUTPUT);
+    gpio_reset_pin(STATUS_LED_GPIO);
+    gpio_set_direction(STATUS_LED_GPIO, GPIO_MODE_OUTPUT);
 
     mqtt_activity_init_timers();
 

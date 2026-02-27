@@ -26,9 +26,6 @@ extern "C" {
 
 #define TAG "TEMP_DEMO"
 
-// GPIO pin pro 1Wire sběrnici (DS18B20)
-static const gpio_num_t SENSOR_GPIO = GPIO_NUM_16;
-
 // DS18B20 Commands
 #define DS18B20_CMD_CONVERT_TEMP  0x44       // Start temperature conversion
 #define DS18B20_CMD_READ_SCRATCH  0xBE       // Read scratchpad (9 bytes)
@@ -273,14 +270,14 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
                       probe_name,
                       (double)temperature,
                       (int)raw_temp,
-                      (int)SENSOR_GPIO);
+                      (int)TEMPERATURE_SENSOR_GPIO);
     } else {
         DEBUG_PUBLISH("temperature",
                       "queued=%d ts=%lld probe=%s read_failed=1 gpio=%d",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
                       probe_name,
-                      (int)SENSOR_GPIO);
+                      (int)TEMPERATURE_SENSOR_GPIO);
     }
 }
 
@@ -294,7 +291,7 @@ static void temperature_task(void *pvParameters)
     (void)pvParameters;
 
     // Nastavení pull-up rezistoru na GPIO pinu
-    gpio_set_pull_mode(SENSOR_GPIO, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(TEMPERATURE_SENSOR_GPIO, GPIO_PULLUP_ONLY);
 
     ds18b20_probe_t probes[] = {
         {
@@ -319,11 +316,11 @@ static void temperature_task(void *pvParameters)
     {
         const int64_t now_us = esp_timer_get_time();
         if (now_us >= next_discovery_us || !probes[0].available || !probes[1].available) {
-            discover_ds18b20_sensors(SENSOR_GPIO, probes, sizeof(probes) / sizeof(probes[0]));
+            discover_ds18b20_sensors(TEMPERATURE_SENSOR_GPIO, probes, sizeof(probes) / sizeof(probes[0]));
             next_discovery_us = now_us + (int64_t)SENSOR_DISCOVERY_PERIOD_S * 1000000LL;
         }
 
-        const bool conversion_started = ds18b20_start_conversion_all(SENSOR_GPIO);
+        const bool conversion_started = ds18b20_start_conversion_all(TEMPERATURE_SENSOR_GPIO);
         if (conversion_started) {
             vTaskDelay(pdMS_TO_TICKS(TEMPERATURE_CONVERSION_MS));
         } else {
@@ -341,7 +338,7 @@ static void temperature_task(void *pvParameters)
             float temperature = NAN;
             int16_t raw_temp = 0;
             const bool read_ok = ds18b20_read_temperature_by_address(
-                SENSOR_GPIO,
+                TEMPERATURE_SENSOR_GPIO,
                 probe.resolved_address,
                 &temperature,
                 &raw_temp);
