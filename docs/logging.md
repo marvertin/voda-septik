@@ -119,26 +119,26 @@ Prakticky postup pri kalibraci:
 2. Over mapovani rozsahu cidla pres `tlk_p_min` a `tlk_p_max`.
 3. Podle realneho stavu filtru dolad `tlk_dp_100`, aby procenta zaneseni sedela.
 
-## Ladeni objemu (hladina -> litry)
+## Ladeni zasoby (hladina -> litry)
 
-Pro ladeni vetve objemu nastav tag `OBJEM` na `DEBUG`:
+Pro ladeni vetve zasoby nastav tag `ZASOBA` na `DEBUG`:
 
 ```bash
-zalevaci log --tag OBJEM --level DEBUG
+zalevaci log --tag ZASOBA --level DEBUG
 ```
 
-V `DEBUG_PUBLISH` topicu `debug/objem` sleduj zejmena:
+V `DEBUG_PUBLISH` topicu `debug/zasoba` sleduj zejmena:
 
 - `raw` (filtrovana ADC hodnota)
-- `height_m` (interne vypoctena vyska hladiny)
-- `volume_l` (finalni hodnota publikovana do `stav/objem`)
+- `hladina_m` (interne vypoctena vyska hladiny)
+- `objem_l` (finalni hodnota publikovana do `stav/zasoba/objem_l`)
 - `area_m2` (konfiguracni plocha nadrze)
 
 Konfigurace pro prepocet na objem:
 
 - `lvl_raw_min`, `lvl_raw_max`, `lvl_h_min`, `lvl_h_max` (kalibrace vysky)
-- `obj_tank_area_m2` (pudorysna plocha nadrze, default `5.4` pro 2 × 2.7 m)
+- `tank_area_m2` (pudorysna plocha nadrze, default `5.4` pro 2 × 2.7 m)
 
 Pouzity vztah:
 
-- `objem_l = vyska_m * obj_tank_area_m2 * 1000`
+- `objem_l = vyska_m * tank_area_m2 * 1000`

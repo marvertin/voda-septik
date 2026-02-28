@@ -35,18 +35,18 @@ Kalibracni checklist (rychly postup):
 
 ## Kalibrace objemu (webapp)
 
-Modul objemu (`main/objem.cpp`) interne zmeri vysku hladiny (kalibrace `lvl_*`) a do MQTT/HA publikuje objem i vysku hladiny.
+Modul objemu (`main/zasoba.cpp`) interne zmeri vysku hladiny (kalibrace `lvl_*`) a do MQTT/HA publikuje objem i vysku hladiny.
 
 Kalibracni polozky:
 - `lvl_raw_min` (default `540`) - ADC RAW hodnota odpovidajici minimalni hladine.
 - `lvl_raw_max` (default `950`) - ADC RAW hodnota odpovidajici maximalni hladine.
 - `lvl_h_min` (default `0.0`) - vyska hladiny [m] pro `lvl_raw_min`.
 - `lvl_h_max` (default `0.290`) - vyska hladiny [m] pro `lvl_raw_max`.
-- `obj_tank_area_m2` (default `5.4`) - pudorysna plocha nadrze [m²] (pro nadrz 2 × 2.7 m).
+- `tank_area_m2` (default `5.4`) - pudorysna plocha nadrze [m²] (pro nadrz 2 × 2.7 m).
 
 Pouzity prepocet:
 - vyska z kalibrace RAW: linearni mapovani mezi `lvl_raw_min/lvl_raw_max` a `lvl_h_min/lvl_h_max`
-- objem: `objem_l = vyska_m * obj_tank_area_m2 * 1000`
+- objem: `objem_l = vyska_m * tank_area_m2 * 1000`
 
 Publikovany MQTT vystup:
 - `stav/zasoba/objem_l` [l]
@@ -54,7 +54,7 @@ Publikovany MQTT vystup:
 
 Prakticky postup:
 1. Nejdriv zkalibrovat vysku (`lvl_*`) podle realnych referencnich bodu.
-2. Nastavit skutecnou plochu nadrze v `obj_tank_area_m2`.
+2. Nastavit skutecnou plochu nadrze v `tank_area_m2`.
 3. Overit v HA, ze `stav/zasoba/objem_l` a `stav/zasoba/hladina_m` odpovidaji realnemu stavu nadrze.
 
 ## Struktura mqtt topiků.

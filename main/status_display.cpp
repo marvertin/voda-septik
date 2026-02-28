@@ -167,7 +167,7 @@ void status_display_set_sensor_fault(sensor_event_type_t sensor_type, bool is_fa
         case SENSOR_EVENT_TEMPERATURE:
             set_segments(SENSOR_FAULT_TEMP_SEGMENTS, SENSOR_FAULT_TEMP_POS, is_fault);
             break;
-        case SENSOR_EVENT_LEVEL:
+        case SENSOR_EVENT_ZASOBA:
             set_segments(SENSOR_FAULT_LEVEL_SEGMENTS, SENSOR_FAULT_LEVEL_POS, is_fault);
             break;
         case SENSOR_EVENT_FLOW:
@@ -324,7 +324,7 @@ static void flow_spinner_status_display_task(void *pvParameters)
         const float prutok_snapshot = status_display_get_prutok();
         const bool spinner_enabled = flow_spinner_compute_period_ms(prutok_snapshot, &spinner_period_ms);
         if (spinner_enabled) {
-            ESP_LOGE(TAG, "Flow spinner - flow=%.3f l/min, enabled=%d, period=%lu ms", prutok_snapshot, spinner_enabled ? 1 : 0, (unsigned long)spinner_period_ms);
+            ESP_LOGD(TAG, "Flow spinner - flow=%.3f l/min, enabled=%d, period=%lu ms", prutok_snapshot, spinner_enabled ? 1 : 0, (unsigned long)spinner_period_ms);
             s_flow_spinner_frame_index =
                 (uint8_t)((s_flow_spinner_frame_index + 1) % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0])));
             flow_spinner_show_frame(s_flow_spinner_frame_index);

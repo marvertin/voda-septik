@@ -108,12 +108,12 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
     }
 }
 
-static void publish_level_to_outputs(const sensor_event_t &event)
+static void publish_zasoba_to_outputs(const sensor_event_t &event)
 {
     char text[16];
     esp_err_t enqueue_result;
-    const bool sensor_fault = !std::isfinite(event.data.level.objem) || !std::isfinite(event.data.level.hladina);
-    set_sensor_fault_indicator(SENSOR_EVENT_LEVEL, sensor_fault);
+    const bool sensor_fault = !std::isfinite(event.data.zasoba.objem) || !std::isfinite(event.data.zasoba.hladina);
+    set_sensor_fault_indicator(SENSOR_EVENT_ZASOBA, sensor_fault);
 
     if (sensor_fault) {
         snprintf(text, sizeof(text), "O: ---  ");
@@ -122,15 +122,15 @@ static void publish_level_to_outputs(const sensor_event_t &event)
         enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM);
         (void)mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA);
     } else {
-        snprintf(text, sizeof(text), "O:%4.0fL", event.data.level.objem);
+        snprintf(text, sizeof(text), "O:%4.0fL", event.data.zasoba.objem);
         lcd_print(8, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_double(
             mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM,
-            (double)event.data.level.objem);
+            (double)event.data.zasoba.objem);
         esp_err_t hladina_result = mqtt_publisher_enqueue_double(
             mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA,
-            (double)event.data.level.hladina);
+            (double)event.data.zasoba.hladina);
         if (hladina_result != ESP_OK) {
             ESP_LOGW(TAG, "Enqueue hladiny selhalo: %s", esp_err_to_name(hladina_result));
         }
@@ -236,8 +236,8 @@ static void state_manager_task(void *pvParameters)
                     case SENSOR_EVENT_TEMPERATURE:
                         publish_temperature_to_outputs(event.data.sensor);
                         break;
-                    case SENSOR_EVENT_LEVEL:
-                        publish_level_to_outputs(event.data.sensor);
+                    case SENSOR_EVENT_ZASOBA:
+                        publish_zasoba_to_outputs(event.data.sensor);
                         break;
                     case SENSOR_EVENT_FLOW: {
                         publish_flow_to_outputs(event.data.sensor);

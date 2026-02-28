@@ -19,7 +19,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 
-#define TAG "OBJEM"
+#define TAG "ZASOBA"
 
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 
@@ -85,7 +85,7 @@ static const config_item_t LEVEL_CONFIG_ITEMS[] = {
         .max_float = 5.0f,
     },
     {
-        .key = "obj_tank_area_m2",
+        .key = "tank_area_m2",
         .label = "Plocha nadrze [m2]",
         .description = "Pudorysna plocha nadrze pouzita pro prepocet vysky na objem.",
         .type = CONFIG_VALUE_FLOAT,
@@ -142,9 +142,9 @@ static void load_level_calibration_config(void)
         ESP_LOGW(TAG, "Konfigurace lvl_h_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
     }
 
-    ret = config_webapp_get_float("obj_tank_area_m2", &g_level_config.tank_area_m2);
+    ret = config_webapp_get_float("tank_area_m2", &g_level_config.tank_area_m2);
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace obj_tank_area_m2 neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "Konfigurace tank_area_m2 neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
     }
 
     if (g_level_config.tank_area_m2 <= 0.0f) {
@@ -272,9 +272,9 @@ static void volume_task(void *pvParameters)
             .timestamp_us = esp_timer_get_time(),
             .data = {
                 .sensor = {
-                    .sensor_type = SENSOR_EVENT_LEVEL,
+                    .sensor_type = SENSOR_EVENT_ZASOBA,
                     .data = {
-                        .level = {
+                        .zasoba = {
                             .objem = objem,
                             .hladina = hladina,
                         },
@@ -288,7 +288,7 @@ static void volume_task(void *pvParameters)
             ESP_LOGW(TAG, "Fronta sensor eventu je plna, hladina zahozena");
         }
 
-        DEBUG_PUBLISH("objem",
+        DEBUG_PUBLISH("zasoba",
                       "queued=%d ts=%lld raw=%lu hladina_m=%.6f objem_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
@@ -302,18 +302,18 @@ static void volume_task(void *pvParameters)
                       (double)g_level_config.height_max);
         
         // Čtení každou sekundu
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-void objem_init(void)
+void zasoba_init(void)
 {
     load_level_calibration_config();
 
     xTaskCreate(volume_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
 
-config_group_t objem_get_config_group(void)
+config_group_t zasoba_get_config_group(void)
 {
     config_group_t group = {
         .items = LEVEL_CONFIG_ITEMS,

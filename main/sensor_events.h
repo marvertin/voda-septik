@@ -19,7 +19,7 @@ typedef enum {
 
 typedef enum {
     SENSOR_EVENT_TEMPERATURE = 0,
-    SENSOR_EVENT_LEVEL,
+    SENSOR_EVENT_ZASOBA,
     SENSOR_EVENT_FLOW,
     SENSOR_EVENT_PRESSURE,
 } sensor_event_type_t;
@@ -37,7 +37,7 @@ typedef struct {
 typedef struct {
     float objem;
     float hladina;
-} sensor_level_data_t;
+} sensor_zasoba_data_t;
 
 typedef struct {
     float prutok;
@@ -55,7 +55,7 @@ typedef struct {
     sensor_event_type_t sensor_type;
     union {
         sensor_temperature_data_t temperature;
-        sensor_level_data_t level;
+        sensor_zasoba_data_t zasoba;
         sensor_flow_data_t flow;
         sensor_pressure_data_t pressure;
     } data;
