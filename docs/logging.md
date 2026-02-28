@@ -9,12 +9,14 @@ Pro zmenu log levelu konkretniho tagu publikuj command na topic:
 - topic: `voda/septik/cmd/log/level`
 - payload: `TAG=LEVEL`
 
+Pro zmenu defaultni urovne pro vsechny tagy lze poslat i jen samotny `LEVEL`.
+
 Priklad:
 
 ```bash
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
   -t "voda/septik/cmd/log/level" \
-  -m "mqtt_cmd=DEBUG"
+  -m "mqtt_commands=DEBUG"
 ```
 
 Povolene urovne:
@@ -32,6 +34,14 @@ Lze nastavit i globalni uroven:
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
   -t "voda/septik/cmd/log/level" \
   -m "*=WARN"
+```
+
+Nebo ekvivalentne bez tagu:
+
+```bash
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
+  -t "voda/septik/cmd/log/level" \
+  -m "WARN"
 ```
 
 ### Interaktivni skript
@@ -83,6 +93,7 @@ V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy 
   - `tag=level`
   - `tag:level`
   - `tag level`
+  - `level` (nastavi default `*`)
 - Uroven se mapuje na `esp_log_level_t` a aplikuje pres `esp_log_level_set(tag, level)`.
 - Po kazde uspesne zmene se loguje potvrzeni s tagem a finalni urovni.
 
@@ -95,15 +106,15 @@ V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy 
 ## Doporuceni pro provoz
 
 - V beznem provozu nech globalni uroven na `WARN`.
-- Pro kratke ladeni zvys uroven jen na konkretnim tagu (napr. `mqtt_cmd=DEBUG`).
+- Pro kratke ladeni zvys uroven jen na konkretnim tagu (napr. `mqtt_commands=DEBUG`).
 - Po dodiagnostikovani vrat hodnoty zpet na `WARN`, at se nesnizuje vykon a nezahlcuje serial/MQTT vystup.
 
 ## Ladeni tlaku (4-20 mA)
 
-Pro ladeni tlakove vetve nastav tag `TLAK` na `DEBUG`:
+Pro ladeni tlakove vetve nastav tag `tlak` na `DEBUG`:
 
 ```bash
-zalevaci log --tag TLAK --level DEBUG
+zalevaci log --tag tlak --level DEBUG
 ```
 
 V debug logu sleduj zejmena:
@@ -121,10 +132,10 @@ Prakticky postup pri kalibraci:
 
 ## Ladeni zasoby (hladina -> litry)
 
-Pro ladeni vetve zasoby nastav tag `ZASOBA` na `DEBUG`:
+Pro ladeni vetve zasoby nastav tag `zasoba` na `DEBUG`:
 
 ```bash
-zalevaci log --tag ZASOBA --level DEBUG
+zalevaci log --tag zasoba --level DEBUG
 ```
 
 V `DEBUG_PUBLISH` topicu `debug/zasoba` sleduj zejmena:

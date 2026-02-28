@@ -129,6 +129,45 @@ static bool payload_is_truthy(const char *payload)
     return false;
 }
 
+static bool payload_try_parse_enabled(const char *payload, bool *out_enabled)
+{
+    if (out_enabled == nullptr) {
+        return false;
+    }
+
+    if (payload == nullptr) {
+        *out_enabled = true;
+        return true;
+    }
+
+    while (*payload != '\0' && isspace((unsigned char)*payload) != 0) {
+        ++payload;
+    }
+
+    if (*payload == '\0') {
+        *out_enabled = true;
+        return true;
+    }
+
+    if (payload_is_truthy(payload)) {
+        *out_enabled = true;
+        return true;
+    }
+
+    if (strcasecmp(payload, "0") == 0 ||
+        strcasecmp(payload, "false") == 0 ||
+        strcasecmp(payload, "off") == 0 ||
+        strcasecmp(payload, "no") == 0 ||
+        strcasecmp(payload, "stop") == 0 ||
+        strcasecmp(payload, "disable") == 0 ||
+        strcasecmp(payload, "disabled") == 0) {
+        *out_enabled = false;
+        return true;
+    }
+
+    return false;
+}
+
 static void command_set_debug_enabled(bool enabled)
 {
     ensure_debug_auto_off_timer();
@@ -219,7 +258,7 @@ static const char *log_level_name(esp_log_level_t level)
 static void command_set_log_level(const char *payload)
 {
     if (payload == nullptr || payload[0] == '\0') {
-        ESP_LOGW(TAG, "cmd/log/level: prazdny payload, ocekavam 'tag=level' nebo 'tag level'");
+        ESP_LOGW(TAG, "cmd/log/level: prazdny payload, ocekavam 'tag=level', 'tag level' nebo jen 'level' pro default");
         return;
     }
 
@@ -246,23 +285,42 @@ static void command_set_log_level(const char *payload)
         }
     }
 
+    char *tag = nullptr;
+    char *level_text = nullptr;
+    bool set_default = false;
+
     if (separator == nullptr) {
-        ESP_LOGW(TAG, "cmd/log/level: neplatny payload '%s', ocekavam oddeleni tag/level", cursor);
-        return;
+        set_default = true;
+        level_text = trim_in_place(cursor);
+    } else {
+        *separator = '\0';
+        tag = trim_in_place(cursor);
+        level_text = trim_in_place(separator + 1);
+
+        if (tag == nullptr || tag[0] == '\0' || level_text == nullptr || level_text[0] == '\0') {
+            ESP_LOGW(TAG, "cmd/log/level: neplatny payload '%s'", payload);
+            return;
+        }
+
+        if (strcasecmp(tag, "default") == 0 || strcmp(tag, "*") == 0 || strcasecmp(tag, "all") == 0) {
+            set_default = true;
+        }
     }
 
-    *separator = '\0';
-    char *tag = trim_in_place(cursor);
-    char *level_text = trim_in_place(separator + 1);
-
-    if (tag == nullptr || tag[0] == '\0' || level_text == nullptr || level_text[0] == '\0') {
-        ESP_LOGW(TAG, "cmd/log/level: neplatny payload '%s'", payload);
+    if (level_text == nullptr || level_text[0] == '\0') {
+        ESP_LOGW(TAG, "cmd/log/level: chybi uroven v payloadu '%s'", payload);
         return;
     }
 
     esp_log_level_t level = ESP_LOG_INFO;
     if (!parse_log_level(level_text, &level)) {
         ESP_LOGW(TAG, "cmd/log/level: neznama uroven '%s'", level_text);
+        return;
+    }
+
+    if (set_default) {
+        esp_log_level_set("*", level);
+        ESP_LOGW(TAG, "Log level nastaven: default='*' level=%s", log_level_name(level));
         return;
     }
 
@@ -287,29 +345,32 @@ static void handle_command(mqtt_topic_id_t command_id, const char *payload)
             }
             break;
 
-        case mqtt_topic_id_t::TOPIC_CMD_WEBAPP_START: {
-            esp_err_t result = webapp_startup_start();
+        case mqtt_topic_id_t::TOPIC_CMD_WEBAPP: {
+            bool enabled = false;
+            if (!payload_try_parse_enabled(payload, &enabled)) {
+                ESP_LOGW(TAG, "cmd/webapp: neplatny payload '%s' (ocekavam on/off)", (payload != nullptr) ? payload : "");
+                break;
+            }
+
+            esp_err_t result = enabled ? webapp_startup_start() : webapp_startup_stop();
             if (result != ESP_OK) {
-                ESP_LOGW(TAG, "cmd/webapp/start selhal: %s", esp_err_to_name(result));
+                ESP_LOGW(TAG,
+                         "cmd/webapp: %s selhalo: %s",
+                         enabled ? "start" : "stop",
+                         esp_err_to_name(result));
             }
             break;
         }
 
-        case mqtt_topic_id_t::TOPIC_CMD_WEBAPP_STOP: {
-            esp_err_t result = webapp_startup_stop();
-            if (result != ESP_OK) {
-                ESP_LOGW(TAG, "cmd/webapp/stop selhal: %s", esp_err_to_name(result));
+        case mqtt_topic_id_t::TOPIC_CMD_DEBUG: {
+            bool enabled = false;
+            if (!payload_try_parse_enabled(payload, &enabled)) {
+                ESP_LOGW(TAG, "cmd/debug: neplatny payload '%s' (ocekavam on/off)", (payload != nullptr) ? payload : "");
+                break;
             }
+            command_set_debug_enabled(enabled);
             break;
         }
-
-        case mqtt_topic_id_t::TOPIC_CMD_DEBUG_START:
-            command_set_debug_enabled(true);
-            break;
-
-        case mqtt_topic_id_t::TOPIC_CMD_DEBUG_STOP:
-            command_set_debug_enabled(false);
-            break;
 
         case mqtt_topic_id_t::TOPIC_CMD_LOG_LEVEL:
             command_set_log_level(payload);

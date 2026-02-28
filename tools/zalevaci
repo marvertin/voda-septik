@@ -26,10 +26,8 @@ DEFAULT_SCAN_ROOTS = ["main", "components", "managed_components"]
 
 CMD_TOPICS = [
     "cmd/reboot",
-    "cmd/webapp/start",
-    "cmd/webapp/stop",
-    "cmd/debug/start",
-    "cmd/debug/stop",
+    "cmd/webapp",
+    "cmd/debug",
     "cmd/log/level",
     "cmd/ota/start",
     "cmd/ota/confirm",
@@ -122,10 +120,10 @@ def mqtt_command_menu(host: str, port: int, user: str, password: str, qos: int, 
 MQTT command menu
 -----------------
   1) reboot
-  2) webapp/start
-  3) webapp/stop
-  4) debug/start
-  5) debug/stop
+    2) webapp ON
+    3) webapp OFF
+    4) debug ON
+    5) debug OFF
   6) log/level
     7) teplota/scan (ON)
     8) teplota/scan (OFF)
@@ -138,13 +136,13 @@ MQTT command menu
             if choice == "1":
                 mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/reboot", "1")
             elif choice == "2":
-                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp/start", "1")
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp", "on")
             elif choice == "3":
-                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp/stop", "1")
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/webapp", "off")
             elif choice == "4":
-                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug/start", "1")
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug", "on")
             elif choice == "5":
-                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug/stop", "1")
+                mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/debug", "off")
             elif choice == "6":
                 set_log_level(host, port, user, password, qos, topic_root)
             elif choice == "7":
@@ -152,7 +150,7 @@ MQTT command menu
             elif choice == "8":
                 mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/teplota/scan", "0")
             elif choice == "9":
-                sub = input(f"Cast za '{topic_root}/cmd/' (napr. webapp/start): ").strip()
+                sub = input(f"Cast za '{topic_root}/cmd/' (napr. webapp): ").strip()
                 if not sub:
                     print("Topic nesmi byt prazdny.")
                     continue
@@ -252,6 +250,11 @@ def mqtt_set_log_level(host: str,
                        tag: str,
                        level: str) -> None:
     normalized_level = normalize_level(level)
+    if tag.strip() in {"*", "default", "all"}:
+        mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/log/level", normalized_level)
+        print(f"Nastaveno: default={normalized_level}")
+        return
+
     mqtt_pub(host, port, user, password, qos, f"{topic_root}/cmd/log/level", f"{tag}={normalized_level}")
     print(f"Nastaveno: {tag}={normalized_level}")
 
@@ -532,7 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     cmd_parser = subparsers.add_parser("cmd", help="Publikuje command do cmd/*")
-    cmd_parser.add_argument("action", help="Napriklad reboot, webapp/start, debug/stop, ota/confirm")
+    cmd_parser.add_argument("action", help="Napriklad reboot, webapp, debug, ota/confirm")
     cmd_parser.add_argument("payload", nargs="?", default="1", help="Payload (default: 1)")
 
     log_parser = subparsers.add_parser("log", help="Nastavi log level")

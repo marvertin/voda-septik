@@ -214,28 +214,28 @@ mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/reboot" -m "1"
 ```
 
-`cmd/webapp/start` (spusti konfiguracni web):
+`cmd/webapp` (spusti konfiguracni web):
 
 ```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp/start" -m "1"
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp" -m "on"
 ```
 
-`cmd/webapp/stop` (zastavi konfiguracni web):
+`cmd/webapp` (zastavi konfiguracni web):
 
 ```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp/stop" -m "1"
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/webapp" -m "off"
 ```
 
-`cmd/debug/start` (zapne debug publikaci):
+`cmd/debug` (zapne debug publikaci):
 
 ```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/start" -m "1"
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug" -m "on"
 ```
 
-`cmd/debug/stop` (vypne debug publikaci):
+`cmd/debug` (vypne debug publikaci):
 
 ```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug/stop" -m "1"
+mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -t "$TOPIC_ROOT/cmd/debug" -m "off"
 ```
 
 `cmd/ota/start` (spusti OTA z URL):
