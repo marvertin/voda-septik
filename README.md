@@ -16,10 +16,10 @@ Modul tlaku (`main/tlak.cpp`) meri dve 4-20 mA cidla (pred filtrem / za filtrem)
 - `tlk_dp_100` (default `1.0`) - rozdil tlaku [bar], ktery odpovida 100 % zanesenosti filtru.
 
 Publikovane MQTT hodnoty:
-- `stav/tlak_pred_filtrem`
-- `stav/tlak_za_filtrem`
-- `stav/rozdil_tlaku_filtru`
-- `stav/zanesenost_filtru_percent`
+- `stav/tlak/pred_filtrem_bar`
+- `stav/tlak/za_filtrem_bar`
+- `stav/tlak/rozdil_filtru_bar`
+- `stav/tlak/zanesenost_filtru_percent`
 
 Doporuceny postup prvotniho nastaveni:
 1. Pri stabilnim tlaku zmerit skutecny proud/RAW a upravit `tlk_raw_4ma` a `tlk_raw_20ma`.
@@ -35,7 +35,7 @@ Kalibracni checklist (rychly postup):
 
 ## Kalibrace objemu (webapp)
 
-Modul objemu (`main/objem.cpp`) interne zmeri vysku hladiny (kalibrace `lvl_*`) a do MQTT/HA publikuje uz jen vysledny objem v litrech.
+Modul objemu (`main/objem.cpp`) interne zmeri vysku hladiny (kalibrace `lvl_*`) a do MQTT/HA publikuje objem i vysku hladiny.
 
 Kalibracni polozky:
 - `lvl_raw_min` (default `540`) - ADC RAW hodnota odpovidajici minimalni hladine.
@@ -49,12 +49,13 @@ Pouzity prepocet:
 - objem: `objem_l = vyska_m * obj_tank_area_m2 * 1000`
 
 Publikovany MQTT vystup:
-- `stav/objem` [l]
+- `stav/zasoba/objem_l` [l]
+- `stav/zasoba/hladina_m` [m]
 
 Prakticky postup:
 1. Nejdriv zkalibrovat vysku (`lvl_*`) podle realnych referencnich bodu.
 2. Nastavit skutecnou plochu nadrze v `obj_tank_area_m2`.
-3. Overit v HA, ze `stav/objem` odpovida realnemu stavu nadrze.
+3. Overit v HA, ze `stav/zasoba/objem_l` a `stav/zasoba/hladina_m` odpovidaji realnemu stavu nadrze.
 
 ## Struktura mqtt topiků.
 
@@ -66,24 +67,29 @@ Poznamka (migrace):
 voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsich budoucih pouziti (napr. bazen)
 
 ├── stav/
-│    ├── objem                      [l] Aktuální objem vody v nádrži. HA: sensor (state_class: measurement)
-│    ├── prutok                     [l/min] Aktuální průtok vody. HA: sensor (state_class: measurement)
-│    ├── cerpano_celkem             [l] Celkové vyčerpané množství vody od počátku. HA: sensor (state_class: total_increasing)
-│    ├── teplota_voda               [°C] Aktuální teplota vody v nádrži. HA: sensor (device_class: temperature)
-│    ├── teplota_vzduch             [°C] Aktuální teplota vzduchu v šachtě u potrubí v blízkosti tlakové nádoby. HA: sensor (device_class: temperature)
-│    ├── tlak_pred_filtrem          [bar] Aktuální tlak vody před filtrem. HA: sensor (device_class: pressure)
-│    ├── tlak_za_filtrem            [bar] Aktuální tlak vody za filtrem. HA: sensor (device_class: pressure)
-│    ├── rozdil_tlaku_filtru        [bar] Rozdíl tlaku před a za filtrem. HA: sensor (state_class: measurement)
-│    ├── zanesenost_filtru_percent  [%] Odhad zanesení filtru v procentech (odvozeno z rozdílu tlaků). HA: sensor
-│    └── pumpa/
-│         ├── bezi                  [bool] Příznak ano/ne (0/1), zda čerpadlo běží. HA: binary_sensor (device_class: running)
-│         ├── vykon_cinny_w         [W] Aktuální činný výkon. HA: sensor (device_class: power)
-│         ├── jalovy_vykon_var      [var] Aktuální jalový výkon. HA: sensor
-│         ├── cosfi                 [-] Aktuální účiník. HA: sensor
-│         ├── proud_a               [A] Aktuální proud protékaný čerpadlem. HA: sensor (device_class: current)
-│         ├── napeti_v              [V] Aktuální napětí na čerpadle. HA: sensor (device_class: voltage)
-│         ├── energie_cinna_kwh     [kWh] Celkové množství spotřebované činné energie. HA: sensor (device_class: energy, state_class: total_increasing)
-│         └── energie_jalova_kvarh  [kvarh] Celkové množství spotřebované jalové energie. HA: sensor (state_class: total_increasing)
+│    ├── teplota/
+│    │    ├── voda                  [°C] Aktuální teplota vody v nádrži. HA: sensor (device_class: temperature)
+│    │    └── vzduch                [°C] Aktuální teplota vzduchu v šachtě u potrubí v blízkosti tlakové nádoby. HA: sensor (device_class: temperature)
+│    ├── zasoba/
+│    │    ├── objem_l               [l] Aktuální objem vody v nádrži. HA: sensor (state_class: measurement)
+│    │    └── hladina_m             [m] Aktuální výška hladiny vody v nádrži. HA: sensor (state_class: measurement)
+│    ├── cerpani/
+│    │    ├── prutok_l_min          [l/min] Aktuální průtok vody. HA: sensor (state_class: measurement)
+│    │    ├── cerpano_celkem_l      [l] Celkové vyčerpané množství vody od počátku. HA: sensor (state_class: total_increasing)
+│    │    └── pumpa/
+│    │         ├── bezi             [bool] Příznak ano/ne (0/1), zda čerpadlo běží. HA: binary_sensor (device_class: running)
+│    │         ├── vykon_cinny_w    [W] Aktuální činný výkon. HA: sensor (device_class: power)
+│    │         ├── jalovy_vykon_var [var] Aktuální jalový výkon. HA: sensor
+│    │         ├── cosfi            [-] Aktuální účiník. HA: sensor
+│    │         ├── proud_a          [A] Aktuální proud protékaný čerpadlem. HA: sensor (device_class: current)
+│    │         ├── napeti_v         [V] Aktuální napětí na čerpadle. HA: sensor (device_class: voltage)
+│    │         ├── energie_cinna_kwh [kWh] Celkové množství spotřebované činné energie. HA: sensor (device_class: energy, state_class: total_increasing)
+│    │         └── energie_jalova_kvarh [kvarh] Celkové množství spotřebované jalové energie. HA: sensor (state_class: total_increasing)
+│    └── tlak/
+│         ├── pred_filtrem_bar      [bar] Aktuální tlak vody před filtrem. HA: sensor (device_class: pressure)
+│         ├── za_filtrem_bar        [bar] Aktuální tlak vody za filtrem. HA: sensor (device_class: pressure)
+│         ├── rozdil_filtru_bar     [bar] Rozdíl tlaku před a za filtrem. HA: sensor (state_class: measurement)
+│         └── zanesenost_filtru_percent [%] Odhad zanesení filtru v procentech (odvozeno z rozdílu tlaků). HA: sensor
 │
 ├── system/
 │    ├── status                     [-] online/offline (řešeno přes LWT). HA: binary_sensor (device_class: connectivity)

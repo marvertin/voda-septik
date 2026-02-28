@@ -303,10 +303,10 @@ static void tlak_task(void *pvParameters)
         const float current_before_ma = raw_to_current_ma(raw_before_filtered);
         const float current_after_ma = raw_to_current_ma(raw_after_filtered);
 
-        const float pressure_before_bar = current_ma_to_pressure_bar(current_before_ma);
-        const float pressure_after_bar = current_ma_to_pressure_bar(current_after_ma);
-        const float pressure_drop_bar = pressure_before_bar - pressure_after_bar;
-        const float filter_clogging_percent = pressure_diff_to_clogging_percent(pressure_drop_bar);
+        const float pred_filtrem = current_ma_to_pressure_bar(current_before_ma);
+        const float za_filtrem = current_ma_to_pressure_bar(current_after_ma);
+        const float rozdil_filtru = pred_filtrem - za_filtrem;
+        const float zanesenost_filtru = pressure_diff_to_clogging_percent(rozdil_filtru);
 
         app_event_t event = {
             .event_type = EVT_SENSOR,
@@ -316,10 +316,10 @@ static void tlak_task(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_PRESSURE,
                     .data = {
                         .pressure = {
-                            .pressure_before_bar = pressure_before_bar,
-                            .pressure_after_bar = pressure_after_bar,
-                            .pressure_diff_bar = pressure_drop_bar,
-                            .filter_clogging_percent = filter_clogging_percent,
+                            .pred_filtrem = pred_filtrem,
+                            .za_filtrem = za_filtrem,
+                            .rozdil_filtru = rozdil_filtru,
+                            .zanesenost_filtru = zanesenost_filtru,
                         },
                     },
                 },
@@ -336,13 +336,13 @@ static void tlak_task(void *pvParameters)
              (unsigned long)raw_before_unfiltered,
              (unsigned long)raw_before_filtered,
                  (double)current_before_ma,
-                 (double)pressure_before_bar,
+                 (double)pred_filtrem,
              (unsigned long)raw_after_unfiltered,
              (unsigned long)raw_after_filtered,
                  (double)current_after_ma,
-                 (double)pressure_after_bar,
-                 (double)pressure_drop_bar,
-                 (double)filter_clogging_percent,
+                 (double)za_filtrem,
+                 (double)rozdil_filtru,
+                 (double)zanesenost_filtru,
                  queued ? 1 : 0);
 
         DEBUG_PUBLISH("tlak",
@@ -353,10 +353,10 @@ static void tlak_task(void *pvParameters)
                   (unsigned long)raw_before_filtered,
                   (unsigned long)raw_after_unfiltered,
                   (unsigned long)raw_after_filtered,
-                  (double)pressure_before_bar,
-                  (double)pressure_after_bar,
-                  (double)pressure_drop_bar,
-                  (double)filter_clogging_percent);
+                  (double)pred_filtrem,
+                  (double)za_filtrem,
+                  (double)rozdil_filtru,
+                  (double)zanesenost_filtru);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

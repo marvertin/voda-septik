@@ -43,7 +43,7 @@ static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static system_network_level_t s_network_level = SYS_NET_DOWN;
 
 static bool s_mqtt_activity_timer_running = false;
-static float s_flow_l_min = 0.0f;
+static float s_prutok = 0.0f;
 static uint8_t s_current_brightness_level = BRIGHTNESS_LEVEL_HIGH;
 
 static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 2;
@@ -154,10 +154,10 @@ static void brightness_alert_hold_timer_cb(TimerHandle_t timer)
     }
 }
 
-void status_display_set_flow_rate(float flow_l_min)
+void status_display_set_prutok(float prutok)
 {
     taskENTER_CRITICAL(&s_status_mux);
-    s_flow_l_min = flow_l_min;
+    s_prutok = prutok;
     taskEXIT_CRITICAL(&s_status_mux);
 }
 
@@ -187,13 +187,13 @@ static void set_max_briteness_for_some_time(void)
     restart_brightness_alert_hold_timer();
 }
 
-static float status_display_get_flow_rate(void)
+static float status_display_get_prutok(void)
 {
-    float flow_snapshot = 0.0f;
+    float prutok_snapshot = 0.0f;
     taskENTER_CRITICAL(&s_status_mux);
-    flow_snapshot = s_flow_l_min;
+    prutok_snapshot = s_prutok;
     taskEXIT_CRITICAL(&s_status_mux);
-    return flow_snapshot;
+    return prutok_snapshot;
 }
 
 static bool flow_spinner_compute_period_ms(float flow_l_min, uint32_t *out_period_ms)
@@ -321,10 +321,10 @@ static void flow_spinner_status_display_task(void *pvParameters)
     (void)pvParameters;
     while (true) {
         uint32_t spinner_period_ms = 0;
-        const float flow_snapshot = status_display_get_flow_rate();
-        const bool spinner_enabled = flow_spinner_compute_period_ms(flow_snapshot, &spinner_period_ms);
+        const float prutok_snapshot = status_display_get_prutok();
+        const bool spinner_enabled = flow_spinner_compute_period_ms(prutok_snapshot, &spinner_period_ms);
         if (spinner_enabled) {
-            ESP_LOGE(TAG, "Flow spinner - flow=%.3f l/min, enabled=%d, period=%lu ms", flow_snapshot, spinner_enabled ? 1 : 0, (unsigned long)spinner_period_ms);
+            ESP_LOGE(TAG, "Flow spinner - flow=%.3f l/min, enabled=%d, period=%lu ms", prutok_snapshot, spinner_enabled ? 1 : 0, (unsigned long)spinner_period_ms);
             s_flow_spinner_frame_index =
                 (uint8_t)((s_flow_spinner_frame_index + 1) % (sizeof(FLOW_SPINNER_FRAMES) / sizeof(FLOW_SPINNER_FRAMES[0])));
             flow_spinner_show_frame(s_flow_spinner_frame_index);

@@ -252,8 +252,8 @@ static void volume_task(void *pvParameters)
     ESP_LOGI(TAG, "Buffer nabití, začínáme publikovat výsledky");
     
     uint32_t raw_value;
-    float height;
-    float volume_l;
+    float hladina;
+    float objem;
     
     while (1)
     {
@@ -261,8 +261,8 @@ static void volume_task(void *pvParameters)
         raw_value = adc_read_average();
         
         // Převod na výšku
-        height = adc_raw_to_height(raw_value);
-        volume_l = height_to_volume_liters(height);
+        hladina = adc_raw_to_height(raw_value);
+        objem = height_to_volume_liters(hladina);
         
         // Výstup do logu
         //ESP_LOGI(TAG, "Surová hodnota: %lu | Výška hladiny: %.3f m", raw_value, height);
@@ -275,7 +275,8 @@ static void volume_task(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_LEVEL,
                     .data = {
                         .level = {
-                            .volume_l = volume_l,
+                            .objem = objem,
+                            .hladina = hladina,
                         },
                     },
                 },
@@ -288,12 +289,12 @@ static void volume_task(void *pvParameters)
         }
 
         DEBUG_PUBLISH("objem",
-                      "queued=%d ts=%lld raw=%lu height_m=%.6f volume_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
+                      "queued=%d ts=%lld raw=%lu hladina_m=%.6f objem_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
                       (unsigned long)raw_value,
-                      (double)height,
-                      (double)volume_l,
+                      (double)hladina,
+                      (double)objem,
                       (double)g_level_config.tank_area_m2,
                       (long)g_level_config.adc_raw_min,
                       (long)g_level_config.adc_raw_max,

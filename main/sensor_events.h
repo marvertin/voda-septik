@@ -35,19 +35,20 @@ typedef struct {
 } sensor_temperature_data_t;
 
 typedef struct {
-    float volume_l;
+    float objem;
+    float hladina;
 } sensor_level_data_t;
 
 typedef struct {
-    float flow_l_min;
-    float total_volume_l;
+    float prutok;
+    float cerpano_celkem;
 } sensor_flow_data_t;
 
 typedef struct {
-    float pressure_before_bar;
-    float pressure_after_bar;
-    float pressure_diff_bar;
-    float filter_clogging_percent;
+    float pred_filtrem;
+    float za_filtrem;
+    float rozdil_filtru;
+    float zanesenost_filtru;
 } sensor_pressure_data_t;
 
 typedef struct {

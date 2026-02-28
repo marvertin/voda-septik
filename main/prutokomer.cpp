@@ -34,8 +34,8 @@ static volatile uint32_t pulse_count = 0;
 static FlashMonotonicCounter s_flow_counter;
 static uint64_t s_total_pulses = 0;
 static uint64_t s_persisted_counter_steps = 0;
-static float s_flow_l_min_ema = 0.0f;
-static bool s_flow_ema_initialized = false;
+static float s_prutok_ema = 0.0f;
+static bool s_prutok_inicializovan = false;
 
 // ISR handler
 static void IRAM_ATTR flow_isr_handler(void *arg) {
@@ -75,21 +75,21 @@ static void pocitani_pulsu(void *pvParameters)
             s_persisted_counter_steps += 1;
         }
 
-        float raw_flow_l_min = 0.0f;
+        float surovy_prutok = 0.0f;
         if (elapsed_us > 0) {
-            raw_flow_l_min = (static_cast<float>(new_pulses) * 60000000.0f)
-                           / (static_cast<float>(elapsed_us) * static_cast<float>(FLOW_PULSES_PER_LITER));
+            surovy_prutok = (static_cast<float>(new_pulses) * 60000000.0f)
+                          / (static_cast<float>(elapsed_us) * static_cast<float>(FLOW_PULSES_PER_LITER));
         }
 
-        if (!s_flow_ema_initialized) {
-            s_flow_l_min_ema = raw_flow_l_min;
-            s_flow_ema_initialized = true;
+        if (!s_prutok_inicializovan) {
+            s_prutok_ema = surovy_prutok;
+            s_prutok_inicializovan = true;
         } else {
-            s_flow_l_min_ema = FLOW_EMA_ALPHA * raw_flow_l_min
-                             + (1.0f - FLOW_EMA_ALPHA) * s_flow_l_min_ema;
+            s_prutok_ema = FLOW_EMA_ALPHA * surovy_prutok
+                         + (1.0f - FLOW_EMA_ALPHA) * s_prutok_ema;
         }
 
-        const float total_volume_l =
+        const float cerpano_celkem =
             static_cast<float>(s_total_pulses) / static_cast<float>(FLOW_PULSES_PER_LITER);
 
         sample_counter += 1;
@@ -97,9 +97,9 @@ static void pocitani_pulsu(void *pvParameters)
             sample_counter = 0;
             ESP_LOGI(TAG,
                      "Prutok raw=%.2f l/min, ema=%.2f l/min, celkem=%.2f l",
-                     raw_flow_l_min,
-                     s_flow_l_min_ema,
-                     total_volume_l);
+                     surovy_prutok,
+                     s_prutok_ema,
+                     cerpano_celkem);
         }
 
         app_event_t event = {
@@ -110,8 +110,8 @@ static void pocitani_pulsu(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_FLOW,
                     .data = {
                         .flow = {
-                            .flow_l_min = s_flow_l_min_ema,
-                            .total_volume_l = total_volume_l,
+                            .prutok = s_prutok_ema,
+                            .cerpano_celkem = cerpano_celkem,
                         },
                     },
                 },
@@ -129,9 +129,9 @@ static void pocitani_pulsu(void *pvParameters)
                       (long long)now_us,
                       (unsigned long)new_pulses,
                       (long long)elapsed_us,
-                      (double)raw_flow_l_min,
-                      (double)s_flow_l_min_ema,
-                      (double)total_volume_l,
+                      (double)surovy_prutok,
+                      (double)s_prutok_ema,
+                      (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
     }
 }

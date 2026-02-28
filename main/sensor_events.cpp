@@ -94,10 +94,11 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_LEVEL:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=level ts=%lld volume=%.3fl",
+                             "event=%s type=level ts=%lld objem=%.3fl hladina=%.3fm",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
-                             event->data.sensor.data.level.volume_l);
+                             event->data.sensor.data.level.objem,
+                             event->data.sensor.data.level.hladina);
                     break;
 
                 case SENSOR_EVENT_FLOW:
@@ -106,8 +107,8 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                              "event=%s type=flow ts=%lld flow=%.2f l/min total=%.2f l",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
-                             event->data.sensor.data.flow.flow_l_min,
-                             event->data.sensor.data.flow.total_volume_l);
+                             event->data.sensor.data.flow.prutok,
+                             event->data.sensor.data.flow.cerpano_celkem);
                     break;
 
                 case SENSOR_EVENT_PRESSURE:
@@ -116,10 +117,10 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                              "event=%s type=pressure ts=%lld p_before=%.3fbar p_after=%.3fbar dp=%.3fbar clog=%.1f%%",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
-                             event->data.sensor.data.pressure.pressure_before_bar,
-                             event->data.sensor.data.pressure.pressure_after_bar,
-                             event->data.sensor.data.pressure.pressure_diff_bar,
-                             event->data.sensor.data.pressure.filter_clogging_percent);
+                             event->data.sensor.data.pressure.pred_filtrem,
+                             event->data.sensor.data.pressure.za_filtrem,
+                             event->data.sensor.data.pressure.rozdil_filtru,
+                             event->data.sensor.data.pressure.zanesenost_filtru);
                     break;
 
                 default:

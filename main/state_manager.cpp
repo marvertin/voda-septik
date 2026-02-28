@@ -112,21 +112,28 @@ static void publish_level_to_outputs(const sensor_event_t &event)
 {
     char text[16];
     esp_err_t enqueue_result;
-    const bool sensor_fault = !std::isfinite(event.data.level.volume_l);
+    const bool sensor_fault = !std::isfinite(event.data.level.objem) || !std::isfinite(event.data.level.hladina);
     set_sensor_fault_indicator(SENSOR_EVENT_LEVEL, sensor_fault);
 
     if (sensor_fault) {
         snprintf(text, sizeof(text), "O: ---  ");
         lcd_print(8, 1, text, false, 0);
 
-        enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_OBJEM);
+        enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM);
+        (void)mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA);
     } else {
-        snprintf(text, sizeof(text), "O:%4.0fL", event.data.level.volume_l);
+        snprintf(text, sizeof(text), "O:%4.0fL", event.data.level.objem);
         lcd_print(8, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_double(
-            mqtt_topic_id_t::TOPIC_STAV_OBJEM,
-            (double)event.data.level.volume_l);
+            mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM,
+            (double)event.data.level.objem);
+        esp_err_t hladina_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA,
+            (double)event.data.level.hladina);
+        if (hladina_result != ESP_OK) {
+            ESP_LOGW(TAG, "Enqueue hladiny selhalo: %s", esp_err_to_name(hladina_result));
+        }
     }
 
     if (enqueue_result != ESP_OK) {
@@ -136,28 +143,28 @@ static void publish_level_to_outputs(const sensor_event_t &event)
 
 static void publish_flow_to_outputs(const sensor_event_t &event)
 {
-    const bool sensor_fault = !std::isfinite(event.data.flow.flow_l_min) || !std::isfinite(event.data.flow.total_volume_l);
+    const bool sensor_fault = !std::isfinite(event.data.flow.prutok) || !std::isfinite(event.data.flow.cerpano_celkem);
     set_sensor_fault_indicator(SENSOR_EVENT_FLOW, sensor_fault);
-    status_display_set_flow_rate(event.data.flow.flow_l_min);
+    status_display_set_prutok(event.data.flow.prutok);
 
     char liters_text[16];
-    snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.total_volume_l);
+    snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.cerpano_celkem);
     lcd_print(0, 0, liters_text, false, 0);
 
     char flow_text[16];
-    snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.flow_l_min);
+    snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.prutok);
     lcd_print(0, 1, flow_text, false, 0);
 
     esp_err_t flow_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_PRUTOK,
-        (double)event.data.flow.flow_l_min);
+        mqtt_topic_id_t::TOPIC_STAV_CERPANI_PRUTOK,
+        (double)event.data.flow.prutok);
     if (flow_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue prutoku selhalo: %s", esp_err_to_name(flow_result));
     }
 
     esp_err_t total_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_CERPANO_CELKEM,
-        (double)event.data.flow.total_volume_l);
+        mqtt_topic_id_t::TOPIC_STAV_CERPANI_CERPANO_CELKEM,
+        (double)event.data.flow.cerpano_celkem);
     if (total_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue cerpano_celkem selhalo: %s", esp_err_to_name(total_result));
     }
@@ -166,41 +173,41 @@ static void publish_flow_to_outputs(const sensor_event_t &event)
 
 static void publish_pressure_to_outputs(const sensor_event_t &event)
 {
-    const float pressure_before_bar = event.data.pressure.pressure_before_bar;
-    const float pressure_after_bar = event.data.pressure.pressure_after_bar;
-    const float pressure_diff_bar = event.data.pressure.pressure_diff_bar;
-    const float filter_clogging_percent = event.data.pressure.filter_clogging_percent;
+    const float pred_filtrem = event.data.pressure.pred_filtrem;
+    const float za_filtrem = event.data.pressure.za_filtrem;
+    const float rozdil_filtru = event.data.pressure.rozdil_filtru;
+    const float zanesenost_filtru = event.data.pressure.zanesenost_filtru;
 
     const bool sensor_fault =
-        !std::isfinite(pressure_before_bar) ||
-        !std::isfinite(pressure_after_bar) ||
-        !std::isfinite(pressure_diff_bar);
+        !std::isfinite(pred_filtrem) ||
+        !std::isfinite(za_filtrem) ||
+        !std::isfinite(rozdil_filtru);
     set_sensor_fault_indicator(SENSOR_EVENT_PRESSURE, sensor_fault);
 
     esp_err_t before_result = mqtt_publisher_enqueue_double(
         mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM,
-        (double)pressure_before_bar);
+        (double)pred_filtrem);
     if (before_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue tlaku pred filtrem selhalo: %s", esp_err_to_name(before_result));
     }
 
     esp_err_t after_result = mqtt_publisher_enqueue_double(
         mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM,
-        (double)pressure_after_bar);
+        (double)za_filtrem);
     if (after_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue tlaku za filtrem selhalo: %s", esp_err_to_name(after_result));
     }
 
     esp_err_t diff_result = mqtt_publisher_enqueue_double(
         mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU,
-        (double)pressure_diff_bar);
+        (double)rozdil_filtru);
     if (diff_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_result));
     }
 
     esp_err_t clog_result = mqtt_publisher_enqueue_double(
         mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT,
-        (double)filter_clogging_percent);
+        (double)zanesenost_filtru);
     if (clog_result != ESP_OK) {
         ESP_LOGW(TAG, "Enqueue zanesenosti filtru selhalo: %s", esp_err_to_name(clog_result));
     }
