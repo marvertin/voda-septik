@@ -127,7 +127,7 @@ static void captive_dns_task(void *arg)
 
             char source_ip[16] = {0};
             inet_ntoa_r(source_addr.sin_addr, source_ip, sizeof(source_ip));
-            ESP_LOGI(TAG,
+            ESP_LOGD(TAG,
                      "Captive DNS dotaz: src=%s qname='%s' qtype=%u qclass=%u len=%d",
                      source_ip,
                      (qname[0] != '\0') ? qname : "(empty)",
@@ -181,7 +181,7 @@ static void captive_dns_task(void *arg)
             if (sent < 0) {
                 ESP_LOGW(TAG, "Captive DNS: sendto selhalo errno=%d", errno);
             } else {
-                ESP_LOGI(TAG, "Captive DNS odpoved odeslana: %d B -> %s (A 192.168.4.1)", sent, source_ip);
+                ESP_LOGD(TAG, "Captive DNS odpoved odeslana: %d B -> %s (A 192.168.4.1)", sent, source_ip);
             }
         }
 

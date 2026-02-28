@@ -188,6 +188,16 @@ static void load_pressure_calibration_config(void)
 
 static esp_err_t adc_init(void)
 {
+    ESP_LOGI(TAG,
+             "ADC init: unit=%d bitwidth=%d atten=%d pred(gpio=%d,ch=%d) za(gpio=%d,ch=%d)",
+             (int)PRESSURE_SENSOR_ADC_UNIT,
+             (int)PRESSURE_SENSOR_ADC_BITWIDTH,
+             (int)PRESSURE_SENSOR_ADC_ATTENUATION,
+             32,
+             (int)PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
+             33,
+             (int)PRESSURE_SENSOR_AFTER_ADC_CHANNEL);
+
     esp_err_t ret = adc_shared_init(PRESSURE_SENSOR_ADC_UNIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Nelze inicializovat ADC jednotku: %s", esp_err_to_name(ret));

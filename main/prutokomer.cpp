@@ -95,7 +95,7 @@ static void pocitani_pulsu(void *pvParameters)
         sample_counter += 1;
         if (sample_counter >= FLOW_LOG_EVERY_N_SAMPLES) {
             sample_counter = 0;
-            ESP_LOGI(TAG,
+            ESP_LOGD(TAG,
                      "Prutok raw=%.2f l/min, ema=%.2f l/min, celkem=%.2f l",
                      surovy_prutok,
                      s_prutok_ema,
@@ -138,7 +138,12 @@ static void pocitani_pulsu(void *pvParameters)
 
 void prutokomer_init(void)
 {
-
+    ESP_LOGI(TAG,
+             "Init flow: gpio=%d pulses_per_l=%lu sample_period_ms=%lu ema_alpha=%.2f",
+             (int)FLOW_SENSOR_GPIO,
+             (unsigned long)FLOW_PULSES_PER_LITER,
+             (unsigned long)pdTICKS_TO_MS(FLOW_SAMPLE_PERIOD),
+             (double)FLOW_EMA_ALPHA);
 
     APP_ERROR_CHECK("E200", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
 
@@ -147,7 +152,7 @@ void prutokomer_init(void)
     s_persisted_counter_steps = s_flow_counter.value();
     s_total_pulses = s_persisted_counter_steps * static_cast<uint64_t>(PULSES_PER_COUNTER_INCREMENT);
     
-    ESP_LOGW(TAG,
+    ESP_LOGI(TAG,
              "Flow counter inicializovan, kroky=%llu, start_pulsy=%llu, objem=%llu l",
              (unsigned long long)s_persisted_counter_steps,
              (unsigned long long)s_total_pulses,
@@ -167,7 +172,10 @@ void prutokomer_init(void)
     APP_ERROR_CHECK("E526", gpio_install_isr_service(0));
     APP_ERROR_CHECK("E527", gpio_isr_handler_add(FLOW_SENSOR_GPIO, flow_isr_handler, NULL));
 
-    ESP_LOGI(TAG, "Startuji měření pulzů...");
+    ESP_LOGI(TAG,
+             "GPIO flow nastaven: pullup=1 pulldown=0 intr=posedge pin=%d",
+             (int)FLOW_SENSOR_GPIO);
+    ESP_LOGI(TAG, "Startuji mereni pulzu...");
 
     APP_ERROR_CHECK("E528",
                     xTaskCreate(pocitani_pulsu, "pocitani_pulsu", FLOW_TASK_STACK_SIZE, NULL, 1, NULL) == pdPASS

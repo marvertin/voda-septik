@@ -49,6 +49,8 @@ static char s_mqtt_status_topic[MQTT_LWT_TOPIC_MAX_LEN] = {0};
 static char s_lwt_message[MQTT_LWT_MESSAGE_MAX_LEN] = {0};
 static char s_mqtt_client_id[MQTT_CLIENT_ID_MAX_LEN] = {0};
 static bool s_ap_mode_active = false;
+static bool s_last_logged_level_valid = false;
+static system_network_level_t s_last_logged_level = SYS_NET_DOWN;
 
 static network_event_callback_t s_event_callback = nullptr;
 static void *s_event_callback_ctx = nullptr;
@@ -57,6 +59,92 @@ static void publish_network_event(void);
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 static esp_err_t start_mqtt_client_if_ready(void);
 static void refresh_rssi_snapshot(void);
+
+static const char *network_level_name(system_network_level_t level)
+{
+    switch (level) {
+        case SYS_NET_DOWN:
+            return "down";
+        case SYS_NET_WIFI_ONLY:
+            return "wifi_only";
+        case SYS_NET_IP_ONLY:
+            return "ip_only";
+        case SYS_NET_MQTT_READY:
+            return "mqtt_ready";
+        case SYS_NET_AP_CONFIG:
+            return "ap_config";
+        default:
+            return "unknown";
+    }
+}
+
+static int network_level_rank(system_network_level_t level)
+{
+    switch (level) {
+        case SYS_NET_DOWN:
+            return 0;
+        case SYS_NET_WIFI_ONLY:
+            return 1;
+        case SYS_NET_IP_ONLY:
+            return 2;
+        case SYS_NET_MQTT_READY:
+            return 3;
+        case SYS_NET_AP_CONFIG:
+            return 2;
+        default:
+            return 0;
+    }
+}
+
+static void log_network_level_transition(const network_event_t &event)
+{
+    const char *current_level = network_level_name(event.level);
+    if (!s_last_logged_level_valid) {
+        ESP_LOGI(TAG,
+                 "Network level start: %s (wifi_up=%d ip_ready=%d mqtt_ready=%d reconnect=%lu/%lu)",
+                 current_level,
+                 s_wifi_up ? 1 : 0,
+                 s_ip_ready ? 1 : 0,
+                 s_mqtt_connected ? 1 : 0,
+                 (unsigned long)event.reconnect_successes,
+                 (unsigned long)event.reconnect_attempts);
+        s_last_logged_level = event.level;
+        s_last_logged_level_valid = true;
+        return;
+    }
+
+    if (event.level == s_last_logged_level) {
+        return;
+    }
+
+    const char *previous_level = network_level_name(s_last_logged_level);
+    const int previous_rank = network_level_rank(s_last_logged_level);
+    const int current_rank = network_level_rank(event.level);
+
+    if (current_rank >= previous_rank) {
+        ESP_LOGI(TAG,
+                 "Network level improve: %s -> %s (wifi_up=%d ip_ready=%d mqtt_ready=%d reconnect=%lu/%lu)",
+                 previous_level,
+                 current_level,
+                 s_wifi_up ? 1 : 0,
+                 s_ip_ready ? 1 : 0,
+                 s_mqtt_connected ? 1 : 0,
+                 (unsigned long)event.reconnect_successes,
+                 (unsigned long)event.reconnect_attempts);
+    } else {
+        ESP_LOGW(TAG,
+                 "Network level degrade: %s -> %s (wifi_up=%d ip_ready=%d mqtt_ready=%d reconnect=%lu/%lu)",
+                 previous_level,
+                 current_level,
+                 s_wifi_up ? 1 : 0,
+                 s_ip_ready ? 1 : 0,
+                 s_mqtt_connected ? 1 : 0,
+                 (unsigned long)event.reconnect_successes,
+                 (unsigned long)event.reconnect_attempts);
+    }
+
+    s_last_logged_level = event.level;
+}
 
 static void schedule_wifi_reconnect(void);
 
@@ -157,6 +245,8 @@ static void publish_network_event(void)
                                                s_wifi_reconnect_attempts,
                                                s_wifi_reconnect_successes);
 
+    log_network_level_transition(event);
+
     if (s_event_callback != nullptr) {
         s_event_callback(&event, s_event_callback_ctx);
     }
@@ -169,7 +259,7 @@ static esp_err_t start_mqtt_client_if_ready(void)
     }
 
     if (s_mqtt_client != NULL) {
-        ESP_LOGW(TAG, "MQTT jiz inicializovan");
+        ESP_LOGD(TAG, "MQTT jiz inicializovan");
         return ESP_OK;
     }
 
@@ -233,6 +323,7 @@ static void network_platform_init(void)
     APP_ERROR_CHECK("E503", ret);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_LOGI(TAG, "Init network platform: NVS + NETIF + EVENT_LOOP + WIFI stack");
     APP_ERROR_CHECK("E504", esp_wifi_init(&cfg));
 
     if (s_network_publish_retry_timer == nullptr) {
@@ -306,6 +397,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         schedule_retry_publish();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGW(TAG,
+                 "WiFi odpojeno: reason=%d rssi=%d",
+                 (disc != nullptr) ? (int)disc->reason : -1,
+                 (disc != nullptr) ? (int)disc->rssi : -127);
         s_wifi_up = false;
         s_ip_ready = false;
         s_ip_addr = 0;
@@ -423,6 +518,12 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
     wifi_config.sta.pmf_cfg.capable = true;
     wifi_config.sta.pmf_cfg.required = false;
 
+    ESP_LOGI(TAG,
+             "WiFi STA cfg: ssid='%s' auth>=WPA2 pmf_capable=%d pmf_required=%d",
+             ssid,
+             wifi_config.sta.pmf_cfg.capable ? 1 : 0,
+             wifi_config.sta.pmf_cfg.required ? 1 : 0);
+
     APP_ERROR_CHECK("E510", esp_wifi_set_mode(WIFI_MODE_STA));
     APP_ERROR_CHECK("E511", esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     APP_ERROR_CHECK("E512", esp_wifi_start());
@@ -441,6 +542,10 @@ esp_err_t network_init_sta(const char *ssid, const char *password)
 esp_err_t network_init_ap(const char *ap_ssid, const char *ap_password)
 {
     network_platform_init();
+    ESP_LOGI(TAG,
+             "WiFi AP cfg: ssid='%s' password_set=%d",
+             ap_ssid,
+             (ap_password != nullptr && ap_password[0] != '\0') ? 1 : 0);
     esp_err_t ap_ret = network_ap_mode_start(ap_ssid, ap_password);
     if (ap_ret != ESP_OK) {
         ESP_LOGE(TAG, "Nelze spustit AP konfiguracni rezim: %s", esp_err_to_name(ap_ret));

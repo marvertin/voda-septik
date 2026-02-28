@@ -503,6 +503,13 @@ static void temperature_task(void *pvParameters)
 {
     (void)pvParameters;
 
+    ESP_LOGI(TAG,
+             "Init teplota: onewire_gpio=%d pullup=1 conversion_ms=%d read_period_ms=%d discovery_period_s=%d",
+             (int)TEMPERATURE_SENSOR_GPIO,
+             TEMPERATURE_CONVERSION_MS,
+             READ_PERIOD_MS,
+             SENSOR_DISCOVERY_PERIOD_S);
+
     // Nastavení pull-up rezistoru na GPIO pinu
     gpio_set_pull_mode(TEMPERATURE_SENSOR_GPIO, GPIO_PULLUP_ONLY);
 
@@ -576,7 +583,7 @@ static void temperature_task(void *pvParameters)
                 &raw_temp);
 
             if (read_ok) {
-                ESP_LOGI(TAG, "Teplota (%s): %.2f °C", probe.name, temperature);
+                ESP_LOGD(TAG, "Teplota (%s): %.2f °C", probe.name, temperature);
             } else {
                 ESP_LOGE(TAG, "Nebylo mozne precist teplotu (%s)", probe.name);
             }
@@ -591,6 +598,10 @@ static void temperature_task(void *pvParameters)
 
 void teplota_init(void)
 {
+    ESP_LOGI(TAG,
+             "Spoustim teplota task: stack=%lu prio=%d",
+             (unsigned long)(configMINIMAL_STACK_SIZE * 4),
+             5);
     APP_ERROR_CHECK("E524",
                     xTaskCreate(temperature_task, TAG, configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL) == pdPASS
                         ? ESP_OK

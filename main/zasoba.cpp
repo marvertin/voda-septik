@@ -167,6 +167,14 @@ static void load_level_calibration_config(void)
  */
 static esp_err_t adc_init(void)
 {
+    ESP_LOGI(TAG,
+             "ADC init: gpio=%d unit=%d channel=%d bitwidth=%d atten=%d",
+             34,
+             (int)LEVEL_SENSOR_ADC_UNIT,
+             (int)LEVEL_SENSOR_ADC_CHANNEL,
+             (int)LEVEL_SENSOR_ADC_BITWIDTH,
+             (int)LEVEL_SENSOR_ADC_ATTENUATION);
+
     esp_err_t ret = adc_shared_init(LEVEL_SENSOR_ADC_UNIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku (%s)", esp_err_to_name(ret));
@@ -242,11 +250,11 @@ static void zasoba_task(void *pvParameters)
     // Nabití bufferu na začátku - přečteme tolik měření, jaká je velikost bufferu
     // aby se zabránilo zkresleným údajům na začátku
     size_t buffer_size = level_filter.getBufferSize();
-    ESP_LOGI(TAG, "Prebíhá nabití bufferu (%zu měření)...", buffer_size);
+    ESP_LOGI(TAG, "Prebiha nabiti bufferu (%zu mereni)...", buffer_size);
     for (size_t i = 0; i < buffer_size; i++) {
         adc_read_average();  // Jen vkládáme bez publikování
     }
-    ESP_LOGI(TAG, "Buffer nabití, začínáme publikovat výsledky");
+    ESP_LOGI(TAG, "Buffer nabit, zacinam publikovat vysledky");
     
     uint32_t raw_value;
     float hladina;
