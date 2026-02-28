@@ -17,6 +17,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "config_webapp.h"
 #include "debug_mqtt.h"
+#include "app_error_check.h"
 
 #define TAG "TLAK"
 
@@ -312,11 +313,7 @@ static void tlak_task(void *pvParameters)
         {.name = "za", .channel = PRESSURE_SENSOR_AFTER_ADC_CHANNEL, .filter = &pressure_after_filter},
     };
 
-    if (adc_init() != ESP_OK) {
-        ESP_LOGE(TAG, "Inicializace ADC pro tlak selhala");
-        vTaskDelete(nullptr);
-        return;
-    }
+    APP_ERROR_CHECK("E521", adc_init());
 
     const size_t prefill = pressure_before_filter.getBufferSize();
     for (size_t i = 0; i < prefill; ++i) {
@@ -405,7 +402,10 @@ static void tlak_task(void *pvParameters)
 void tlak_init(void)
 {
     load_pressure_calibration_config();
-    xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr);
+    APP_ERROR_CHECK("E523",
+                    xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr) == pdPASS
+                        ? ESP_OK
+                        : ESP_FAIL);
 }
 
 config_group_t tlak_get_config_group(void)

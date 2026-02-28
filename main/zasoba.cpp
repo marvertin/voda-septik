@@ -18,6 +18,7 @@ extern "C" {
 #include "config_webapp.h"
 #include "sensor_events.h"
 #include "debug_mqtt.h"
+#include "app_error_check.h"
 
 #define TAG "ZASOBA"
 
@@ -231,16 +232,12 @@ static float height_to_volume_liters(float height_m)
     return volume_m3 * 1000.0f;
 }
 
-static void volume_task(void *pvParameters)
+static void zasoba_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
     
     // Inicializace ADC
-    if (adc_init() != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba při inicializaci ADC");
-        vTaskDelete(NULL);
-        return;
-    }
+    APP_ERROR_CHECK("E520", adc_init());
     
     // Nabití bufferu na začátku - přečteme tolik měření, jaká je velikost bufferu
     // aby se zabránilo zkresleným údajům na začátku
@@ -301,8 +298,8 @@ static void volume_task(void *pvParameters)
                       (double)g_level_config.height_min,
                       (double)g_level_config.height_max);
         
-        // Čtení každou sekundu
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
@@ -310,7 +307,10 @@ void zasoba_init(void)
 {
     load_level_calibration_config();
 
-    xTaskCreate(volume_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
+    APP_ERROR_CHECK("E522",
+                    xTaskCreate(zasoba_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL) == pdPASS
+                        ? ESP_OK
+                        : ESP_FAIL);
 }
 
 config_group_t zasoba_get_config_group(void)
