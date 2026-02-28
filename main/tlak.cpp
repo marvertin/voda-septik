@@ -119,6 +119,19 @@ static pressure_calibration_config_t g_pressure_config = {
 static TrimmedMean<31, 5> pressure_before_filter;
 static TrimmedMean<31, 5> pressure_after_filter;
 
+typedef struct {
+    uint32_t raw_unfiltered;
+    uint32_t raw_filtered;
+    float current_ma;
+    float pressure_bar;
+} pressure_sensor_sample_t;
+
+typedef struct {
+    const char *name;
+    adc_channel_t channel;
+    TrimmedMean<31, 5> *filter;
+} pressure_sensor_ctx_t;
+
 static void load_pressure_calibration_config(void)
 {
     esp_err_t ret = config_webapp_get_i32("tlk_raw_4ma", &g_pressure_config.raw_at_4ma);
@@ -260,11 +273,44 @@ static float pressure_diff_to_clogging_percent(float pressure_diff_bar)
     return normalized * 100.0f;
 }
 
+static pressure_sensor_sample_t measure_pressure_sensor(adc_channel_t channel,
+                                                        TrimmedMean<31, 5> &filter)
+{
+    pressure_sensor_sample_t sample = {};
+
+    (void)read_raw_with_filter(channel,
+                               filter,
+                               &sample.raw_unfiltered,
+                               &sample.raw_filtered);
+
+    sample.current_ma = raw_to_current_ma(sample.raw_filtered);
+    sample.pressure_bar = current_ma_to_pressure_bar(sample.current_ma);
+    return sample;
+}
+
+static pressure_sensor_sample_t measure_pressure_sensor(const pressure_sensor_ctx_t &ctx)
+{
+    return measure_pressure_sensor(ctx.channel, *ctx.filter);
+}
+
+static void prefill_pressure_sensor(const pressure_sensor_ctx_t &ctx)
+{
+    (void)read_raw_with_filter(ctx.channel,
+                               *ctx.filter,
+                               nullptr,
+                               nullptr);
+}
+
 static void tlak_task(void *pvParameters)
 {
     (void)pvParameters;
 
     ESP_LOGI(TAG, "Spoustim mereni tlaku (pred/za filtrem)...");
+
+    const pressure_sensor_ctx_t sensors[] = {
+        {.name = "pred", .channel = PRESSURE_SENSOR_BEFORE_ADC_CHANNEL, .filter = &pressure_before_filter},
+        {.name = "za", .channel = PRESSURE_SENSOR_AFTER_ADC_CHANNEL, .filter = &pressure_after_filter},
+    };
 
     if (adc_init() != ESP_OK) {
         ESP_LOGE(TAG, "Inicializace ADC pro tlak selhala");
@@ -274,37 +320,23 @@ static void tlak_task(void *pvParameters)
 
     const size_t prefill = pressure_before_filter.getBufferSize();
     for (size_t i = 0; i < prefill; ++i) {
-        (void)read_raw_with_filter(PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
-                                   pressure_before_filter,
-                                   nullptr,
-                                   nullptr);
-        (void)read_raw_with_filter(PRESSURE_SENSOR_AFTER_ADC_CHANNEL,
-                                   pressure_after_filter,
-                                   nullptr,
-                                   nullptr);
+        for (const pressure_sensor_ctx_t &sensor : sensors) {
+            prefill_pressure_sensor(sensor);
+        }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     while (true) {
-        uint32_t raw_before_unfiltered = 0;
-        uint32_t raw_after_unfiltered = 0;
-        uint32_t raw_before_filtered = 0;
-        uint32_t raw_after_filtered = 0;
+        pressure_sensor_sample_t samples[sizeof(sensors) / sizeof(sensors[0])] = {};
+        for (size_t i = 0; i < (sizeof(sensors) / sizeof(sensors[0])); ++i) {
+            samples[i] = measure_pressure_sensor(sensors[i]);
+        }
 
-        (void)read_raw_with_filter(PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
-                                   pressure_before_filter,
-                                   &raw_before_unfiltered,
-                                   &raw_before_filtered);
-        (void)read_raw_with_filter(PRESSURE_SENSOR_AFTER_ADC_CHANNEL,
-                                   pressure_after_filter,
-                                   &raw_after_unfiltered,
-                                   &raw_after_filtered);
+        const pressure_sensor_sample_t &pred_filtrem_sensor = samples[0];
+        const pressure_sensor_sample_t &za_filtrem_sensor = samples[1];
 
-        const float current_before_ma = raw_to_current_ma(raw_before_filtered);
-        const float current_after_ma = raw_to_current_ma(raw_after_filtered);
-
-        const float pred_filtrem = current_ma_to_pressure_bar(current_before_ma);
-        const float za_filtrem = current_ma_to_pressure_bar(current_after_ma);
+        const float pred_filtrem = pred_filtrem_sensor.pressure_bar;
+        const float za_filtrem = za_filtrem_sensor.pressure_bar;
         const float rozdil_filtru = pred_filtrem - za_filtrem;
         const float zanesenost_filtru = pressure_diff_to_clogging_percent(rozdil_filtru);
 
@@ -333,13 +365,13 @@ static void tlak_task(void *pvParameters)
 
         ESP_LOGD(TAG,
              "pred: raw_pre=%lu raw_post=%lu i=%.2f mA p=%.3f bar | za: raw_pre=%lu raw_post=%lu i=%.2f mA p=%.3f bar | dP=%.3f bar clog=%.1f%% queued=%d",
-             (unsigned long)raw_before_unfiltered,
-             (unsigned long)raw_before_filtered,
-                 (double)current_before_ma,
+             (unsigned long)pred_filtrem_sensor.raw_unfiltered,
+             (unsigned long)pred_filtrem_sensor.raw_filtered,
+                 (double)pred_filtrem_sensor.current_ma,
                  (double)pred_filtrem,
-             (unsigned long)raw_after_unfiltered,
-             (unsigned long)raw_after_filtered,
-                 (double)current_after_ma,
+             (unsigned long)za_filtrem_sensor.raw_unfiltered,
+             (unsigned long)za_filtrem_sensor.raw_filtered,
+                 (double)za_filtrem_sensor.current_ma,
                  (double)za_filtrem,
                  (double)rozdil_filtru,
                  (double)zanesenost_filtru,
@@ -349,10 +381,10 @@ static void tlak_task(void *pvParameters)
                   "queued=%d ts=%lld before_raw_pre=%lu before_raw_post=%lu after_raw_pre=%lu after_raw_post=%lu p_before=%.3f p_after=%.3f dp=%.3f clog=%.1f",
                   queued ? 1 : 0,
                   (long long)event.timestamp_us,
-                  (unsigned long)raw_before_unfiltered,
-                  (unsigned long)raw_before_filtered,
-                  (unsigned long)raw_after_unfiltered,
-                  (unsigned long)raw_after_filtered,
+                  (unsigned long)pred_filtrem_sensor.raw_unfiltered,
+                  (unsigned long)pred_filtrem_sensor.raw_filtered,
+                  (unsigned long)za_filtrem_sensor.raw_unfiltered,
+                  (unsigned long)za_filtrem_sensor.raw_filtered,
                   (double)pred_filtrem,
                   (double)za_filtrem,
                   (double)rozdil_filtru,
