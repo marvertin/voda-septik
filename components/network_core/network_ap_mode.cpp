@@ -12,7 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "network_ap";
+static const char *TAG = "network_ap_mode";
 static TaskHandle_t s_captive_dns_task_handle = nullptr;
 
 static size_t decode_dns_qname(const uint8_t *buffer, size_t buffer_len, size_t start, char *out, size_t out_len)

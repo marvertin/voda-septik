@@ -19,7 +19,7 @@ extern "C" {
 #include "debug_mqtt.h"
 #include "app_error_check.h"
 
-#define TAG "TLAK"
+#define TAG "tlak"
 
 namespace {
 

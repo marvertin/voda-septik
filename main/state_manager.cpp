@@ -24,7 +24,7 @@ extern "C" {
 #include "status_display.h"
 #include <tm1637.h>
 
-static const char *TAG = "state";
+static const char *TAG = "state_manager";
 
 static bool s_temp_probe_fault_water = false;
 static bool s_temp_probe_fault_air = false;

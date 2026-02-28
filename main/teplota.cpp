@@ -31,7 +31,7 @@ extern "C" {
 #include <app_error_check.h>
 #include "debug_mqtt.h"
 
-#define TAG "TEPLOTA"
+#define TAG "teplota"
 
 // DS18B20 Commands
 #define DS18B20_CMD_CONVERT_TEMP  0x44       // Start temperature conversion

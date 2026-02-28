@@ -20,7 +20,7 @@ extern "C" {
 #include "debug_mqtt.h"
 #include "app_error_check.h"
 
-#define TAG "ZASOBA"
+#define TAG "zasoba"
 
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 

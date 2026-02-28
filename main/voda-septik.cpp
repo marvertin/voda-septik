@@ -37,7 +37,7 @@ extern "C" {
     void cpp_app_main(void);
 }
 
-static const char *TAG = "main";
+static const char *TAG = "voda_septik";
 
 static bool is_error_reset_reason(esp_reset_reason_t reason)
 {

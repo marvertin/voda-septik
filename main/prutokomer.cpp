@@ -18,7 +18,7 @@ extern "C" {
 #include "app_error_check.h"
 #include "debug_mqtt.h"
 
-#define TAG "PRUTOK"
+#define TAG "prutokomer"
 
 static constexpr uint32_t FLOW_PULSES_PER_LITER = 270; // F = 4.5 * Q, Q v l/min
 static constexpr uint32_t COUNTER_INCREMENT_LITERS = 1; // Kolik litrů odpovídá jednomu kroku v monotonic counteru

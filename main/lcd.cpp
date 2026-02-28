@@ -16,7 +16,7 @@ extern "C" {
 #include "pins.h"
 #include "app_error_check.h"
 
-#define TAG "LCD"
+#define TAG "lcd"
 #define LCD_QUEUE_LENGTH 8
 
 static QueueHandle_t lcd_queue = NULL;

@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
-static const char *TAG = "network";
+static const char *TAG = "network_event_bridge";
 static const int64_t NETWORK_TELEMETRY_PERIOD_US = 10LL * 1000LL * 1000LL;
 
 static bool s_has_last_level = false;

@@ -2,7 +2,7 @@
 
 #include "esp_log.h"
 
-static const char *TAG = "error_check";
+static const char *TAG = "app_error_check";
 static app_error_code_handler_t s_error_code_handler = NULL;
 
 void app_error_check_set_handler(app_error_code_handler_t handler)

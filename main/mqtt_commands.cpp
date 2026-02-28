@@ -25,7 +25,7 @@ extern "C" {
 #include "webapp_startup.h"
 #include "debug_mqtt.h"
 
-static const char *TAG = "mqtt_cmd";
+static const char *TAG = "mqtt_commands";
 static constexpr TickType_t REGISTER_RETRY_DELAY_TICKS = pdMS_TO_TICKS(500);
 static constexpr uint32_t DEBUG_AUTO_OFF_MS = 2U * 60U * 60U * 1000U;
 

@@ -23,7 +23,7 @@
 #define MQTT_LWT_MESSAGE_MAX_LEN 64
 #define MQTT_CLIENT_ID_MAX_LEN 32
 
-static const char *TAG = "network";
+static const char *TAG = "network_init";
 
 static bool s_network_base_inited = false;
 static bool s_sta_handlers_registered = false;

@@ -7,7 +7,7 @@
 #include "mqtt_publish.h"
 #include "status_display.h"
 
-static const char *TAG = "mqtt_pub_task";
+static const char *TAG = "mqtt_publisher_task";
 static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
 static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(60 * 1000);
 
