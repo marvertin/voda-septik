@@ -390,6 +390,12 @@ static void tlak_task(void *pvParameters)
                   (double)rozdil_filtru,
                   (double)zanesenost_filtru);
 
+      DEBUG_PUBLISH("tlak2",
+                  "pred=%lu za=%lu",
+                  (unsigned long)pred_filtrem_sensor.raw_unfiltered,
+                  (unsigned long)za_filtrem_sensor.raw_unfiltered);
+
+                  
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

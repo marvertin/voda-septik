@@ -26,5 +26,5 @@ static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_4; /
 static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_5;  // ADC1_CH5 (GPIO33)
 static const adc_unit_t PRESSURE_SENSOR_ADC_UNIT = ADC_UNIT_1;
 static const adc_bitwidth_t PRESSURE_SENSOR_ADC_BITWIDTH = ADC_BITWIDTH_12;
-static const adc_atten_t PRESSURE_SENSOR_ADC_ATTENUATION = ADC_ATTEN_DB_12;
+static const adc_atten_t PRESSURE_SENSOR_ADC_ATTENUATION = ADC_ATTEN_DB_0;
 
