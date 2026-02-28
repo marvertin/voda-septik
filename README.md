@@ -27,11 +27,34 @@ Doporuceny postup prvotniho nastaveni:
 3. Podle provozu filtru doladit `tlk_dp_100`, aby procenta zaneseni odpovidala realnemu stavu.
 
 Kalibracni checklist (rychly postup):
-- [ ] Zapnout debug pro tag `PRESSURE` a overit, ze hodnoty `raw` nekolisaji nestandardne.
+- [ ] Zapnout debug pro tag `TLAK` a overit, ze hodnoty `raw` nekolisaji nestandardne.
 - [ ] Pri referencnim bode 4 mA nastavit `tlk_raw_4ma`.
 - [ ] Pri referencnim bode 20 mA nastavit `tlk_raw_20ma`.
 - [ ] Overit, ze `p=... bar` odpovida manometru, pripadne doladit `tlk_p_min`/`tlk_p_max`.
 - [ ] Pri znamem zanesenem stavu filtru doladit `tlk_dp_100`.
+
+## Kalibrace objemu (webapp)
+
+Modul objemu (`main/objem.cpp`) interne zmeri vysku hladiny (kalibrace `lvl_*`) a do MQTT/HA publikuje uz jen vysledny objem v litrech.
+
+Kalibracni polozky:
+- `lvl_raw_min` (default `540`) - ADC RAW hodnota odpovidajici minimalni hladine.
+- `lvl_raw_max` (default `950`) - ADC RAW hodnota odpovidajici maximalni hladine.
+- `lvl_h_min` (default `0.0`) - vyska hladiny [m] pro `lvl_raw_min`.
+- `lvl_h_max` (default `0.290`) - vyska hladiny [m] pro `lvl_raw_max`.
+- `obj_tank_area_m2` (default `5.4`) - pudorysna plocha nadrze [m²] (pro nadrz 2 × 2.7 m).
+
+Pouzity prepocet:
+- vyska z kalibrace RAW: linearni mapovani mezi `lvl_raw_min/lvl_raw_max` a `lvl_h_min/lvl_h_max`
+- objem: `objem_l = vyska_m * obj_tank_area_m2 * 1000`
+
+Publikovany MQTT vystup:
+- `stav/objem` [l]
+
+Prakticky postup:
+1. Nejdriv zkalibrovat vysku (`lvl_*`) podle realnych referencnich bodu.
+2. Nastavit skutecnou plochu nadrze v `obj_tank_area_m2`.
+3. Overit v HA, ze `stav/objem` odpovida realnemu stavu nadrze.
 
 ## Struktura mqtt topiků.
 

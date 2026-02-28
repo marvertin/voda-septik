@@ -94,11 +94,10 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_LEVEL:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=level ts=%lld raw=%lu height=%.3fm",
+                             "event=%s type=level ts=%lld volume=%.3fl",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
-                             (unsigned long)event->data.sensor.data.level.raw_value,
-                             event->data.sensor.data.level.height_m);
+                             event->data.sensor.data.level.volume_l);
                     break;
 
                 case SENSOR_EVENT_FLOW:
@@ -114,13 +113,9 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_PRESSURE:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=pressure ts=%lld raw_before_pre=%lu raw_before_post=%lu raw_after_pre=%lu raw_after_post=%lu p_before=%.3fbar p_after=%.3fbar dp=%.3fbar clog=%.1f%%",
+                             "event=%s type=pressure ts=%lld p_before=%.3fbar p_after=%.3fbar dp=%.3fbar clog=%.1f%%",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
-                             (unsigned long)event->data.sensor.data.pressure.raw_before_pre_filter,
-                             (unsigned long)event->data.sensor.data.pressure.raw_before_filter,
-                             (unsigned long)event->data.sensor.data.pressure.raw_after_pre_filter,
-                             (unsigned long)event->data.sensor.data.pressure.raw_after_filter,
                              event->data.sensor.data.pressure.pressure_before_bar,
                              event->data.sensor.data.pressure.pressure_after_bar,
                              event->data.sensor.data.pressure.pressure_diff_bar,

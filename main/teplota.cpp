@@ -31,7 +31,7 @@ extern "C" {
 #include <app_error_check.h>
 #include "debug_mqtt.h"
 
-#define TAG "TEMP"
+#define TAG "TEPLOTA"
 
 // DS18B20 Commands
 #define DS18B20_CMD_CONVERT_TEMP  0x44       // Start temperature conversion
@@ -476,7 +476,7 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
 
     const char *name = probe_name(probe);
     if (read_ok) {
-        DEBUG_PUBLISH("temperature",
+        DEBUG_PUBLISH("teplota",
                       "queued=%d ts=%lld probe=%s temp_c=%.4f raw_temp=%d gpio=%d",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
@@ -485,7 +485,7 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
                       (int)raw_temp,
                       (int)TEMPERATURE_SENSOR_GPIO);
     } else {
-        DEBUG_PUBLISH("temperature",
+        DEBUG_PUBLISH("teplota",
                       "queued=%d ts=%lld probe=%s read_failed=1 gpio=%d",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,

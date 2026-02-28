@@ -35,8 +35,7 @@ typedef struct {
 } sensor_temperature_data_t;
 
 typedef struct {
-    uint32_t raw_value;
-    float height_m;
+    float volume_l;
 } sensor_level_data_t;
 
 typedef struct {
@@ -45,10 +44,6 @@ typedef struct {
 } sensor_flow_data_t;
 
 typedef struct {
-    uint32_t raw_before_pre_filter;
-    uint32_t raw_after_pre_filter;
-    uint32_t raw_before_filter;
-    uint32_t raw_after_filter;
     float pressure_before_bar;
     float pressure_after_bar;
     float pressure_diff_bar;

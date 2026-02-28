@@ -18,7 +18,7 @@ extern "C" {
 #include "app_error_check.h"
 #include "debug_mqtt.h"
 
-#define TAG "FLOW"
+#define TAG "PRUTOK"
 
 static constexpr uint32_t FLOW_PULSES_PER_LITER = 270; // F = 4.5 * Q, Q v l/min
 static constexpr uint32_t COUNTER_INCREMENT_LITERS = 1; // Kolik litrů odpovídá jednomu kroku v monotonic counteru
@@ -123,7 +123,7 @@ static void pocitani_pulsu(void *pvParameters)
             ESP_LOGW(TAG, "Fronta sensor eventu je plna, prutok zahozen");
         }
 
-        DEBUG_PUBLISH("flow",
+        DEBUG_PUBLISH("prutok",
                       "queued=%d ts=%lld new_pulses=%lu elapsed_us=%lld raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",
                       queued ? 1 : 0,
                       (long long)now_us,

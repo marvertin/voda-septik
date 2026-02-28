@@ -19,7 +19,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 
-#define TAG "LEVEL"
+#define TAG "OBJEM"
 
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 
@@ -84,6 +84,21 @@ static const config_item_t LEVEL_CONFIG_ITEMS[] = {
         .min_float = 0.0f,
         .max_float = 5.0f,
     },
+    {
+        .key = "obj_tank_area_m2",
+        .label = "Plocha nadrze [m2]",
+        .description = "Pudorysna plocha nadrze pouzita pro prepocet vysky na objem.",
+        .type = CONFIG_VALUE_FLOAT,
+        .default_string = nullptr,
+        .default_int = 0,
+        .default_float = 5.4f,
+        .default_bool = false,
+        .max_string_len = 0,
+        .min_int = 0,
+        .max_int = 0,
+        .min_float = 0.1f,
+        .max_float = 50.0f,
+    },
 };
 
 typedef struct {
@@ -91,6 +106,7 @@ typedef struct {
     int32_t adc_raw_max;
     float height_min;
     float height_max;
+    float tank_area_m2;
 } level_calibration_config_t;
 
 static level_calibration_config_t g_level_config = {
@@ -98,6 +114,7 @@ static level_calibration_config_t g_level_config = {
     .adc_raw_max = 950,
     .height_min = 0.0f,
     .height_max = 0.290f,
+    .tank_area_m2 = 5.4f,
 };
 
 // Vytvoříme instanci filtrů pro měření hladiny (31 prvků, 5 oříznutých z obou stran)
@@ -125,12 +142,23 @@ static void load_level_calibration_config(void)
         ESP_LOGW(TAG, "Konfigurace lvl_h_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
     }
 
+    ret = config_webapp_get_float("obj_tank_area_m2", &g_level_config.tank_area_m2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Konfigurace obj_tank_area_m2 neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
+    }
+
+    if (g_level_config.tank_area_m2 <= 0.0f) {
+        g_level_config.tank_area_m2 = 5.4f;
+        ESP_LOGW(TAG, "Neplatna plocha nadrze, pouzivam default %.3f m2", (double)g_level_config.tank_area_m2);
+    }
+
     ESP_LOGI(TAG,
-             "Nactena kalibrace hladiny: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m",
+             "Nactena kalibrace objemu: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m area=%.3f m2",
              (long)g_level_config.adc_raw_min,
              (long)g_level_config.adc_raw_max,
              g_level_config.height_min,
-             g_level_config.height_max);
+             g_level_config.height_max,
+             g_level_config.tank_area_m2);
 }
 
 /**
@@ -193,7 +221,17 @@ static float adc_raw_to_height(uint32_t raw_value)
     return height;
 }
 
-static void level_task(void *pvParameters)
+static float height_to_volume_liters(float height_m)
+{
+    if (height_m < 0.0f) {
+        height_m = 0.0f;
+    }
+
+    const float volume_m3 = height_m * g_level_config.tank_area_m2;
+    return volume_m3 * 1000.0f;
+}
+
+static void volume_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
     
@@ -215,6 +253,7 @@ static void level_task(void *pvParameters)
     
     uint32_t raw_value;
     float height;
+    float volume_l;
     
     while (1)
     {
@@ -223,6 +262,7 @@ static void level_task(void *pvParameters)
         
         // Převod na výšku
         height = adc_raw_to_height(raw_value);
+        volume_l = height_to_volume_liters(height);
         
         // Výstup do logu
         //ESP_LOGI(TAG, "Surová hodnota: %lu | Výška hladiny: %.3f m", raw_value, height);
@@ -235,8 +275,7 @@ static void level_task(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_LEVEL,
                     .data = {
                         .level = {
-                            .raw_value = raw_value,
-                            .height_m = height,
+                            .volume_l = volume_l,
                         },
                     },
                 },
@@ -248,12 +287,14 @@ static void level_task(void *pvParameters)
             ESP_LOGW(TAG, "Fronta sensor eventu je plna, hladina zahozena");
         }
 
-        DEBUG_PUBLISH("level",
-                      "queued=%d ts=%lld raw=%lu height=%.6f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
+        DEBUG_PUBLISH("objem",
+                      "queued=%d ts=%lld raw=%lu height_m=%.6f volume_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
                       (unsigned long)raw_value,
                       (double)height,
+                      (double)volume_l,
+                      (double)g_level_config.tank_area_m2,
                       (long)g_level_config.adc_raw_min,
                       (long)g_level_config.adc_raw_max,
                       (double)g_level_config.height_min,
@@ -264,14 +305,14 @@ static void level_task(void *pvParameters)
     }
 }
 
-void hladina_init(void)
+void objem_init(void)
 {
     load_level_calibration_config();
 
-    xTaskCreate(level_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
+    xTaskCreate(volume_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL);
 }
 
-config_group_t hladina_get_config_group(void)
+config_group_t objem_get_config_group(void)
 {
     config_group_t group = {
         .items = LEVEL_CONFIG_ITEMS,

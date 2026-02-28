@@ -100,10 +100,10 @@ V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy 
 
 ## Ladeni tlaku (4-20 mA)
 
-Pro ladeni tlakove vetve nastav tag `PRESSURE` na `DEBUG`:
+Pro ladeni tlakove vetve nastav tag `TLAK` na `DEBUG`:
 
 ```bash
-zalevaci log --tag PRESSURE --level DEBUG
+zalevaci log --tag TLAK --level DEBUG
 ```
 
 V debug logu sleduj zejmena:
@@ -118,3 +118,27 @@ Prakticky postup pri kalibraci:
 1. Pri znamem bodu (4 mA / 20 mA) over `raw` a uprav `tlk_raw_4ma`, `tlk_raw_20ma`.
 2. Over mapovani rozsahu cidla pres `tlk_p_min` a `tlk_p_max`.
 3. Podle realneho stavu filtru dolad `tlk_dp_100`, aby procenta zaneseni sedela.
+
+## Ladeni objemu (hladina -> litry)
+
+Pro ladeni vetve objemu nastav tag `OBJEM` na `DEBUG`:
+
+```bash
+zalevaci log --tag OBJEM --level DEBUG
+```
+
+V `DEBUG_PUBLISH` topicu `debug/objem` sleduj zejmena:
+
+- `raw` (filtrovana ADC hodnota)
+- `height_m` (interne vypoctena vyska hladiny)
+- `volume_l` (finalni hodnota publikovana do `stav/objem`)
+- `area_m2` (konfiguracni plocha nadrze)
+
+Konfigurace pro prepocet na objem:
+
+- `lvl_raw_min`, `lvl_raw_max`, `lvl_h_min`, `lvl_h_max` (kalibrace vysky)
+- `obj_tank_area_m2` (pudorysna plocha nadrze, default `5.4` pro 2 × 2.7 m)
+
+Pouzity vztah:
+
+- `objem_l = vyska_m * obj_tank_area_m2 * 1000`

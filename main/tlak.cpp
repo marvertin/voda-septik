@@ -18,7 +18,7 @@ extern "C" {
 #include "config_webapp.h"
 #include "debug_mqtt.h"
 
-#define TAG "PRESSURE"
+#define TAG "TLAK"
 
 namespace {
 
@@ -316,10 +316,6 @@ static void tlak_task(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_PRESSURE,
                     .data = {
                         .pressure = {
-                            .raw_before_pre_filter = raw_before_unfiltered,
-                            .raw_after_pre_filter = raw_after_unfiltered,
-                            .raw_before_filter = raw_before_filtered,
-                            .raw_after_filter = raw_after_filtered,
                             .pressure_before_bar = pressure_before_bar,
                             .pressure_after_bar = pressure_after_bar,
                             .pressure_diff_bar = pressure_drop_bar,
@@ -349,7 +345,7 @@ static void tlak_task(void *pvParameters)
                  (double)filter_clogging_percent,
                  queued ? 1 : 0);
 
-        DEBUG_PUBLISH("pressure",
+        DEBUG_PUBLISH("tlak",
                   "queued=%d ts=%lld before_raw_pre=%lu before_raw_post=%lu after_raw_pre=%lu after_raw_post=%lu p_before=%.3f p_after=%.3f dp=%.3f clog=%.1f",
                   queued ? 1 : 0,
                   (long long)event.timestamp_us,

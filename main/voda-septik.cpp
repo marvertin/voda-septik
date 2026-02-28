@@ -13,7 +13,7 @@
 #include "pins.h"
 #include "prutokomer.h"
 #include "teplota.h"
-#include "hladina.h"
+#include "objem.h"
 #include "tlak.h"
 #include "app-config.h"
 #include "boot_button.h"
@@ -177,7 +177,7 @@ void cpp_app_main(void)
 
     const config_group_t config_groups[] = {
         app_config_get_config_group(),
-        hladina_get_config_group(),
+        objem_get_config_group(),
         tlak_get_config_group(),
     };
     APP_ERROR_CHECK("E108", config_webapp_prepare("app_cfg",
@@ -221,7 +221,7 @@ void cpp_app_main(void)
 
     // vytvoření paralelních tasků
     teplota_init();
-    hladina_init();
+    objem_init();
     tlak_init();
 
 

@@ -112,21 +112,21 @@ static void publish_level_to_outputs(const sensor_event_t &event)
 {
     char text[16];
     esp_err_t enqueue_result;
-    const bool sensor_fault = (event.data.level.raw_value == 0);
+    const bool sensor_fault = !std::isfinite(event.data.level.volume_l);
     set_sensor_fault_indicator(SENSOR_EVENT_LEVEL, sensor_fault);
 
     if (sensor_fault) {
-        snprintf(text, sizeof(text), "H: ---  ");
+        snprintf(text, sizeof(text), "O: ---  ");
         lcd_print(8, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_OBJEM);
     } else {
-        snprintf(text, sizeof(text), "H:%3.0fcm ", event.data.level.height_m * 100.0f);
+        snprintf(text, sizeof(text), "O:%4.0fL", event.data.level.volume_l);
         lcd_print(8, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_double(
             mqtt_topic_id_t::TOPIC_STAV_OBJEM,
-            (double)event.data.level.height_m);
+            (double)event.data.level.volume_l);
     }
 
     if (enqueue_result != ESP_OK) {
@@ -174,9 +174,7 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
     const bool sensor_fault =
         !std::isfinite(pressure_before_bar) ||
         !std::isfinite(pressure_after_bar) ||
-        !std::isfinite(pressure_diff_bar) ||
-        (event.data.pressure.raw_before_filter == 0) ||
-        (event.data.pressure.raw_after_filter == 0);
+        !std::isfinite(pressure_diff_bar);
     set_sensor_fault_indicator(SENSOR_EVENT_PRESSURE, sensor_fault);
 
     esp_err_t before_result = mqtt_publisher_enqueue_double(
