@@ -100,7 +100,7 @@ esp_err_t webapp_startup_start(void)
     };
 
     app_restart_info_t restart_info = {};
-    esp_err_t restart_result = app_restart_info_update_and_load(&restart_info);
+    esp_err_t restart_result = app_restart_info_load(&restart_info);
     if (restart_result != ESP_OK) {
         ESP_LOGW(TAG, "Nelze nacist restart info pro webapp: %s", esp_err_to_name(restart_result));
     }

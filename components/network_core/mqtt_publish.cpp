@@ -25,7 +25,7 @@ esp_err_t mqtt_publish(const char *topic, const char *data, bool retain)
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Publikovano: %s = %s (msg_id: %d)", topic, data, msg_id);
+    ESP_LOGD(TAG, "Publikovano: %s = %s (msg_id: %d)", topic, data, msg_id);
     return ESP_OK;
 }
 

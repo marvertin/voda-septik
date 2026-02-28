@@ -8,6 +8,8 @@ extern "C" {
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_timer.h"
+#include "esp_system.h"
 
 #ifdef __cplusplus
 }
@@ -22,12 +24,48 @@ extern "C" {
 #include "mqtt_publisher_task.h"
 #include "webapp_startup.h"
 #include "status_display.h"
+#include "restart_info.h"
 #include <tm1637.h>
 
 static const char *TAG = "state_manager";
 
 static bool s_temp_probe_fault_water = false;
 static bool s_temp_probe_fault_air = false;
+static uint32_t s_nvs_errors = 0;
+static uint32_t s_mqtt_reconnects = 0;
+static int32_t s_last_mqtt_rc = 0;
+static bool s_mqtt_ready_seen_once = false;
+static bool s_disconnect_timer_active = false;
+static int64_t s_disconnect_started_us = 0;
+
+static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
+{
+    const int64_t uptime_s = esp_timer_get_time() / 1000000LL;
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_UPTIME_S, uptime_s);
+
+    if (network_snapshot != nullptr) {
+        if (network_snapshot->last_rssi != INT8_MIN) {
+            (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_RSSI_DBM,
+                                               (int64_t)network_snapshot->last_rssi);
+        }
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_TRY,
+                                           (int64_t)network_snapshot->reconnect_attempts);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS,
+                                           (int64_t)network_snapshot->reconnect_successes);
+    }
+
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS,
+                                       (int64_t)s_mqtt_reconnects);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_LAST_MQTT_RC,
+                                       (int64_t)s_last_mqtt_rc);
+
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_HEAP_FREE_B,
+                                       (int64_t)esp_get_free_heap_size());
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_HEAP_MIN_FREE_B,
+                                       (int64_t)esp_get_minimum_free_heap_size());
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS,
+                                       (int64_t)s_nvs_errors);
+}
 
 
 
@@ -62,6 +100,36 @@ static void publish_boot_diagnostics_once(void)
         if (fw_result != ESP_OK) {
             ESP_LOGW(TAG, "Publikace fw_version selhala: %s", esp_err_to_name(fw_result));
         }
+
+        char build_timestamp[48] = {0};
+        snprintf(build_timestamp,
+                 sizeof(build_timestamp),
+                 "%s %s",
+                 app_desc->date,
+                 app_desc->time);
+        (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_BUILD_TIMESTAMP, build_timestamp);
+
+        char git_hash[48] = {0};
+        strncpy(git_hash, app_desc->version, sizeof(git_hash) - 1);
+        git_hash[sizeof(git_hash) - 1] = '\0';
+        char *dash = strchr(git_hash, '-');
+        if (dash != nullptr) {
+            *dash = '\0';
+        }
+        (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_GIT_HASH, git_hash);
+    }
+
+    app_restart_info_t restart_info = {};
+    esp_err_t restart_result = app_restart_info_update_and_load(&restart_info);
+    if (restart_result != ESP_OK) {
+        s_nvs_errors++;
+        ESP_LOGW(TAG, "Publikace restart info selhala: %s", esp_err_to_name(restart_result));
+    } else {
+        char reason_text[16] = {0};
+        snprintf(reason_text, sizeof(reason_text), "%d", (int)restart_info.last_reason);
+        (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_REASON, reason_text);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_COUNTER,
+                                           (int64_t)restart_info.boot_count);
     }
 }
 
@@ -254,7 +322,7 @@ static void state_manager_task(void *pvParameters)
             case EVT_NETWORK_STATE_CHANGE: {
                 const network_event_t *network_snapshot = &event.data.network_state_change.snapshot;
 
-                ESP_LOGW(TAG,
+                ESP_LOGI(TAG,
                          "Network state change: %d -> %d (rssi=%d ip=0x%08lx reconn_attempts=%lu reconn_success=%lu)",
                          (int)event.data.network_state_change.from_level,
                          (int)event.data.network_state_change.to_level,
@@ -278,6 +346,32 @@ static void state_manager_task(void *pvParameters)
                 webapp_startup_on_network_event(network_snapshot);
 
                 const bool mqtt_ready = (event.data.network_state_change.to_level == SYS_NET_MQTT_READY);
+
+                if (!mqtt_ready && event.data.network_state_change.from_level == SYS_NET_MQTT_READY) {
+                    s_last_mqtt_rc = -1;
+                    s_disconnect_started_us = event.timestamp_us;
+                    s_disconnect_timer_active = true;
+                }
+
+                if (mqtt_ready && event.data.network_state_change.from_level != SYS_NET_MQTT_READY) {
+                    if (s_mqtt_ready_seen_once) {
+                        s_mqtt_reconnects++;
+                    }
+                    s_mqtt_ready_seen_once = true;
+                    s_last_mqtt_rc = 0;
+
+                    if (s_disconnect_timer_active) {
+                        int64_t disconnect_us = event.timestamp_us - s_disconnect_started_us;
+                        if (disconnect_us < 0) {
+                            disconnect_us = 0;
+                        }
+                        (void)mqtt_publisher_enqueue_int64(
+                            mqtt_topic_id_t::TOPIC_SYSTEM_LAST_DISCONNECT_DURATION_S,
+                            disconnect_us / 1000000LL);
+                        s_disconnect_timer_active = false;
+                    }
+                }
+
                 esp_err_t mqtt_state_result = mqtt_publisher_set_mqtt_connected(mqtt_ready);
                 if (mqtt_state_result != ESP_OK) {
                     ESP_LOGW(TAG, "Nastaveni MQTT stavu publisheru selhalo: %s", esp_err_to_name(mqtt_state_result));
@@ -305,6 +399,8 @@ static void state_manager_task(void *pvParameters)
                     mqtt_ready_published = false;
                     boot_diagnostics_published = false;
                 }
+
+                publish_runtime_diagnostics(network_snapshot);
                 break;
             }
             case EVT_NETWORK_TELEMETRY: {
@@ -316,6 +412,7 @@ static void state_manager_task(void *pvParameters)
                          (unsigned long)network_snapshot->ip_addr,
                          (unsigned long)network_snapshot->reconnect_attempts,
                          (unsigned long)network_snapshot->reconnect_successes);
+                publish_runtime_diagnostics(network_snapshot);
                 break;
             }
             case EVT_TICK:
