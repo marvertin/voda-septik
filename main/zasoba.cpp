@@ -18,7 +18,7 @@ extern "C" {
 #include "trimmed_mean.hpp"
 #include "adc_shared.h"
 #include "pins.h"
-#include "config_webapp.h"
+#include "config_store.h"
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 #include "app_error_check.h"
@@ -27,83 +27,40 @@ extern "C" {
 
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h
 
-static const config_item_t LEVEL_CONFIG_ITEMS[] = {
-    {
-        .key = "lvl_raw_min",
-        .label = "Hladina RAW min",
-        .description = "ADC RAW hodnota odpovidajici minimalni hladine.",
-        .type = CONFIG_VALUE_INT32,
-        .default_string = nullptr,
-        .default_int = 540,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 4095,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
-        .key = "lvl_raw_max",
-        .label = "Hladina RAW max",
-        .description = "ADC RAW hodnota odpovidajici maximalni hladine.",
-        .type = CONFIG_VALUE_INT32,
-        .default_string = nullptr,
-        .default_int = 950,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 1,
-        .max_int = 4095,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
-        .key = "lvl_h_min",
-        .label = "Hladina vyska min [m]",
-        .description = "Vyska hladiny pro minimalni hodnotu senzoru.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.0f,
-        .max_float = 5.0f,
-    },
-    {
-        .key = "lvl_h_max",
-        .label = "Hladina vyska max [m]",
-        .description = "Vyska hladiny pro maximalni hodnotu senzoru.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 0.290f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.0f,
-        .max_float = 5.0f,
-    },
-    {
-        .key = "tank_area_m2",
-        .label = "Plocha nadrze [m2]",
-        .description = "Pudorysna plocha nadrze pouzita pro prepocet vysky na objem.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 5.4f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.1f,
-        .max_float = 50.0f,
-    },
+static const config_item_t LEVEL_RAW_MIN_ITEM = {
+    .key = "lvl_raw_min", .label = "Hladina RAW min", .description = "ADC RAW hodnota odpovidajici minimalni hladine.",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 540, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
 };
+static const config_item_t LEVEL_RAW_MAX_ITEM = {
+    .key = "lvl_raw_max", .label = "Hladina RAW max", .description = "ADC RAW hodnota odpovidajici maximalni hladine.",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 950, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 1, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
+};
+static const config_item_t LEVEL_H_MIN_ITEM = {
+    .key = "lvl_h_min", .label = "Hladina vyska min [m]", .description = "Vyska hladiny pro minimalni hodnotu senzoru.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 5.0f,
+};
+static const config_item_t LEVEL_H_MAX_ITEM = {
+    .key = "lvl_h_max", .label = "Hladina vyska max [m]", .description = "Vyska hladiny pro maximalni hodnotu senzoru.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.290f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 5.0f,
+};
+static const config_item_t LEVEL_TANK_AREA_ITEM = {
+    .key = "tank_area_m2", .label = "Plocha nadrze [m2]", .description = "Pudorysna plocha nadrze pouzita pro prepocet vysky na objem.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 5.4f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.1f, .max_float = 50.0f,
+};
+
+void zasoba_register_config_items(void)
+{
+    APP_ERROR_CHECK("E680", config_store_register_item(&LEVEL_RAW_MIN_ITEM));
+    APP_ERROR_CHECK("E681", config_store_register_item(&LEVEL_RAW_MAX_ITEM));
+    APP_ERROR_CHECK("E682", config_store_register_item(&LEVEL_H_MIN_ITEM));
+    APP_ERROR_CHECK("E683", config_store_register_item(&LEVEL_H_MAX_ITEM));
+    APP_ERROR_CHECK("E684", config_store_register_item(&LEVEL_TANK_AREA_ITEM));
+}
 
 typedef struct {
     int32_t adc_raw_min;
@@ -132,30 +89,11 @@ static bool s_height_hysteresis_initialized = false;
 
 static void load_level_calibration_config(void)
 {
-    esp_err_t ret = config_webapp_get_i32("lvl_raw_min", &g_level_config.adc_raw_min);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace lvl_raw_min neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_i32("lvl_raw_max", &g_level_config.adc_raw_max);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace lvl_raw_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("lvl_h_min", &g_level_config.height_min);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace lvl_h_min neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("lvl_h_max", &g_level_config.height_max);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace lvl_h_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("tank_area_m2", &g_level_config.tank_area_m2);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tank_area_m2 neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
+    g_level_config.adc_raw_min = config_store_get_i32_item(&LEVEL_RAW_MIN_ITEM);
+    g_level_config.adc_raw_max = config_store_get_i32_item(&LEVEL_RAW_MAX_ITEM);
+    g_level_config.height_min = config_store_get_float_item(&LEVEL_H_MIN_ITEM);
+    g_level_config.height_max = config_store_get_float_item(&LEVEL_H_MAX_ITEM);
+    g_level_config.tank_area_m2 = config_store_get_float_item(&LEVEL_TANK_AREA_ITEM);
 
     if (g_level_config.tank_area_m2 <= 0.0f) {
         g_level_config.tank_area_m2 = 5.4f;
@@ -379,7 +317,7 @@ static void zasoba_task(void *pvParameters)
         APP_ERROR_CHECK("E537", esp_task_wdt_reset());
         
         
-        vTaskDelay(pdMS_TO_TICKS(3E5370));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
@@ -391,13 +329,4 @@ void zasoba_init(void)
                     xTaskCreate(zasoba_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);
-}
-
-config_group_t zasoba_get_config_group(void)
-{
-    config_group_t group = {
-        .items = LEVEL_CONFIG_ITEMS,
-        .item_count = sizeof(LEVEL_CONFIG_ITEMS) / sizeof(LEVEL_CONFIG_ITEMS[0]),
-    };
-    return group;
 }

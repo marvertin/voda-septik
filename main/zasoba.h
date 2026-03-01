@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_webapp.h"
+#include "config_types.h"
 
 void zasoba_init(void);
-config_group_t zasoba_get_config_group(void);
+void zasoba_register_config_items(void);

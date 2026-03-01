@@ -17,12 +17,11 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "config_store.h"
 
 static const char *TAG = "config_webapp";
-static std::vector<config_item_t> s_items_storage;
 static bool s_has_restart_info = false;
 static config_webapp_restart_info_t s_restart_info = {
     .boot_count = 0,
@@ -37,41 +36,10 @@ static config_webapp_network_info_t s_network_info = {
 static std::string s_network_ssid_storage;
 
 typedef struct {
-    const config_item_t *items;
-    size_t item_count;
-    char nvs_namespace[16];
     httpd_handle_t server;
 } config_webapp_ctx_t;
 
 static config_webapp_ctx_t s_ctx = {};
-
-static bool is_ctx_ready()
-{
-    return s_ctx.items != nullptr && s_ctx.item_count > 0 && s_ctx.nvs_namespace[0] != '\0';
-}
-
-static const config_item_t *find_item(const char *key)
-{
-    if (!is_ctx_ready() || key == nullptr) {
-        return nullptr;
-    }
-
-    for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t &item = s_ctx.items[index];
-        if (strcmp(item.key, key) == 0) {
-            return &item;
-        }
-    }
-    return nullptr;
-}
-
-static esp_err_t open_nvs(nvs_open_mode_t mode, nvs_handle_t *out_handle)
-{
-    if (!is_ctx_ready()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return nvs_open(s_ctx.nvs_namespace, mode, out_handle);
-}
 
 static std::string html_escape(const std::string &input)
 {
@@ -191,127 +159,26 @@ static std::map<std::string, std::string> parse_form_encoded(const std::string &
     return out;
 }
 
-static esp_err_t nvs_set_float(nvs_handle_t handle, const char *key, float value)
-{
-    return nvs_set_blob(handle, key, &value, sizeof(value));
-}
-
-static esp_err_t nvs_get_float(nvs_handle_t handle, const char *key, float *value)
-{
-    size_t size = sizeof(*value);
-    return nvs_get_blob(handle, key, value, &size);
-}
-
-static esp_err_t set_default_value_if_missing(nvs_handle_t nvs_handle, const config_item_t &item, bool *inserted)
-{
-    *inserted = false;
-    esp_err_t result = ESP_OK;
-
-    switch (item.type) {
-        case CONFIG_VALUE_STRING: {
-            size_t required_size = 0;
-            result = nvs_get_str(nvs_handle, item.key, nullptr, &required_size);
-            if (result == ESP_ERR_NVS_NOT_FOUND) {
-                const char *default_value = item.default_string != nullptr ? item.default_string : "";
-                *inserted = true;
-                return nvs_set_str(nvs_handle, item.key, default_value);
-            }
-            return result;
-        }
-        case CONFIG_VALUE_INT32: {
-            int32_t value = 0;
-            result = nvs_get_i32(nvs_handle, item.key, &value);
-            if (result == ESP_ERR_NVS_NOT_FOUND) {
-                *inserted = true;
-                return nvs_set_i32(nvs_handle, item.key, item.default_int);
-            }
-            return result;
-        }
-        case CONFIG_VALUE_FLOAT: {
-            float value = 0;
-            result = nvs_get_float(nvs_handle, item.key, &value);
-            if (result == ESP_ERR_NVS_NOT_FOUND) {
-                *inserted = true;
-                return nvs_set_float(nvs_handle, item.key, item.default_float);
-            }
-            return result;
-        }
-        case CONFIG_VALUE_BOOL: {
-            uint8_t value = 0;
-            result = nvs_get_u8(nvs_handle, item.key, &value);
-            if (result == ESP_ERR_NVS_NOT_FOUND) {
-                *inserted = true;
-                return nvs_set_u8(nvs_handle, item.key, item.default_bool ? 1 : 0);
-            }
-            return result;
-        }
-        default:
-            return ESP_ERR_INVALID_ARG;
-    }
-}
-
-static esp_err_t ensure_defaults_in_nvs()
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t result = nvs_open(s_ctx.nvs_namespace, NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze otevrit NVS namespace '%s': %s", s_ctx.nvs_namespace, esp_err_to_name(result));
-        return result;
-    }
-
-    bool changed = false;
-    for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t &item = s_ctx.items[index];
-        bool inserted = false;
-        result = set_default_value_if_missing(nvs_handle, item, &inserted);
-        if (result != ESP_OK) {
-            ESP_LOGE(TAG, "Chyba pri praci s klicem '%s': %s", item.key, esp_err_to_name(result));
-            nvs_close(nvs_handle);
-            return result;
-        }
-        if (inserted) {
-            changed = true;
-        }
-    }
-
-    if (changed) {
-        result = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-    return result;
-}
-
-static std::string read_value_for_html(nvs_handle_t nvs_handle, const config_item_t &item)
+static std::string read_value_for_html(const config_item_t &item)
 {
     switch (item.type) {
         case CONFIG_VALUE_STRING: {
-            size_t required_size = 0;
-            esp_err_t result = nvs_get_str(nvs_handle, item.key, nullptr, &required_size);
-            if (result != ESP_OK || required_size == 0) {
-                return item.default_string != nullptr ? item.default_string : "";
-            }
-            std::vector<char> buffer(required_size);
-            result = nvs_get_str(nvs_handle, item.key, buffer.data(), &required_size);
-            if (result != ESP_OK) {
-                return item.default_string != nullptr ? item.default_string : "";
-            }
-            return buffer.data();
+            char buffer[256] = {0};
+            config_store_get_string_item(&item, buffer, sizeof(buffer));
+            return buffer;
         }
         case CONFIG_VALUE_INT32: {
-            int32_t value = item.default_int;
-            nvs_get_i32(nvs_handle, item.key, &value);
+            int32_t value = config_store_get_i32_item(&item);
             return std::to_string(value);
         }
         case CONFIG_VALUE_FLOAT: {
-            float value = item.default_float;
-            nvs_get_float(nvs_handle, item.key, &value);
+            float value = config_store_get_float_item(&item);
             char out[32] = {0};
             snprintf(out, sizeof(out), "%.3f", value);
             return out;
         }
         case CONFIG_VALUE_BOOL: {
-            uint8_t value = item.default_bool ? 1 : 0;
-            nvs_get_u8(nvs_handle, item.key, &value);
+            bool value = config_store_get_bool_item(&item);
             return value ? "1" : "0";
         }
         default:
@@ -323,9 +190,6 @@ static std::string build_config_page_html()
 {
     const esp_app_desc_t *app_desc = esp_app_get_description();
     const std::string project_name = (app_desc != nullptr && app_desc->project_name[0] != '\0') ? app_desc->project_name : "projekt";
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = nvs_open(s_ctx.nvs_namespace, NVS_READONLY, &nvs_handle);
 
     std::string html;
     html.reserve(4096);
@@ -343,9 +207,14 @@ static std::string build_config_page_html()
     html += "<p><a href='/'>← Zpět na systémový přehled</a></p>";
     html += "<form id='cfgForm' method='post' action='/config/save'>";
 
-    for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t &item = s_ctx.items[index];
-        std::string current_value = (result == ESP_OK) ? read_value_for_html(nvs_handle, item) : "";
+    const size_t item_count = config_store_item_count();
+    for (size_t index = 0; index < item_count; ++index) {
+        const config_item_t *item_ptr = config_store_item_at(index);
+        if (item_ptr == nullptr) {
+            continue;
+        }
+        const config_item_t &item = *item_ptr;
+        std::string current_value = read_value_for_html(item);
 
         html += "<div class='item'>";
         html += "<label for='" + html_escape(item.key) + "'>" + html_escape(item.label != nullptr ? item.label : item.key) + "</label>";
@@ -395,9 +264,6 @@ static std::string build_config_page_html()
     html += "for(var i=0;i<fields.length;i++){var el=fields[i];var t=el.getAttribute('data-default-type');var d=el.getAttribute('data-default')||'';";
     html += "if(t==='bool'){el.checked=(d==='1');}else{el.value=d;}}}";
     html += "</script></body></html>";
-    if (result == ESP_OK) {
-        nvs_close(nvs_handle);
-    }
     return html;
 }
 
@@ -517,21 +383,19 @@ static bool parse_bool_value(const std::string &value)
 
 static esp_err_t save_form_to_nvs(const std::map<std::string, std::string> &params)
 {
-    nvs_handle_t nvs_handle;
-    esp_err_t result = nvs_open(s_ctx.nvs_namespace, NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t &item = s_ctx.items[index];
+    for (size_t index = 0; index < config_store_item_count(); ++index) {
+        const config_item_t *item_ptr = config_store_item_at(index);
+        if (item_ptr == nullptr) {
+            continue;
+        }
+        const config_item_t &item = *item_ptr;
         auto found = params.find(item.key);
+        esp_err_t result = ESP_OK;
 
         if (item.type == CONFIG_VALUE_BOOL) {
             bool bool_value = (found != params.end()) ? parse_bool_value(found->second) : false;
-            result = nvs_set_u8(nvs_handle, item.key, bool_value ? 1 : 0);
+            result = config_store_set_bool_item(&item, bool_value);
             if (result != ESP_OK) {
-                nvs_close(nvs_handle);
                 return result;
             }
             continue;
@@ -547,44 +411,37 @@ static esp_err_t save_form_to_nvs(const std::map<std::string, std::string> &para
             if (item.max_string_len > 0 && trimmed.size() > item.max_string_len) {
                 trimmed = trimmed.substr(0, item.max_string_len);
             }
-            result = nvs_set_str(nvs_handle, item.key, trimmed.c_str());
+            result = config_store_set_string_item(&item, trimmed.c_str());
             if (result != ESP_OK) {
-                nvs_close(nvs_handle);
                 return result;
             }
         } else if (item.type == CONFIG_VALUE_INT32) {
             char *end_ptr = nullptr;
             long parsed = strtol(value.c_str(), &end_ptr, 10);
             if (end_ptr == nullptr || *end_ptr != '\0') {
-                nvs_close(nvs_handle);
                 return ESP_ERR_INVALID_ARG;
             }
             int32_t int_value = static_cast<int32_t>(parsed);
             int_value = std::max(item.min_int, std::min(item.max_int, int_value));
-            result = nvs_set_i32(nvs_handle, item.key, int_value);
+            result = config_store_set_i32_item(&item, int_value);
             if (result != ESP_OK) {
-                nvs_close(nvs_handle);
                 return result;
             }
         } else if (item.type == CONFIG_VALUE_FLOAT) {
             char *end_ptr = nullptr;
             float parsed = strtof(value.c_str(), &end_ptr);
             if (end_ptr == nullptr || *end_ptr != '\0') {
-                nvs_close(nvs_handle);
                 return ESP_ERR_INVALID_ARG;
             }
             float float_value = std::max(item.min_float, std::min(item.max_float, parsed));
-            result = nvs_set_float(nvs_handle, item.key, float_value);
+            result = config_store_set_float_item(&item, float_value);
             if (result != ESP_OK) {
-                nvs_close(nvs_handle);
                 return result;
             }
         }
     }
 
-    result = nvs_commit(nvs_handle);
-    nvs_close(nvs_handle);
-    return result;
+    return ESP_OK;
 }
 
 static esp_err_t config_save_handler(httpd_req_t *req)
@@ -642,10 +499,7 @@ static esp_err_t config_save_handler(httpd_req_t *req)
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t config_webapp_start(const char *nvs_namespace,
-                              const config_group_t *groups,
-                              size_t group_count,
-                              uint16_t http_port,
+esp_err_t config_webapp_start(uint16_t http_port,
                               const config_webapp_restart_info_t *restart_info,
                               const config_webapp_network_info_t *network_info)
 {
@@ -653,10 +507,11 @@ esp_err_t config_webapp_start(const char *nvs_namespace,
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t result = config_webapp_prepare(nvs_namespace, groups, group_count);
-    if (result != ESP_OK) {
-        return result;
+    if (!config_store_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
     }
+
+    esp_err_t result = ESP_OK;
 
     s_has_restart_info = (restart_info != nullptr);
     if (s_has_restart_info) {
@@ -858,63 +713,16 @@ esp_err_t config_webapp_stop(void)
     return httpd_stop(server);
 }
 
-esp_err_t config_webapp_prepare(const char *nvs_namespace,
-                                const config_group_t *groups,
-                                size_t group_count)
+esp_err_t config_webapp_prepare(const char *nvs_namespace)
 {
-    if (nvs_namespace == nullptr || groups == nullptr || group_count == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (strlen(nvs_namespace) > 15) {
+    if (nvs_namespace == nullptr || nvs_namespace[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
 
-    size_t total_items = 0;
-    for (size_t group_index = 0; group_index < group_count; ++group_index) {
-        const config_group_t &group = groups[group_index];
-        if (group.items == nullptr || group.item_count == 0) {
-            ESP_LOGE(TAG, "Neplatna skupina konfigurace na indexu %u", static_cast<unsigned>(group_index));
-            return ESP_ERR_INVALID_ARG;
-        }
-        total_items += group.item_count;
+    if (!config_store_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
     }
 
-    s_items_storage.clear();
-    s_items_storage.reserve(total_items);
-    std::set<std::string> unique_keys;
-
-    for (size_t group_index = 0; group_index < group_count; ++group_index) {
-        const config_group_t &group = groups[group_index];
-        for (size_t item_index = 0; item_index < group.item_count; ++item_index) {
-            const config_item_t &item = group.items[item_index];
-            if (item.key == nullptr || strlen(item.key) == 0 || strlen(item.key) > 15) {
-                ESP_LOGE(TAG, "Neplatny klic konfigurace (group=%u, item=%u)",
-                         static_cast<unsigned>(group_index),
-                         static_cast<unsigned>(item_index));
-                s_items_storage.clear();
-                return ESP_ERR_INVALID_ARG;
-            }
-
-            std::string key = item.key;
-            if (!unique_keys.insert(key).second) {
-                ESP_LOGE(TAG, "Duplicitni konfiguracni klic: %s", item.key);
-                s_items_storage.clear();
-                return ESP_ERR_INVALID_ARG;
-            }
-
-            s_items_storage.push_back(item);
-        }
-    }
-
-    memset(&s_ctx, 0, sizeof(s_ctx));
-    s_ctx.items = s_items_storage.data();
-    s_ctx.item_count = s_items_storage.size();
-    strncpy(s_ctx.nvs_namespace, nvs_namespace, sizeof(s_ctx.nvs_namespace) - 1);
-
-    esp_err_t result = ensure_defaults_in_nvs();
-    if (result != ESP_OK) {
-        return result;
-    }
     return ESP_OK;
 }
 
@@ -923,25 +731,8 @@ esp_err_t config_webapp_get_i32(const char *key, int32_t *value)
     if (key == nullptr || value == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_INT32) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READONLY, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_get_i32(nvs_handle, key, value);
-    nvs_close(nvs_handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND) {
-        *value = item->default_int;
-        return ESP_OK;
-    }
-    return result;
+    *value = config_store_get_i32(key);
+    return ESP_OK;
 }
 
 esp_err_t config_webapp_get_float(const char *key, float *value)
@@ -949,25 +740,8 @@ esp_err_t config_webapp_get_float(const char *key, float *value)
     if (key == nullptr || value == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_FLOAT) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READONLY, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_get_float(nvs_handle, key, value);
-    nvs_close(nvs_handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND) {
-        *value = item->default_float;
-        return ESP_OK;
-    }
-    return result;
+    *value = config_store_get_float(key);
+    return ESP_OK;
 }
 
 esp_err_t config_webapp_get_bool(const char *key, bool *value)
@@ -975,29 +749,7 @@ esp_err_t config_webapp_get_bool(const char *key, bool *value)
     if (key == nullptr || value == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_BOOL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READONLY, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    uint8_t raw = 0;
-    result = nvs_get_u8(nvs_handle, key, &raw);
-    nvs_close(nvs_handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND) {
-        *value = item->default_bool;
-        return ESP_OK;
-    }
-    if (result != ESP_OK) {
-        return result;
-    }
-    *value = (raw != 0);
+    *value = config_store_get_bool(key);
     return ESP_OK;
 }
 
@@ -1006,137 +758,26 @@ esp_err_t config_webapp_get_string(const char *key, char *buffer, size_t buffer_
     if (key == nullptr || buffer == nullptr || buffer_len == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_STRING) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READONLY, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    size_t required_size = buffer_len;
-    result = nvs_get_str(nvs_handle, key, buffer, &required_size);
-    nvs_close(nvs_handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND) {
-        const char *fallback = item->default_string != nullptr ? item->default_string : "";
-        if (strlen(fallback) + 1 > buffer_len) {
-            return ESP_ERR_NVS_INVALID_LENGTH;
-        }
-        strcpy(buffer, fallback);
-        return ESP_OK;
-    }
-    return result;
+    config_store_get_string(key, buffer, buffer_len);
+    return ESP_OK;
 }
 
 esp_err_t config_webapp_set_i32(const char *key, int32_t value)
 {
-    if (key == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_INT32) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    int32_t clamped = std::max(item->min_int, std::min(item->max_int, value));
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_set_i32(nvs_handle, key, clamped);
-    if (result == ESP_OK) {
-        result = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-    return result;
+    return config_store_set_i32(key, value);
 }
 
 esp_err_t config_webapp_set_float(const char *key, float value)
 {
-    if (key == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_FLOAT) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    float clamped = std::max(item->min_float, std::min(item->max_float, value));
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_set_float(nvs_handle, key, clamped);
-    if (result == ESP_OK) {
-        result = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-    return result;
+    return config_store_set_float(key, value);
 }
 
 esp_err_t config_webapp_set_bool(const char *key, bool value)
 {
-    if (key == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_BOOL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_set_u8(nvs_handle, key, value ? 1 : 0);
-    if (result == ESP_OK) {
-        result = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-    return result;
+    return config_store_set_bool(key, value);
 }
 
 esp_err_t config_webapp_set_string(const char *key, const char *value)
 {
-    if (key == nullptr || value == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const config_item_t *item = find_item(key);
-    if (item == nullptr || item->type != CONFIG_VALUE_STRING) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    std::string normalized = value;
-    if (item->max_string_len > 0 && normalized.size() > item->max_string_len) {
-        normalized = normalized.substr(0, item->max_string_len);
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    if (result != ESP_OK) {
-        return result;
-    }
-
-    result = nvs_set_str(nvs_handle, key, normalized.c_str());
-    if (result == ESP_OK) {
-        result = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-    return result;
+    return config_store_set_string(key, value);
 }

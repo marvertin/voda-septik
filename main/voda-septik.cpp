@@ -15,7 +15,10 @@
 #include "teplota.h"
 #include "zasoba.h"
 #include "tlak.h"
-#include "app-config.h"
+#include "network_config.h"
+#include "system_config.h"
+#include "config_store.h"
+#include "config_webapp.h"
 #include "boot_button.h"
 #include "sensor_events.h"
 #include "state_manager.h"
@@ -176,7 +179,6 @@ void cpp_app_main(void)
     }
     APP_ERROR_CHECK("E101", nvs_result);
 
-    APP_ERROR_CHECK("E102", app_config_ensure_defaults());
     ESP_LOGI(TAG, "System bezi v normalnim rezimu");
 
     const esp_task_wdt_config_t task_wdt_cfg = {
@@ -194,23 +196,22 @@ void cpp_app_main(void)
     sensor_events_init(32);
     network_event_bridge_init();
 
+    APP_ERROR_CHECK("E108", config_store_prepare("app_cfg"));
+    network_config_register_config_items();
+    system_config_register_config_items();
+    teplota_register_config_items();
+    zasoba_register_config_items();
+    tlak_register_config_items();
+    APP_ERROR_CHECK("E106", config_webapp_prepare("app_cfg"));
+
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
     char mqtt_uri[128] = {0};
     char mqtt_username[64] = {0};
     char mqtt_password[128] = {0};
-    APP_ERROR_CHECK("E104", app_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
-    APP_ERROR_CHECK("E105", app_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
-    APP_ERROR_CHECK("E107", app_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
-
-    const config_group_t config_groups[] = {
-        app_config_get_config_group(),
-        zasoba_get_config_group(),
-        tlak_get_config_group(),
-    };
-    APP_ERROR_CHECK("E108", config_webapp_prepare("app_cfg",
-                                                    config_groups,
-                                                    sizeof(config_groups) / sizeof(config_groups[0])));
+    APP_ERROR_CHECK("E104", network_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
+    APP_ERROR_CHECK("E105", network_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
+    APP_ERROR_CHECK("E107", network_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
     
     const mqtt_topic_descriptor_t *status_topic_desc = mqtt_topic_descriptor(mqtt_topic_id_t::TOPIC_SYSTEM_STATUS);
     APP_ERROR_CHECK("E111", status_topic_desc != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);

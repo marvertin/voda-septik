@@ -16,7 +16,7 @@ extern "C" {
 #include "adc_shared.h"
 #include "pins.h"
 #include "sensor_events.h"
-#include "config_webapp.h"
+#include "config_store.h"
 #include "debug_mqtt.h"
 #include "app_error_check.h"
 
@@ -24,82 +24,30 @@ extern "C" {
 
 namespace {
 
-static const config_item_t PRESSURE_CONFIG_ITEMS[] = {
-    {
-        .key = "tlk_raw_4ma",
-        .label = "Tlak RAW pro 4 mA",
-        .description = "ADC RAW hodnota odpovidajici vstupu 4 mA.",
-        .type = CONFIG_VALUE_INT32,
-        .default_string = nullptr,
-        .default_int = 745,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 4095,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
-        .key = "tlk_raw_20ma",
-        .label = "Tlak RAW pro 20 mA",
-        .description = "ADC RAW hodnota odpovidajici vstupu 20 mA.",
-        .type = CONFIG_VALUE_INT32,
-        .default_string = nullptr,
-        .default_int = 3722,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 1,
-        .max_int = 4095,
-        .min_float = 0.0f,
-        .max_float = 0.0f,
-    },
-    {
-        .key = "tlk_p_min",
-        .label = "Tlak min [bar]",
-        .description = "Tlak odpovidajici 4 mA.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 0.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = -1.0f,
-        .max_float = 100.0f,
-    },
-    {
-        .key = "tlk_p_max",
-        .label = "Tlak max [bar]",
-        .description = "Tlak odpovidajici 20 mA.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 10.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = -1.0f,
-        .max_float = 100.0f,
-    },
-    {
-        .key = "tlk_dp_100",
-        .label = "dP pro 100% zaneseni [bar]",
-        .description = "Rozdil tlaku, ktery odpovida 100% zanesenosti filtru.",
-        .type = CONFIG_VALUE_FLOAT,
-        .default_string = nullptr,
-        .default_int = 0,
-        .default_float = 1.0f,
-        .default_bool = false,
-        .max_string_len = 0,
-        .min_int = 0,
-        .max_int = 0,
-        .min_float = 0.01f,
-        .max_float = 20.0f,
-    },
+static const config_item_t PRESSURE_RAW_4MA_ITEM = {
+    .key = "tlk_raw_4ma", .label = "Tlak RAW pro 4 mA", .description = "ADC RAW hodnota odpovidajici vstupu 4 mA.",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 745, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
+};
+static const config_item_t PRESSURE_RAW_20MA_ITEM = {
+    .key = "tlk_raw_20ma", .label = "Tlak RAW pro 20 mA", .description = "ADC RAW hodnota odpovidajici vstupu 20 mA.",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 3722, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 1, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
+};
+static const config_item_t PRESSURE_MIN_ITEM = {
+    .key = "tlk_p_min", .label = "Tlak min [bar]", .description = "Tlak odpovidajici 4 mA.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = -1.0f, .max_float = 100.0f,
+};
+static const config_item_t PRESSURE_MAX_ITEM = {
+    .key = "tlk_p_max", .label = "Tlak max [bar]", .description = "Tlak odpovidajici 20 mA.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 10.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = -1.0f, .max_float = 100.0f,
+};
+static const config_item_t PRESSURE_DP100_ITEM = {
+    .key = "tlk_dp_100", .label = "dP pro 100% zaneseni [bar]", .description = "Rozdil tlaku, ktery odpovida 100% zanesenosti filtru.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 1.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.01f, .max_float = 20.0f,
 };
 
 typedef struct {
@@ -136,30 +84,11 @@ typedef struct {
 
 static void load_pressure_calibration_config(void)
 {
-    esp_err_t ret = config_webapp_get_i32("tlk_raw_4ma", &g_pressure_config.raw_at_4ma);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tlk_raw_4ma neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_i32("tlk_raw_20ma", &g_pressure_config.raw_at_20ma);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tlk_raw_20ma neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("tlk_p_min", &g_pressure_config.pressure_min_bar);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tlk_p_min neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("tlk_p_max", &g_pressure_config.pressure_max_bar);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tlk_p_max neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
-
-    ret = config_webapp_get_float("tlk_dp_100", &g_pressure_config.dp_100_percent_bar);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Konfigurace tlk_dp_100 neni dostupna (%s), pouzivam default", esp_err_to_name(ret));
-    }
+    g_pressure_config.raw_at_4ma = config_store_get_i32_item(&PRESSURE_RAW_4MA_ITEM);
+    g_pressure_config.raw_at_20ma = config_store_get_i32_item(&PRESSURE_RAW_20MA_ITEM);
+    g_pressure_config.pressure_min_bar = config_store_get_float_item(&PRESSURE_MIN_ITEM);
+    g_pressure_config.pressure_max_bar = config_store_get_float_item(&PRESSURE_MAX_ITEM);
+    g_pressure_config.dp_100_percent_bar = config_store_get_float_item(&PRESSURE_DP100_ITEM);
 
     if (g_pressure_config.raw_at_20ma <= g_pressure_config.raw_at_4ma) {
         g_pressure_config.raw_at_20ma = g_pressure_config.raw_at_4ma + 1;
@@ -414,6 +343,15 @@ static void tlak_task(void *pvParameters)
 
 } // namespace
 
+void tlak_register_config_items(void)
+{
+    APP_ERROR_CHECK("E685", config_store_register_item(&PRESSURE_RAW_4MA_ITEM));
+    APP_ERROR_CHECK("E686", config_store_register_item(&PRESSURE_RAW_20MA_ITEM));
+    APP_ERROR_CHECK("E687", config_store_register_item(&PRESSURE_MIN_ITEM));
+    APP_ERROR_CHECK("E688", config_store_register_item(&PRESSURE_MAX_ITEM));
+    APP_ERROR_CHECK("E689", config_store_register_item(&PRESSURE_DP100_ITEM));
+}
+
 void tlak_init(void)
 {
     load_pressure_calibration_config();
@@ -421,13 +359,4 @@ void tlak_init(void)
                     xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);
-}
-
-config_group_t tlak_get_config_group(void)
-{
-    config_group_t group = {
-        .items = PRESSURE_CONFIG_ITEMS,
-        .item_count = sizeof(PRESSURE_CONFIG_ITEMS) / sizeof(PRESSURE_CONFIG_ITEMS[0]),
-    };
-    return group;
 }

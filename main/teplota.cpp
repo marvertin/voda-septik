@@ -24,7 +24,7 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
-#include "app-config.h"
+#include "config_store.h"
 #include "pins.h"
 #include "sensor_events.h"
 #include "mqtt_topics.h"
@@ -65,6 +65,29 @@ typedef struct {
 
 static portMUX_TYPE s_scan_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_scan_enabled = false;
+
+static const config_item_t TEMP_MAX_ITEM = {
+    .key = "tepl_max", .label = "Max. teplota [°C]", .description = "Prahová teplota pro alarm nebo ochranu.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 35.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = -20.0f, .max_float = 90.0f,
+};
+static const config_item_t TEMP_ADDR_WATER_ITEM = {
+    .key = "temp_addr_water", .label = "Adresa cidla voda", .description = "ROM adresa DS18B20 pro vodni sondu (hex, napr. 28FF1A2B3C4D5E6F).",
+    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 18, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
+};
+static const config_item_t TEMP_ADDR_AIR_ITEM = {
+    .key = "temp_addr_air", .label = "Adresa cidla vzduch", .description = "ROM adresa DS18B20 pro vzduchovou sondu (hex, napr. 28FF1A2B3C4D5E6F).",
+    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 18, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
+};
+
+void teplota_register_config_items(void)
+{
+    APP_ERROR_CHECK("E697", config_store_register_item(&TEMP_MAX_ITEM));
+    APP_ERROR_CHECK("E698", config_store_register_item(&TEMP_ADDR_WATER_ITEM));
+    APP_ERROR_CHECK("E699", config_store_register_item(&TEMP_ADDR_AIR_ITEM));
+}
 
 static bool ds18b20_addr_is_valid(onewire_addr_t addr);
 
@@ -152,14 +175,8 @@ static ds18b20_config_addresses_t load_configured_addresses(void)
 
     char water_text[24] = {0};
     char air_text[24] = {0};
-    const esp_err_t load_result = app_config_load_temperature_addresses(water_text,
-                                                                        sizeof(water_text),
-                                                                        air_text,
-                                                                        sizeof(air_text));
-    if (load_result != ESP_OK) {
-        ESP_LOGW(TAG, "Adresy teplotnich cidel nebyly nacteny z konfigurace: %s", esp_err_to_name(load_result));
-        return cfg;
-    }
+    config_store_get_string_item(&TEMP_ADDR_WATER_ITEM, water_text, sizeof(water_text));
+    config_store_get_string_item(&TEMP_ADDR_AIR_ITEM, air_text, sizeof(air_text));
 
     onewire_addr_t parsed = ONEWIRE_NONE;
     if (parse_onewire_addr(water_text, &parsed) && (parsed == ONEWIRE_NONE || ds18b20_addr_is_valid(parsed))) {

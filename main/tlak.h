@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_webapp.h"
+#include "config_types.h"
 
 void tlak_init(void);
-config_group_t tlak_get_config_group(void);
+void tlak_register_config_items(void);

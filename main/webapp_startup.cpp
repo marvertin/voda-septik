@@ -11,10 +11,9 @@ extern "C" {
 }
 #endif
 
-#include "app-config.h"
+#include "network_config.h"
 #include "config_webapp.h"
 #include "esp_log.h"
-#include "zasoba.h"
 #include "restart_info.h"
 
 static const char *TAG = "webapp_startup";
@@ -84,7 +83,7 @@ esp_err_t webapp_startup_start(void)
 
     char wifi_ssid[32] = {0};
     char wifi_password[64] = {0};
-    esp_err_t wifi_cfg_result = app_config_load_wifi_credentials(
+    esp_err_t wifi_cfg_result = network_config_load_wifi_credentials(
         wifi_ssid,
         sizeof(wifi_ssid),
         wifi_password,
@@ -93,11 +92,6 @@ esp_err_t webapp_startup_start(void)
         ESP_LOGW(TAG, "Nelze nacist WiFi SSID pro webapp: %s", esp_err_to_name(wifi_cfg_result));
         wifi_ssid[0] = '\0';
     }
-
-    const config_group_t config_groups[] = {
-        app_config_get_config_group(),
-        zasoba_get_config_group(),
-    };
 
     app_restart_info_t restart_info = {};
     esp_err_t restart_result = app_restart_info_load(&restart_info);
@@ -116,13 +110,9 @@ esp_err_t webapp_startup_start(void)
         .active_ssid = wifi_ssid,
     };
 
-    esp_err_t start_result = config_webapp_start(
-        "app_cfg",
-        config_groups,
-        sizeof(config_groups) / sizeof(config_groups[0]),
-        80,
-        &webapp_restart_info,
-        &webapp_network_info);
+    esp_err_t start_result = config_webapp_start(80,
+                                                 &webapp_restart_info,
+                                                 &webapp_network_info);
 
     if (start_result == ESP_OK) {
         s_webapp_started = true;
