@@ -31,6 +31,7 @@ extern "C" {
 
 static const char *TAG = "state_manager";
 static constexpr TickType_t STATE_MANAGER_EVENT_WAIT_TICKS = pdMS_TO_TICKS(1000);
+static constexpr uint8_t LCD_PRESSURE_X = 9;
 
 static uint32_t s_nvs_errors = 0;
 static uint32_t s_mqtt_reconnects = 0;
@@ -291,25 +292,55 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
     const float rozdil_filtru = event.data.pressure.rozdil_filtru;
     const float zanesenost_filtru = event.data.pressure.zanesenost_filtru;
 
-    const bool sensor_fault =
-        !std::isfinite(pred_filtrem) ||
-        !std::isfinite(za_filtrem) ||
-        !std::isfinite(rozdil_filtru) ||
-        !std::isfinite(zanesenost_filtru);
-    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_BEFORE, !std::isfinite(pred_filtrem));
-    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_AFTER, !std::isfinite(za_filtrem));
+    const bool sensor_fault_pred_filtrem = !std::isfinite(pred_filtrem);
+    const bool sensor_fault_za_filtrem = !std::isfinite(za_filtrem);
+    ESP_LOGI(TAG, "Publikuji tlak: pred=%.1f za=%.1f rozdil=%.1f zanesenost=%.1f%%", (double)pred_filtrem, (double)za_filtrem, (double)rozdil_filtru, (double)zanesenost_filtru);
 
-    if (sensor_fault) {
+        
+    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_BEFORE, sensor_fault_pred_filtrem);
+    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_AFTER, sensor_fault_za_filtrem);
+
+    if (sensor_fault_pred_filtrem) {
+        lcd_print(LCD_PRESSURE_X, 0, "-++-", false, 0);
+
         esp_err_t before_empty = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM);
         if (before_empty != ESP_OK) {
             ESP_LOGW(TAG, "Enqueue empty tlaku pred filtrem selhalo: %s", esp_err_to_name(before_empty));
         }
+    } else {
+        char pressure_before_text[16];
+        snprintf(pressure_before_text, sizeof(pressure_before_text), "%4.1f", pred_filtrem);
+        lcd_print(LCD_PRESSURE_X, 0, pressure_before_text, false, 0);
+
+        esp_err_t before_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM,
+            (double)pred_filtrem);
+        if (before_result != ESP_OK) {
+            ESP_LOGW(TAG, "Enqueue tlaku pred filtrem selhalo: %s", esp_err_to_name(before_result));
+        }
+    }
+    if ( sensor_fault_za_filtrem) {
+
+        lcd_print(LCD_PRESSURE_X, 1, "+--+", false, 0);
 
         esp_err_t after_empty = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM);
         if (after_empty != ESP_OK) {
             ESP_LOGW(TAG, "Enqueue empty tlaku za filtrem selhalo: %s", esp_err_to_name(after_empty));
         }
 
+    } else {
+        char pressure_after_text[16];
+        snprintf(pressure_after_text, sizeof(pressure_after_text), "%4.1f", za_filtrem);
+        lcd_print(LCD_PRESSURE_X, 1, pressure_after_text, false, 0);
+
+        esp_err_t after_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM,
+            (double)za_filtrem);
+        if (after_result != ESP_OK) {
+            ESP_LOGW(TAG, "Enqueue tlaku za filtrem selhalo: %s", esp_err_to_name(after_result));
+        }
+    }
+    if (sensor_fault_pred_filtrem || sensor_fault_za_filtrem) {
         esp_err_t diff_empty = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU);
         if (diff_empty != ESP_OK) {
             ESP_LOGW(TAG, "Enqueue empty rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_empty));
@@ -319,35 +350,22 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
         if (clog_empty != ESP_OK) {
             ESP_LOGW(TAG, "Enqueue empty zanesenosti filtru selhalo: %s", esp_err_to_name(clog_empty));
         }
-        return;
-    }
 
-    esp_err_t before_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM,
-        (double)pred_filtrem);
-    if (before_result != ESP_OK) {
-        ESP_LOGW(TAG, "Enqueue tlaku pred filtrem selhalo: %s", esp_err_to_name(before_result));
-    }
+    } else {
 
-    esp_err_t after_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM,
-        (double)za_filtrem);
-    if (after_result != ESP_OK) {
-        ESP_LOGW(TAG, "Enqueue tlaku za filtrem selhalo: %s", esp_err_to_name(after_result));
-    }
+        esp_err_t diff_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU,
+            (double)rozdil_filtru);
+        if (diff_result != ESP_OK) {
+            ESP_LOGW(TAG, "Enqueue rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_result));
+        }
 
-    esp_err_t diff_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU,
-        (double)rozdil_filtru);
-    if (diff_result != ESP_OK) {
-        ESP_LOGW(TAG, "Enqueue rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_result));
-    }
-
-    esp_err_t clog_result = mqtt_publisher_enqueue_double(
-        mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT,
-        (double)zanesenost_filtru);
-    if (clog_result != ESP_OK) {
-        ESP_LOGW(TAG, "Enqueue zanesenosti filtru selhalo: %s", esp_err_to_name(clog_result));
+        esp_err_t clog_result = mqtt_publisher_enqueue_double(
+            mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT,
+            (double)zanesenost_filtru);
+        if (clog_result != ESP_OK) {
+            ESP_LOGW(TAG, "Enqueue zanesenosti filtru selhalo: %s", esp_err_to_name(clog_result));
+        }
     }
 }
 

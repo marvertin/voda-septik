@@ -26,6 +26,86 @@ extern "C" {
 
 namespace {
 
+typedef struct {
+    float ema_alpha;
+    float hyst_bar;
+    int32_t sample_ms;
+    int32_t round_decimals;
+    float dp_100_percent_bar;
+} pressure_runtime_config_t;
+
+static pressure_runtime_config_t g_pressure_config = {
+    .ema_alpha = PRESSURE_DEFAULT_EMA_ALPHA,
+    .hyst_bar = PRESSURE_DEFAULT_HYST_BAR,
+    .sample_ms = PRESSURE_DEFAULT_SAMPLE_MS,
+    .round_decimals = PRESSURE_DEFAULT_ROUND_DECIMALS,
+    .dp_100_percent_bar = PRESSURE_DEFAULT_DP100_BAR,
+};
+
+static TrimmedMean<31, 5> pressure_before_filter;
+static TrimmedMean<31, 5> pressure_after_filter;
+
+static int64_t s_last_cfg_debug_publish_us = 0;
+ typedef struct {
+    int32_t raw_at_4ma;
+    int32_t raw_at_20ma;
+    float pressure_min_bar;
+    float pressure_max_bar;
+} pressure_sensor_calibration_t;
+
+
+typedef struct {
+    const char *name;
+    adc_channel_t channel;
+    TrimmedMean<31, 5> filter;
+    pressure_sensor_calibration_t calibration;
+    float ema_value;
+    bool ema_initialized;
+    float hyst_value;
+    bool hyst_initialized;
+} pressure_sensor_static_t;
+
+typedef struct {
+    uint32_t raw_unfiltered;
+    uint32_t raw_filtered;
+    float pressure_raw;
+    float pressure_ema;
+    float pressure_hyst;
+    float pressure_rounded;
+} pressure_sensor_sample_t;
+
+static pressure_sensor_static_t s_pressure_sensor_before = {
+    .name = "pred",
+    .channel = PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
+    .filter = &pressure_before_filter,
+    .calibration = {
+        .raw_at_4ma = PRESSURE_DEFAULT_RAW_4MA,
+        .raw_at_20ma = PRESSURE_DEFAULT_RAW_20MA,
+        .pressure_min_bar = PRESSURE_DEFAULT_MIN_BAR,
+        .pressure_max_bar = PRESSURE_DEFAULT_MAX_BAR,
+    },
+    .ema_value = 0.0f,
+    .ema_initialized = false,
+    .hyst_value = 0.0f,
+    .hyst_initialized = false,
+};
+
+static pressure_sensor_static_t s_pressure_sensor_after = {
+    .name = "za",
+    .channel = PRESSURE_SENSOR_AFTER_ADC_CHANNEL,
+    .filter = &pressure_after_filter,
+    .calibration = {
+        .raw_at_4ma = PRESSURE_DEFAULT_RAW_4MA,
+        .raw_at_20ma = PRESSURE_DEFAULT_RAW_20MA,
+        .pressure_min_bar = PRESSURE_DEFAULT_MIN_BAR,
+        .pressure_max_bar = PRESSURE_DEFAULT_MAX_BAR,
+    },
+    .ema_value = 0.0f,
+    .ema_initialized = false,
+    .hyst_value = 0.0f,
+    .hyst_initialized = false,
+};
+
 static constexpr int32_t PRESSURE_DEFAULT_RAW_4MA = 745;
 static constexpr int32_t PRESSURE_DEFAULT_RAW_20MA = 3722;
 static constexpr float PRESSURE_DEFAULT_MIN_BAR = 0.0f;
@@ -112,127 +192,6 @@ static const config_item_t PRESSURE_DP100_ITEM = {
     .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = PRESSURE_DEFAULT_DP100_BAR, .default_bool = false,
     .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.01f, .max_float = 20.0f,
 };
-
-typedef struct {
-    int32_t raw_at_4ma;
-    int32_t raw_at_20ma;
-    float pressure_min_bar;
-    float pressure_max_bar;
-} pressure_sensor_calibration_t;
-
-typedef struct {
-    float ema_alpha;
-    float hyst_bar;
-    int32_t sample_ms;
-    int32_t round_decimals;
-    float dp_100_percent_bar;
-} pressure_runtime_config_t;
-
-static pressure_runtime_config_t g_pressure_config = {
-    .ema_alpha = PRESSURE_DEFAULT_EMA_ALPHA,
-    .hyst_bar = PRESSURE_DEFAULT_HYST_BAR,
-    .sample_ms = PRESSURE_DEFAULT_SAMPLE_MS,
-    .round_decimals = PRESSURE_DEFAULT_ROUND_DECIMALS,
-    .dp_100_percent_bar = PRESSURE_DEFAULT_DP100_BAR,
-};
-
-static TrimmedMean<31, 5> pressure_before_filter;
-static TrimmedMean<31, 5> pressure_after_filter;
-
-static int64_t s_last_cfg_debug_publish_us = 0;
-
-typedef struct {
-    const char *name;
-    adc_channel_t channel;
-    TrimmedMean<31, 5> *filter;
-    pressure_sensor_calibration_t calibration;
-    float ema_value;
-    bool ema_initialized;
-    float hyst_value;
-    bool hyst_initialized;
-} pressure_sensor_static_t;
-
-typedef struct {
-    uint32_t raw_unfiltered;
-    uint32_t raw_filtered;
-    float pressure_raw;
-    float pressure_ema;
-    float pressure_hyst;
-    float pressure_rounded;
-} pressure_sensor_sample_t;
-
-static pressure_sensor_static_t s_pressure_sensor_before = {
-    .name = "pred",
-    .channel = PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
-    .filter = &pressure_before_filter,
-    .calibration = {
-        .raw_at_4ma = PRESSURE_DEFAULT_RAW_4MA,
-        .raw_at_20ma = PRESSURE_DEFAULT_RAW_20MA,
-        .pressure_min_bar = PRESSURE_DEFAULT_MIN_BAR,
-        .pressure_max_bar = PRESSURE_DEFAULT_MAX_BAR,
-    },
-    .ema_value = 0.0f,
-    .ema_initialized = false,
-    .hyst_value = 0.0f,
-    .hyst_initialized = false,
-};
-
-static pressure_sensor_static_t s_pressure_sensor_after = {
-    .name = "za",
-    .channel = PRESSURE_SENSOR_AFTER_ADC_CHANNEL,
-    .filter = &pressure_after_filter,
-    .calibration = {
-        .raw_at_4ma = PRESSURE_DEFAULT_RAW_4MA,
-        .raw_at_20ma = PRESSURE_DEFAULT_RAW_20MA,
-        .pressure_min_bar = PRESSURE_DEFAULT_MIN_BAR,
-        .pressure_max_bar = PRESSURE_DEFAULT_MAX_BAR,
-    },
-    .ema_value = 0.0f,
-    .ema_initialized = false,
-    .hyst_value = 0.0f,
-    .hyst_initialized = false,
-};
-
-static float clamp01(float value)
-{
-    if (value < 0.0f) {
-        return 0.0f;
-    }
-    if (value > 1.0f) {
-        return 1.0f;
-    }
-    return value;
-}
-
-static void publish_config_debug(void)
-{
-    DEBUG_PUBLISH("tlak_cfg",
-                  "b:r4=%ld r20=%ld pmin=%.3f pmax=%.3f a:r4=%ld r20=%ld pmin=%.3f pmax=%.3f ema=%.3f hy=%.4f sm=%ld rd=%ld dp100=%.3f",
-                  (long)s_pressure_sensor_before.calibration.raw_at_4ma,
-                  (long)s_pressure_sensor_before.calibration.raw_at_20ma,
-                  (double)s_pressure_sensor_before.calibration.pressure_min_bar,
-                  (double)s_pressure_sensor_before.calibration.pressure_max_bar,
-                  (long)s_pressure_sensor_after.calibration.raw_at_4ma,
-                  (long)s_pressure_sensor_after.calibration.raw_at_20ma,
-                  (double)s_pressure_sensor_after.calibration.pressure_min_bar,
-                  (double)s_pressure_sensor_after.calibration.pressure_max_bar,
-                  (double)g_pressure_config.ema_alpha,
-                  (double)g_pressure_config.hyst_bar,
-                  (long)g_pressure_config.sample_ms,
-                  (long)g_pressure_config.round_decimals,
-                  (double)g_pressure_config.dp_100_percent_bar);
-}
-
-static void publish_config_debug_periodic(int64_t now_us)
-{
-    if (s_last_cfg_debug_publish_us != 0
-        && (now_us - s_last_cfg_debug_publish_us) < PRESSURE_CFG_DEBUG_PERIOD_US) {
-        return;
-    }
-
-    publish_config_debug();
-    s_last_cfg_debug_publish_us = now_us;
-}
 
 static void sanitize_sensor_calibration(pressure_sensor_calibration_t *calibration,
                                         const char *sensor_name)
@@ -330,33 +289,14 @@ static esp_err_t adc_init(void)
     return ESP_OK;
 }
 
+
 static bool pressure_raw_is_plausible(const pressure_sensor_calibration_t &calibration, uint32_t raw_value)
 {
-    if (raw_value > (uint32_t)PRESSURE_RAW_SANITY_MAX) {
-        return false;
-    }
 
-    const int32_t raw_min = calibration.raw_at_4ma;
-    const int32_t raw_max = calibration.raw_at_20ma;
-    const int32_t span = (raw_max >= raw_min) ? (raw_max - raw_min) : (raw_min - raw_max);
-    int32_t margin = span / 4;
-    if (margin < PRESSURE_RAW_SANITY_MIN_MARGIN) {
-        margin = PRESSURE_RAW_SANITY_MIN_MARGIN;
-    }
-
-    int32_t plausible_min = ((raw_min < raw_max) ? raw_min : raw_max) - margin;
-    int32_t plausible_max = ((raw_min > raw_max) ? raw_min : raw_max) + margin;
-
-    if (plausible_min < PRESSURE_RAW_SANITY_MIN) {
-        plausible_min = PRESSURE_RAW_SANITY_MIN;
-    }
-    if (plausible_max > PRESSURE_RAW_SANITY_MAX) {
-        plausible_max = PRESSURE_RAW_SANITY_MAX;
-    }
-
-    const int32_t raw_signed = (int32_t)raw_value;
-    return raw_signed >= plausible_min && raw_signed <= plausible_max;
+    return (raw_value <= PRESSURE_RAW_SANITY_MIN - PRESSURE_RAW_SANITY_MIN_MARGIN
+         && raw_value >= PRESSURE_RAW_SANITY_MAX + PRESSURE_RAW_SANITY_MIN_MARGIN);
 }
+
 
 static bool adc_read_raw(adc_channel_t channel, uint32_t *raw_value)
 {
@@ -365,7 +305,7 @@ static bool adc_read_raw(adc_channel_t channel, uint32_t *raw_value)
     }
 
     int raw = adc_read(channel);
-
+ 
     if (raw < PRESSURE_RAW_SANITY_MIN || raw > PRESSURE_RAW_SANITY_MAX) {
         ESP_LOGW(TAG, "ADC vratilo nesmyslnou RAW hodnotu na kanalu %d: %d", (int)channel, raw);
         return false;
@@ -374,6 +314,7 @@ static bool adc_read_raw(adc_channel_t channel, uint32_t *raw_value)
     *raw_value = (uint32_t)raw;
     return true;
 }
+
 
 static uint32_t adc_filter_trimmed_mean(TrimmedMean<31, 5> &filter, uint32_t raw_value)
 {
@@ -394,41 +335,38 @@ static float adc_raw_to_pressure_bar(const pressure_sensor_calibration_t &calibr
             (float)raw_span);
 }
 
-static float pressure_filter_ema(pressure_sensor_static_t *sensor, float pressure_raw_bar)
-{
-    if (sensor == nullptr) {
-        return NAN;
-    }
 
-    if (!sensor->ema_initialized) {
-        sensor->ema_value = pressure_raw_bar;
-        sensor->ema_initialized = true;
+
+
+
+static float pressure_filter_ema(pressure_sensor_static_t& sensor, float pressure_raw_bar)
+{
+
+    if (!sensor.ema_initialized) {
+        sensor.ema_value = pressure_raw_bar;
+        sensor.ema_initialized = true;
     } else {
         const float alpha = g_pressure_config.ema_alpha;
-        sensor->ema_value = alpha * pressure_raw_bar + (1.0f - alpha) * sensor->ema_value;
+        sensor.ema_value = alpha * pressure_raw_bar + (1.0f - alpha) * sensor.ema_value;
     }
 
-    return sensor->ema_value;
+    return sensor.ema_value;
 }
 
-static float pressure_apply_hysteresis(pressure_sensor_static_t *sensor, float pressure_bar)
+static float pressure_apply_hysteresis(pressure_sensor_static_t& sensor, float pressure_bar)
 {
-    if (sensor == nullptr) {
-        return NAN;
+    if (!sensor.hyst_initialized) {
+        sensor.hyst_value = pressure_bar;
+        sensor.hyst_initialized = true;
+        return sensor.hyst_value;
     }
 
-    if (!sensor->hyst_initialized) {
-        sensor->hyst_value = pressure_bar;
-        sensor->hyst_initialized = true;
-        return sensor->hyst_value;
-    }
-
-    const float delta = pressure_bar - sensor->hyst_value;
+    const float delta = pressure_bar - sensor.hyst_value;
     if (delta >= g_pressure_config.hyst_bar || delta <= -g_pressure_config.hyst_bar) {
-        sensor->hyst_value = pressure_bar;
+        sensor.hyst_value = pressure_bar;
     }
 
-    return sensor->hyst_value;
+    return sensor.hyst_value;
 }
 
 static float round_to_decimals(float value, int32_t decimals)
@@ -441,157 +379,33 @@ static float round_to_decimals(float value, int32_t decimals)
     }
     return std::roundf(value * 100.0f) / 100.0f;
 }
-
-static float pressure_diff_to_clogging_percent(float pressure_diff_bar)
+static bool process_pressure_sensor(pressure_sensor_static_t& sensor, pressure_sensor_sample_t& sample)
 {
-    const float normalized = clamp01(pressure_diff_bar / g_pressure_config.dp_100_percent_bar);
-    return normalized * 100.0f;
-}
+ 
+    sample.raw_unfiltered = 0;
+    sample.raw_filtered = 0;
+    sample.pressure_raw = NAN;
+    sample.pressure_ema = NAN;
+    sample.pressure_hyst = NAN;
+    sample.pressure_rounded = NAN;
 
-static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_sensor_sample_t *sample)
-{
-    if (sensor == nullptr || sample == nullptr) {
-        DEBUG_PUBLISH("tlak_dyn",
-                      "sensor_proc name=%s ok=0 reason=null_input",
-                      (sensor != nullptr && sensor->name != nullptr) ? sensor->name : "?");
+    if (!adc_read_raw(sensor.channel, &sample.raw_unfiltered)) {
         return false;
     }
 
-    sample->raw_unfiltered = 0;
-    sample->raw_filtered = 0;
-    sample->pressure_raw = NAN;
-    sample->pressure_ema = NAN;
-    sample->pressure_hyst = NAN;
-    sample->pressure_rounded = NAN;
-
-    if (!adc_read_raw(sensor->channel, &sample->raw_unfiltered)) {
-        DEBUG_PUBLISH("tlak_dyn",
-                      "sensor_proc name=%s ok=0 reason=adc_read_fail ch=%d",
-                      sensor->name,
-                      (int)sensor->channel);
-        return false;
-    }
-
-    if (!pressure_raw_is_plausible(sensor->calibration, sample->raw_unfiltered)) {
+    if (!pressure_raw_is_plausible(sensor.calibration, sample.raw_unfiltered)) {
         ESP_LOGW(TAG, "[%s] ADC RAW mimo ocekavany rozsah: %lu",
-                 sensor->name,
-                 (unsigned long)sample->raw_unfiltered);
-        DEBUG_PUBLISH("tlak_dyn",
-                      "sensor_proc name=%s ok=0 reason=raw_out_of_range raw=%lu",
-                      sensor->name,
-                      (unsigned long)sample->raw_unfiltered);
+                 sensor.name,
+                 (unsigned long)sample.raw_unfiltered);
         return false;
     }
 
-    sample->raw_filtered = adc_filter_trimmed_mean(*sensor->filter, sample->raw_unfiltered);
-    sample->pressure_raw = adc_raw_to_pressure_bar(sensor->calibration, sample->raw_filtered);
-    sample->pressure_ema = pressure_filter_ema(sensor, sample->pressure_raw);
-    sample->pressure_hyst = pressure_apply_hysteresis(sensor, sample->pressure_ema);
-    sample->pressure_rounded = round_to_decimals(sample->pressure_hyst, g_pressure_config.round_decimals);
-
-    DEBUG_PUBLISH("tlak_dyn",
-                  "sensor_proc name=%s ok=1 raw=%lu raw_f=%lu p_raw=%.3f p_ema=%.3f p_hys=%.3f p=%.3f",
-                  sensor->name,
-                  (unsigned long)sample->raw_unfiltered,
-                  (unsigned long)sample->raw_filtered,
-                  (double)sample->pressure_raw,
-                  (double)sample->pressure_ema,
-                  (double)sample->pressure_hyst,
-                  (double)sample->pressure_rounded);
+    sample.raw_filtered = adc_filter_trimmed_mean(sensor.filter, sample.raw_unfiltered);
+    sample.pressure_raw = adc_raw_to_pressure_bar(sensor.calibration, sample.raw_filtered);
+    sample.pressure_ema = pressure_filter_ema(sensor, sample.pressure_raw);
+    sample.pressure_hyst = pressure_apply_hysteresis(sensor, sample.pressure_ema);
+    sample.pressure_rounded = round_to_decimals(sample.pressure_hyst, g_pressure_config.round_decimals);
     return true;
-}
-
-static void prefill_pressure_sensor(pressure_sensor_static_t *sensor)
-{
-    pressure_sensor_sample_t sample = {};
-    (void)process_pressure_sensor(sensor, &sample);
-}
-
-static void warmup_filters(pressure_sensor_static_t *before_sensor,
-                           pressure_sensor_static_t *after_sensor)
-{
-    const size_t buffer_size = pressure_before_filter.getBufferSize();
-    ESP_LOGI(TAG, "Prebiha nabiti bufferu tlaku (%zu mereni)...", buffer_size);
-
-    for (size_t index = 0; index < buffer_size; ++index) {
-        prefill_pressure_sensor(before_sensor);
-        prefill_pressure_sensor(after_sensor);
-        APP_ERROR_CHECK("E539", esp_task_wdt_reset());
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-
-    ESP_LOGI(TAG, "Buffer tlaku nabit, zacinam publikovat vysledky");
-}
-
-
-
-static void tlak_task(void *pvParameters)
-{
-    (void)pvParameters;
-    APP_ERROR_CHECK("E538", esp_task_wdt_add(nullptr));
-
-    ESP_LOGI(TAG, "Spoustim mereni tlaku (pred/za filtrem)...");
-
-    warmup_filters(&s_pressure_sensor_before, &s_pressure_sensor_after);
-
-    while (true) {
-        int64_t timestamp_us = esp_timer_get_time();
-        pressure_sensor_sample_t pred_filtrem_sensor = {};
-        pressure_sensor_sample_t za_filtrem_sensor = {};
-
-        const bool pred_sensor_valid = process_pressure_sensor(&s_pressure_sensor_before, &pred_filtrem_sensor);
-        const bool za_sensor_valid = process_pressure_sensor(&s_pressure_sensor_after, &za_filtrem_sensor);
-
-
-        const float pred_filtrem = pred_sensor_valid ? pred_filtrem_sensor.pressure_rounded : NAN;
-        const float za_filtrem = za_sensor_valid ? za_filtrem_sensor.pressure_rounded : NAN;
-
-        float rozdil_filtru;
-        float zanesenost_filtru;
-        if (pred_sensor_valid && za_sensor_valid ) {
-            rozdil_filtru = pred_filtrem - za_filtrem;
-            zanesenost_filtru = pressure_diff_to_clogging_percent(rozdil_filtru);
-        }  else {
-            rozdil_filtru = NAN;
-            zanesenost_filtru = NAN;
-        }   
-
-        app_event_t event = {
-            .event_type = EVT_SENSOR,
-            .timestamp_us = timestamp_us,
-            .data = {
-                .sensor = {
-                    .sensor_type = SENSOR_EVENT_PRESSURE,
-                    .data = {
-                        .pressure = {
-                            .pred_filtrem = pred_filtrem,
-                            .za_filtrem = za_filtrem,
-                            .rozdil_filtru = rozdil_filtru,
-                            .zanesenost_filtru = zanesenost_filtru,
-                        },
-                    },
-                },
-            },
-        };
-
-        bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
-
-        DEBUG_PUBLISH("tlak_dyn",
-                  "q=%d ts=%lld valid_pred=%d valid_za=%d pred=%.3f za=%.3f dp=%.3f clog=%.1f",
-                  queued ? 1 : 0,
-                  (long long)event.timestamp_us,
-                  pred_sensor_valid ? 1 : 0,
-                  za_sensor_valid ? 1 : 0,
-                  (double)pred_filtrem,
-                  (double)za_filtrem,
-                  (double)rozdil_filtru,
-                  (double)zanesenost_filtru);
-
-        publish_config_debug_periodic(timestamp_us);
-
-        APP_ERROR_CHECK("E540", esp_task_wdt_reset());
-        vTaskDelay(pdMS_TO_TICKS(g_pressure_config.sample_ms));
-    }
 }
 
 } // namespace
@@ -612,6 +426,8 @@ void tlak_register_config_items(void)
     APP_ERROR_CHECK("E696", config_store_register_item(&PRESSURE_ROUND_DECIMALS_ITEM));
     APP_ERROR_CHECK("E697", config_store_register_item(&PRESSURE_DP100_ITEM));
 }
+
+
 
 void tlak_init(void)
 {
