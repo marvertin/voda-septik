@@ -23,6 +23,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "lcd.h"
 #include "mqtt_publisher_task.h"
+#include "mqtt_ha_discovery.h"
 #include "webapp_startup.h"
 #include "status_display.h"
 #include "restart_info.h"
@@ -294,8 +295,6 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
 
     const bool sensor_fault_pred_filtrem = !std::isfinite(pred_filtrem);
     const bool sensor_fault_za_filtrem = !std::isfinite(za_filtrem);
-    ESP_LOGI(TAG, "Publikuji tlak: pred=%.1f za=%.1f rozdil=%.1f zanesenost=%.1f%%", (double)pred_filtrem, (double)za_filtrem, (double)rozdil_filtru, (double)zanesenost_filtru);
-
         
     set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_BEFORE, sensor_fault_pred_filtrem);
     set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_AFTER, sensor_fault_za_filtrem);
@@ -469,6 +468,11 @@ static void state_manager_task(void *pvParameters)
                 }
 
                 if (mqtt_ready) {
+
+                    esp_err_t discovery_result = mqtt_ha_discovery_publish_all();
+                    if (discovery_result != ESP_OK && discovery_result != ESP_ERR_INVALID_STATE) {
+                        ESP_LOGW(TAG, "Publikace HA discovery selhala: %s", esp_err_to_name(discovery_result));
+                    }
 
                     if (!boot_diagnostics_published) {
                         publish_boot_diagnostics_once();
