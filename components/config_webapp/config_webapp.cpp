@@ -186,6 +186,33 @@ static std::string read_value_for_html(const config_item_t &item)
     }
 }
 
+static std::string default_value_for_html(const config_item_t &item)
+{
+    switch (item.type) {
+        case CONFIG_VALUE_STRING:
+            return (item.default_string != nullptr) ? item.default_string : "";
+        case CONFIG_VALUE_INT32:
+            return std::to_string(item.default_int);
+        case CONFIG_VALUE_FLOAT: {
+            char out[32] = {0};
+            snprintf(out, sizeof(out), "%.3f", item.default_float);
+            return out;
+        }
+        case CONFIG_VALUE_BOOL:
+            return item.default_bool ? "1" : "0";
+        default:
+            return "";
+    }
+}
+
+static bool has_default_value_for_html(const config_item_t &item)
+{
+    if (item.type == CONFIG_VALUE_STRING) {
+        return item.default_string != nullptr;
+    }
+    return true;
+}
+
 static std::string build_config_page_html()
 {
     const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -198,6 +225,7 @@ static std::string build_config_page_html()
     html += "<style>body{font-family:sans-serif;max-width:760px;margin:20px auto;padding:0 12px;}";
     html += "label{font-weight:600;display:block;margin-bottom:4px;}";
     html += "small{display:block;color:#666;margin-top:4px;}";
+    html += ".item-key{color:#8b8b8b;font-size:.82rem;font-family:monospace;font-weight:400;margin-left:6px;}";
     html += "input[type=text],input[type=number]{width:100%;padding:8px;box-sizing:border-box;}";
     html += ".item{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;}";
     html += ".section{margin-bottom:18px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;}";
@@ -231,12 +259,14 @@ static std::string build_config_page_html()
 
         const config_item_t &item = *item_ptr;
         std::string current_value = read_value_for_html(item);
+        std::string default_value = default_value_for_html(item);
+        const bool has_default_value = has_default_value_for_html(item);
 
         html += "<div class='item'>";
-        html += "<label for='" + html_escape(item.key) + "'>" + html_escape(item.label != nullptr ? item.label : item.key) + "</label>";
+        html += "<label for='" + html_escape(item.key) + "'>" + html_escape(item.label != nullptr ? item.label : item.key);
+        html += "<span class='item-key'>" + html_escape(item.key) + "</span></label>";
 
         if (item.type == CONFIG_VALUE_STRING) {
-            std::string default_value = item.default_string != nullptr ? item.default_string : "";
             html += "<input type='text' id='" + html_escape(item.key) + "' name='" + html_escape(item.key) + "' value='" + html_escape(current_value) + "'";
             html += " data-default-type='string' data-default='" + html_escape(default_value) + "'";
             if (item.max_string_len > 0) {
@@ -244,29 +274,26 @@ static std::string build_config_page_html()
             }
             html += ">";
         } else if (item.type == CONFIG_VALUE_INT32) {
-            std::string default_value = std::to_string(item.default_int);
             html += "<input type='number' step='1' id='" + html_escape(item.key) + "' name='" + html_escape(item.key) + "' value='" + html_escape(current_value) + "'";
             html += " data-default-type='int' data-default='" + html_escape(default_value) + "'";
             html += " min='" + std::to_string(item.min_int) + "' max='" + std::to_string(item.max_int) + "'>";
         } else if (item.type == CONFIG_VALUE_FLOAT) {
-            char default_float_buffer[32] = {0};
-            snprintf(default_float_buffer, sizeof(default_float_buffer), "%.3f", item.default_float);
             html += "<input type='number' step='any' id='" + html_escape(item.key) + "' name='" + html_escape(item.key) + "' value='" + html_escape(current_value) + "'";
-            html += " data-default-type='float' data-default='" + html_escape(default_float_buffer) + "'";
+            html += " data-default-type='float' data-default='" + html_escape(default_value) + "'";
             html += " min='" + std::to_string(item.min_float) + "' max='" + std::to_string(item.max_float) + "'>";
         } else if (item.type == CONFIG_VALUE_BOOL) {
             bool checked = (current_value == "1");
             html += "<input type='checkbox' id='" + html_escape(item.key) + "' name='" + html_escape(item.key) + "'";
-            html += " data-default-type='bool' data-default='" + std::string(item.default_bool ? "1" : "0") + "'";
+            html += " data-default-type='bool' data-default='" + html_escape(default_value) + "'";
             if (checked) {
                 html += " checked";
             }
             html += ">";
         }
 
-        if (item.description != nullptr && item.description[0] != '\0') {
-            html += "<small>" + html_escape(item.description) + "</small>";
-        }
+        std::string desc_prefix = (item.description != nullptr && item.description[0] != '\0') ? item.description : "napr.";
+        std::string desc_suffix = has_default_value ? default_value : "napr.";
+        html += "<small>" + html_escape(desc_prefix) + " (" + html_escape(desc_suffix) + ")</small>";
         html += "</div>";
     }
 
