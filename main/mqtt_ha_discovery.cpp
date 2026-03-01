@@ -401,10 +401,28 @@ static bool build_availability_topic(const char *state_topic, char *availability
         return false;
     }
 
+    static constexpr const char *STATE_SEGMENT = "/stav/";
+    static constexpr const char *AVAIL_SEGMENT = "/availability/";
+
+    const char *segment = strstr(state_topic, STATE_SEGMENT);
+    if (segment == nullptr) {
+        const int fallback_written = snprintf(availability_topic,
+                                              availability_topic_len,
+                                              "%s/availability",
+                                              state_topic);
+        return (fallback_written > 0) && ((size_t)fallback_written < availability_topic_len);
+    }
+
+    const size_t prefix_len = (size_t)(segment - state_topic);
+    const char *suffix = segment + strlen(STATE_SEGMENT);
+
     const int written = snprintf(availability_topic,
                                  availability_topic_len,
-                                 "%s/availability",
-                                 state_topic);
+                                 "%.*s%s%s",
+                                 (int)prefix_len,
+                                 state_topic,
+                                 AVAIL_SEGMENT,
+                                 suffix);
     return (written > 0) && ((size_t)written < availability_topic_len);
 }
 
