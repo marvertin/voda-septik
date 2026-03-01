@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 
+extern "C" {
+#include "freertos/FreeRTOS.h"
+}
+
 #include "esp_log.h"
 
 #include "mqtt_publish.h"
@@ -29,6 +33,67 @@ struct ha_entity_meta_t {
     const char *payload_on;
     const char *payload_off;
 };
+
+struct ha_topic_name_cfg_t {
+    mqtt_topic_id_t id;
+    const char *default_name;
+    char custom_name[96];
+    bool custom_set;
+};
+
+static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] = {
+    {mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM, "Objem nadrze", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA, "Hladina nadrze", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PRUTOK, "Prutok cerpani", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_CERPANO_CELKEM, "Cerpano celkem", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA, "Teplota vody", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VZDUCH, "Teplota vzduchu", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM, "Tlak pred filtrem", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM, "Tlak za filtrem", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU, "Rozdil tlaku filtru", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT, "Zanesenost filtru", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_BEZI, "Pumpa bezi", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_VYKON_CINNY_W, "Cerpani vykon cinny", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_JALOVY_VYKON_VAR, "Cerpani jalovy vykon", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_COSFI, "Cerpani cosfi", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_PROUD_A, "Cerpani proud", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_NAPETI_V, "Cerpani napeti", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_ENERGIE_CINNA_KWH, "Cerpani energie cinna", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_ENERGIE_JALOVA_KVARH, "Cerpani energie jalova", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_STATUS, "Stav zarizeni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_BOOT_MODE, "Boot mode", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_OTA_EVENT, "OTA event", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_OTA_PROGRESS, "OTA prubeh", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_REASON, "Duvod rebootu", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_COUNTER, "Pocet rebootu", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_LAST_DISCONNECT_DURATION_S, "Posledni odpojeni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_FW_VERSION, "FW verze", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_BUILD_TIMESTAMP, "Build timestamp", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_GIT_HASH, "Git hash", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_UPTIME_S, "Uptime", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RSSI_DBM, "WiFi RSSI", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_TRY, "WiFi reconnect pokusy", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS, "WiFi reconnect uspechy", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS, "MQTT reconnecty", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_LAST_MQTT_RC, "Posledni MQTT RC", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_HEAP_FREE_B, "Heap free", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_HEAP_MIN_FREE_B, "Heap min free", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_ESP_VCC_MV, "ESP VCC", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS, "NVS chyby", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_SCAN, "DS18B20 scan", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_REBOOT, "CMD reboot", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_WEBAPP, "CMD webapp", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_DEBUG, "CMD debug", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_LOG_LEVEL, "CMD log level", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_OTA_START, "CMD OTA start", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_OTA_CONFIRM, "CMD OTA confirm", {0}, false},
+    {mqtt_topic_id_t::TOPIC_CMD_TEPLOTA_SCAN, "CMD teplota scan", {0}, false},
+};
+
+static_assert((sizeof(s_ha_topic_name_cfg) / sizeof(s_ha_topic_name_cfg[0])) == (size_t)mqtt_topic_id_t::COUNT,
+              "HA topic name cfg must match topic count");
+
+static portMUX_TYPE s_ha_name_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void sanitize_to_id(const char *input, char *output, size_t output_len)
 {
@@ -97,6 +162,51 @@ static void make_human_name(const char *topic, char *name, size_t name_len)
         strncpy(name, "Voda Septik", name_len - 1);
         name[name_len - 1] = '\0';
     }
+}
+
+static ha_topic_name_cfg_t *ha_name_cfg(mqtt_topic_id_t id)
+{
+    const size_t index = (size_t)id;
+    if (index >= (size_t)mqtt_topic_id_t::COUNT) {
+        return nullptr;
+    }
+
+    ha_topic_name_cfg_t *cfg = &s_ha_topic_name_cfg[index];
+    if (cfg->id != id) {
+        return nullptr;
+    }
+    return cfg;
+}
+
+static void resolve_human_name(mqtt_topic_id_t id,
+                               const char *topic,
+                               char *name,
+                               size_t name_len)
+{
+    if (name == nullptr || name_len == 0) {
+        return;
+    }
+
+    ha_topic_name_cfg_t *cfg = ha_name_cfg(id);
+    if (cfg != nullptr) {
+        taskENTER_CRITICAL(&s_ha_name_mux);
+        if (cfg->custom_set && cfg->custom_name[0] != '\0') {
+            strncpy(name, cfg->custom_name, name_len - 1);
+            name[name_len - 1] = '\0';
+            taskEXIT_CRITICAL(&s_ha_name_mux);
+            return;
+        }
+
+        if (cfg->default_name != nullptr && cfg->default_name[0] != '\0') {
+            strncpy(name, cfg->default_name, name_len - 1);
+            name[name_len - 1] = '\0';
+            taskEXIT_CRITICAL(&s_ha_name_mux);
+            return;
+        }
+        taskEXIT_CRITICAL(&s_ha_name_mux);
+    }
+
+    make_human_name(topic, name, name_len);
 }
 
 static bool topic_ends_with(const char *topic, const char *suffix)
@@ -307,7 +417,7 @@ static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topi
              object_id);
 
     char name[160] = {0};
-    make_human_name(topic.full_topic, name, sizeof(name));
+    resolve_human_name(topic.id, topic.full_topic, name, sizeof(name));
 
     char payload[1400] = {0};
     size_t offset = 0;
@@ -409,6 +519,41 @@ static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topi
     }
 
     return publish_result;
+}
+
+esp_err_t mqtt_ha_discovery_set_human_name(mqtt_topic_id_t topic_id, const char *human_name)
+{
+    if (human_name == nullptr || human_name[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ha_topic_name_cfg_t *cfg = ha_name_cfg(topic_id);
+    if (cfg == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_ha_name_mux);
+    strncpy(cfg->custom_name, human_name, sizeof(cfg->custom_name) - 1);
+    cfg->custom_name[sizeof(cfg->custom_name) - 1] = '\0';
+    cfg->custom_set = true;
+    taskEXIT_CRITICAL(&s_ha_name_mux);
+
+    return ESP_OK;
+}
+
+esp_err_t mqtt_ha_discovery_clear_human_name(mqtt_topic_id_t topic_id)
+{
+    ha_topic_name_cfg_t *cfg = ha_name_cfg(topic_id);
+    if (cfg == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_ha_name_mux);
+    cfg->custom_set = false;
+    cfg->custom_name[0] = '\0';
+    taskEXIT_CRITICAL(&s_ha_name_mux);
+
+    return ESP_OK;
 }
 
 esp_err_t mqtt_ha_discovery_publish_all(void)
