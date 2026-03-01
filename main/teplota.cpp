@@ -548,21 +548,35 @@ static void temperature_task(void *pvParameters)
         },
     };
 
+    for (size_t index = 0; index < sizeof(probes) / sizeof(probes[0]); ++index) {
+        if (probes[index].configured_address != ONEWIRE_NONE) {
+            probes[index].resolved_address = probes[index].configured_address;
+            probes[index].available = true;
+            ESP_LOGI(TAG,
+                     "Senzor %s pouziva konfigurovanou ROM 0x%016" PRIx64,
+                     probes[index].name,
+                     (uint64_t)probes[index].resolved_address);
+        } else {
+            ESP_LOGW(TAG, "Senzor %s nema nastavenou adresu ve flash konfiguraci", probes[index].name);
+        }
+    }
+
     int64_t next_discovery_us = 0;
     int64_t next_scan_publish_us = 0;
     
     while (1)
     {
         const int64_t now_us = esp_timer_get_time();
-        if (now_us >= next_discovery_us || !probes[0].available || !probes[1].available) {
-            discover_ds18b20_sensors(TEMPERATURE_SENSOR_GPIO, probes, sizeof(probes) / sizeof(probes[0]));
-            next_discovery_us = now_us + (int64_t)SENSOR_DISCOVERY_PERIOD_S * 1000000LL;
-        }
 
         bool scan_enabled = false;
         taskENTER_CRITICAL(&s_scan_mux);
         scan_enabled = s_scan_enabled;
         taskEXIT_CRITICAL(&s_scan_mux);
+
+        if (scan_enabled && now_us >= next_discovery_us) {
+            discover_ds18b20_sensors(TEMPERATURE_SENSOR_GPIO, probes, sizeof(probes) / sizeof(probes[0]));
+            next_discovery_us = now_us + (int64_t)SENSOR_DISCOVERY_PERIOD_S * 1000000LL;
+        }
 
         if (scan_enabled && now_us >= next_scan_publish_us) {
             std::array<onewire_addr_t, 8> detected = {};
