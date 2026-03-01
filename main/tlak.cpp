@@ -310,36 +310,14 @@ static void load_pressure_calibration_config(void)
 static esp_err_t adc_init(void)
 {
     ESP_LOGI(TAG,
-             "ADC init: unit=%d bitwidth=%d atten=%d pred(gpio=%d,ch=%d) za(gpio=%d,ch=%d)",
-             (int)PRESSURE_SENSOR_ADC_UNIT,
-             (int)PRESSURE_SENSOR_ADC_BITWIDTH,
-             (int)PRESSURE_SENSOR_ADC_ATTENUATION,
+             "ADC init: pred(gpio=%d,ch=%d) za(gpio=%d,ch=%d)",
              32,
              (int)PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
              33,
              (int)PRESSURE_SENSOR_AFTER_ADC_CHANNEL);
 
-    esp_err_t ret = adc_shared_init(PRESSURE_SENSOR_ADC_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze inicializovat ADC jednotku: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = adc_shared_config_channel(PRESSURE_SENSOR_BEFORE_ADC_CHANNEL,
-                                    PRESSURE_SENSOR_ADC_BITWIDTH,
-                                    PRESSURE_SENSOR_ADC_ATTENUATION);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze nakonfigurovat kanal pred filtrem: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = adc_shared_config_channel(PRESSURE_SENSOR_AFTER_ADC_CHANNEL,
-                                    PRESSURE_SENSOR_ADC_BITWIDTH,
-                                    PRESSURE_SENSOR_ADC_ATTENUATION);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Nelze nakonfigurovat kanal za filtrem: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    adc_channel_init(PRESSURE_SENSOR_BEFORE_ADC_CHANNEL);
+    adc_channel_init(PRESSURE_SENSOR_AFTER_ADC_CHANNEL);
 
     return ESP_OK;
 }
@@ -378,12 +356,7 @@ static bool adc_read_raw(adc_channel_t channel, uint32_t *raw_value)
         return false;
     }
 
-    int raw = 0;
-    esp_err_t result = adc_shared_read(channel, &raw);
-    if (result != ESP_OK) {
-        ESP_LOGW(TAG, "Cteni ADC selhalo na kanalu %d: %s", (int)channel, esp_err_to_name(result));
-        return false;
-    }
+    int raw = adc_read(channel);
 
     if (raw < PRESSURE_RAW_SANITY_MIN || raw > PRESSURE_RAW_SANITY_MAX) {
         ESP_LOGW(TAG, "ADC vratilo nesmyslnou RAW hodnotu na kanalu %d: %d", (int)channel, raw);
@@ -577,7 +550,6 @@ static void tlak_task(void *pvParameters)
         },
     };
 
-    APP_ERROR_CHECK("E521", adc_init());
     warmup_filters(sensors, sizeof(sensors) / sizeof(sensors[0]));
 
     while (true) {
@@ -670,6 +642,7 @@ void tlak_register_config_items(void)
 void tlak_init(void)
 {
     load_pressure_calibration_config();
+    APP_ERROR_CHECK("E521", adc_init());
     APP_ERROR_CHECK("E523",
                     xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr) == pdPASS
                         ? ESP_OK

@@ -236,26 +236,11 @@ static bool level_raw_is_plausible(uint32_t raw_value)
 static esp_err_t adc_init(void)
 {
     ESP_LOGI(TAG,
-             "ADC init: gpio=%d unit=%d channel=%d bitwidth=%d atten=%d",
+             "ADC init: gpio=%d channel=%d",
              34,
-             (int)LEVEL_SENSOR_ADC_UNIT,
-             (int)LEVEL_SENSOR_ADC_CHANNEL,
-             (int)LEVEL_SENSOR_ADC_BITWIDTH,
-             (int)LEVEL_SENSOR_ADC_ATTENUATION);
+             (int)LEVEL_SENSOR_ADC_CHANNEL);
 
-    esp_err_t ret = adc_shared_init(LEVEL_SENSOR_ADC_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba: Nelze inicializovat ADC jednotku (%s)", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = adc_shared_config_channel(LEVEL_SENSOR_ADC_CHANNEL,
-                                    LEVEL_SENSOR_ADC_BITWIDTH,
-                                    LEVEL_SENSOR_ADC_ATTENUATION);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba: Nelze nakonfigurovat ADC kanál (%s)", esp_err_to_name(ret));
-        return ret;
-    }
+    adc_channel_init(LEVEL_SENSOR_ADC_CHANNEL);
 
     return ESP_OK;
 }
@@ -270,12 +255,7 @@ static bool adc_read_raw(uint32_t *raw_value)
         return false;
     }
 
-    int raw = 0;
-    esp_err_t result = adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw);
-    if (result != ESP_OK) {
-        ESP_LOGW(TAG, "Cteni ADC selhalo: %s", esp_err_to_name(result));
-        return false;
-    }
+    int raw = adc_read(LEVEL_SENSOR_ADC_CHANNEL);
 
     if (raw < LEVEL_RAW_SANITY_MIN || raw > LEVEL_RAW_SANITY_MAX) {
         ESP_LOGW(TAG, "ADC vratilo nesmyslnou RAW hodnotu: %d", raw);
@@ -435,9 +415,6 @@ static void zasoba_task(void *pvParameters)
     APP_ERROR_CHECK("E535", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
-
-    // Inicializace ADC a filtru pred prvnim publikovanim.
-    APP_ERROR_CHECK("E520", adc_init());
     warmup_filters();
 
     uint32_t raw_value;
@@ -512,6 +489,8 @@ static void zasoba_task(void *pvParameters)
 void zasoba_init(void)
 {
     load_level_calibration_config();
+
+    APP_ERROR_CHECK("E520", adc_init());
 
     APP_ERROR_CHECK("E522",
                     xTaskCreate(zasoba_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL) == pdPASS

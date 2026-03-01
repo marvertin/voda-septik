@@ -11,6 +11,7 @@
 #include "pcf8574.h"
 
 #include "pins.h"
+#include "adc_shared.h"
 #include "prutokomer.h"
 #include "teplota.h"
 #include "zasoba.h"
@@ -255,6 +256,8 @@ void cpp_app_main(void)
     lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
 
     state_manager_start();
+
+    adc_shared_init();
     
     // initialize sensor producer tasks
     prutokomer_init();
