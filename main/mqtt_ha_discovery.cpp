@@ -395,6 +395,19 @@ static bool append_json_field(char *payload,
     return true;
 }
 
+static bool build_availability_topic(const char *state_topic, char *availability_topic, size_t availability_topic_len)
+{
+    if (state_topic == nullptr || availability_topic == nullptr || availability_topic_len == 0) {
+        return false;
+    }
+
+    const int written = snprintf(availability_topic,
+                                 availability_topic_len,
+                                 "%s/availability",
+                                 state_topic);
+    return (written > 0) && ((size_t)written < availability_topic_len);
+}
+
 static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topic)
 {
     char slug[160] = {0};
@@ -435,19 +448,21 @@ static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topi
     }
 
     if (topic.id != mqtt_topic_id_t::TOPIC_SYSTEM_STATUS) {
-        const mqtt_topic_descriptor_t *status_topic = mqtt_topic_descriptor(mqtt_topic_id_t::TOPIC_SYSTEM_STATUS);
-        if (status_topic != nullptr && status_topic->full_topic != nullptr) {
-            if (!append_json_field(payload,
-                                   sizeof(payload),
-                                   &offset,
-                                   &first,
-                                   "availability_topic",
-                                   status_topic->full_topic,
-                                   true) ||
-                !append_json_field(payload, sizeof(payload), &offset, &first, "payload_available", "online", true) ||
-                !append_json_field(payload, sizeof(payload), &offset, &first, "payload_not_available", "offline", true)) {
-                return ESP_ERR_NO_MEM;
-            }
+        char availability_topic[320] = {0};
+        if (!build_availability_topic(topic.full_topic, availability_topic, sizeof(availability_topic))) {
+            return ESP_ERR_NO_MEM;
+        }
+
+        if (!append_json_field(payload,
+                               sizeof(payload),
+                               &offset,
+                               &first,
+                               "availability_topic",
+                               availability_topic,
+                               true) ||
+            !append_json_field(payload, sizeof(payload), &offset, &first, "payload_available", "online", true) ||
+            !append_json_field(payload, sizeof(payload), &offset, &first, "payload_not_available", "offline", true)) {
+            return ESP_ERR_NO_MEM;
         }
     }
 

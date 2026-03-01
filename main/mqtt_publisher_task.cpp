@@ -41,6 +41,35 @@ static bool value_type_matches_topic(mqtt_payload_kind_t payload_kind, mqtt_publ
 static esp_err_t build_payload_string(const mqtt_publish_event_t &event, char *payload, size_t payload_len);
 static bool refresh_due(const topic_last_state_t &last, TickType_t now_ticks);
 static void mark_published(topic_last_state_t &last, TickType_t now_ticks);
+static bool build_availability_topic(const char *state_topic, char *availability_topic, size_t availability_topic_len);
+static esp_err_t publish_topic_availability(const mqtt_topic_descriptor_t &topic, bool online);
+
+static bool build_availability_topic(const char *state_topic, char *availability_topic, size_t availability_topic_len)
+{
+    if (state_topic == nullptr || availability_topic == nullptr || availability_topic_len == 0) {
+        return false;
+    }
+
+    const int written = snprintf(availability_topic,
+                                 availability_topic_len,
+                                 "%s/availability",
+                                 state_topic);
+    return (written > 0) && ((size_t)written < availability_topic_len);
+}
+
+static esp_err_t publish_topic_availability(const mqtt_topic_descriptor_t &topic, bool online)
+{
+    if (topic.id == mqtt_topic_id_t::TOPIC_SYSTEM_STATUS) {
+        return ESP_OK;
+    }
+
+    char availability_topic[160] = {0};
+    if (!build_availability_topic(topic.full_topic, availability_topic, sizeof(availability_topic))) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return mqtt_publish(availability_topic, online ? "online" : "offline", true);
+}
 
 static esp_err_t publish_event_now(const mqtt_publish_event_t &event)
 {
@@ -55,6 +84,15 @@ static esp_err_t publish_event_now(const mqtt_publish_event_t &event)
 
     if (!value_type_matches_topic(topic->payload_kind, event.value_type)) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (event.value_type == mqtt_publish_value_type_t::EMPTY) {
+        return publish_topic_availability(*topic, false);
+    }
+
+    esp_err_t availability_result = publish_topic_availability(*topic, true);
+    if (availability_result != ESP_OK) {
+        return availability_result;
     }
 
     char payload[MQTT_PUBLISH_TEXT_MAX_LEN] = {0};
