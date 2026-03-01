@@ -200,6 +200,8 @@ static std::string build_config_page_html()
     html += "small{display:block;color:#666;margin-top:4px;}";
     html += "input[type=text],input[type=number]{width:100%;padding:8px;box-sizing:border-box;}";
     html += ".item{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;}";
+    html += ".section{margin-bottom:18px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;}";
+    html += ".section h2{margin:0 0 12px 0;font-size:1.1rem;}";
     html += ".actions{display:flex;gap:8px;flex-wrap:wrap;}";
     html += "button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;}";
     html += "</style></head><body>";
@@ -208,11 +210,25 @@ static std::string build_config_page_html()
     html += "<form id='cfgForm' method='post' action='/config/save'>";
 
     const size_t item_count = config_store_item_count();
+    std::string current_section;
+    bool section_open = false;
     for (size_t index = 0; index < item_count; ++index) {
         const config_item_t *item_ptr = config_store_item_at(index);
         if (item_ptr == nullptr) {
             continue;
         }
+
+        const char *section_name_ptr = config_store_section_for_item_at(index);
+        std::string section_name = (section_name_ptr != nullptr && section_name_ptr[0] != '\0') ? section_name_ptr : "Konfigurace";
+        if (!section_open || section_name != current_section) {
+            if (section_open) {
+                html += "</div>";
+            }
+            html += "<div class='section'><h2>" + html_escape(section_name) + "</h2>";
+            current_section = section_name;
+            section_open = true;
+        }
+
         const config_item_t &item = *item_ptr;
         std::string current_value = read_value_for_html(item);
 
@@ -251,6 +267,10 @@ static std::string build_config_page_html()
         if (item.description != nullptr && item.description[0] != '\0') {
             html += "<small>" + html_escape(item.description) + "</small>";
         }
+        html += "</div>";
+    }
+
+    if (section_open) {
         html += "</div>";
     }
 

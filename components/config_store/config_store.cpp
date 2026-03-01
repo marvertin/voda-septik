@@ -10,10 +10,21 @@
 namespace {
 
 static constexpr size_t CONFIG_STORE_MAX_ITEMS = 64;
+static constexpr size_t CONFIG_STORE_MAX_SECTIONS = 16;
+static constexpr size_t CONFIG_STORE_MAX_SECTION_NAME_LEN = 31;
+
+struct config_store_item_entry_t {
+    const config_item_t *item;
+    uint8_t section_index;
+};
 
 struct config_store_ctx_t {
-    const config_item_t *items[CONFIG_STORE_MAX_ITEMS];
+    config_store_item_entry_t items[CONFIG_STORE_MAX_ITEMS];
     size_t item_count;
+    char sections[CONFIG_STORE_MAX_SECTIONS][CONFIG_STORE_MAX_SECTION_NAME_LEN + 1];
+    size_t section_count;
+    bool has_current_section;
+    uint8_t current_section_index;
     char nvs_namespace[16];
 };
 
@@ -75,14 +86,46 @@ esp_err_t config_store_prepare(const char *nvs_namespace)
     return ESP_OK;
 }
 
+esp_err_t config_store_begin_section(const char *section_name)
+{
+    if (!config_store_is_ready() || section_name == nullptr || section_name[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const size_t name_len = strlen(section_name);
+    if (name_len > CONFIG_STORE_MAX_SECTION_NAME_LEN) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (size_t index = 0; index < s_ctx.section_count; ++index) {
+        if (strcmp(s_ctx.sections[index], section_name) == 0) {
+            s_ctx.current_section_index = static_cast<uint8_t>(index);
+            s_ctx.has_current_section = true;
+            return ESP_OK;
+        }
+    }
+
+    if (s_ctx.section_count >= CONFIG_STORE_MAX_SECTIONS) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    const size_t new_index = s_ctx.section_count;
+    strncpy(s_ctx.sections[new_index], section_name, CONFIG_STORE_MAX_SECTION_NAME_LEN);
+    s_ctx.sections[new_index][CONFIG_STORE_MAX_SECTION_NAME_LEN] = '\0';
+    s_ctx.section_count += 1;
+    s_ctx.current_section_index = static_cast<uint8_t>(new_index);
+    s_ctx.has_current_section = true;
+    return ESP_OK;
+}
+
 esp_err_t config_store_register_item(const config_item_t *item)
 {
-    if (!config_store_is_ready() || item == nullptr || !is_valid_item(*item)) {
+    if (!config_store_is_ready() || !s_ctx.has_current_section || item == nullptr || !is_valid_item(*item)) {
         return ESP_ERR_INVALID_ARG;
     }
 
     for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t *existing = s_ctx.items[index];
+        const config_item_t *existing = s_ctx.items[index].item;
         if (existing != nullptr && strcmp(existing->key, item->key) == 0) {
             return ESP_OK;
         }
@@ -92,7 +135,8 @@ esp_err_t config_store_register_item(const config_item_t *item)
         return ESP_ERR_NO_MEM;
     }
 
-    s_ctx.items[s_ctx.item_count] = item;
+    s_ctx.items[s_ctx.item_count].item = item;
+    s_ctx.items[s_ctx.item_count].section_index = s_ctx.current_section_index;
     s_ctx.item_count += 1;
     return ESP_OK;
 }
@@ -109,7 +153,7 @@ const config_item_t *config_store_find_item(const char *key)
     }
 
     for (size_t index = 0; index < s_ctx.item_count; ++index) {
-        const config_item_t *item = s_ctx.items[index];
+        const config_item_t *item = s_ctx.items[index].item;
         if (item != nullptr && strcmp(item->key, key) == 0) {
             return item;
         }
@@ -127,7 +171,21 @@ const config_item_t *config_store_item_at(size_t index)
     if (!config_store_is_ready() || index >= s_ctx.item_count) {
         return nullptr;
     }
-    return s_ctx.items[index];
+    return s_ctx.items[index].item;
+}
+
+const char *config_store_section_for_item_at(size_t index)
+{
+    if (!config_store_is_ready() || index >= s_ctx.item_count) {
+        return nullptr;
+    }
+
+    const uint8_t section_index = s_ctx.items[index].section_index;
+    if (section_index >= s_ctx.section_count) {
+        return nullptr;
+    }
+
+    return s_ctx.sections[section_index];
 }
 
 int32_t config_store_get_i32_item(const config_item_t *item)

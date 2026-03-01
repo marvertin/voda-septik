@@ -4,12 +4,14 @@
 #include "esp_err.h"
 
 esp_err_t config_store_prepare(const char *nvs_namespace);
+esp_err_t config_store_begin_section(const char *section_name);
 esp_err_t config_store_register_item(const config_item_t *item);
 
 bool config_store_is_ready(void);
 const config_item_t *config_store_find_item(const char *key);
 size_t config_store_item_count(void);
 const config_item_t *config_store_item_at(size_t index);
+const char *config_store_section_for_item_at(size_t index);
 
 int32_t config_store_get_i32_item(const config_item_t *item);
 float config_store_get_float_item(const config_item_t *item);

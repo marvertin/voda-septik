@@ -197,11 +197,22 @@ void cpp_app_main(void)
     network_event_bridge_init();
 
     APP_ERROR_CHECK("E108", config_store_prepare("app_cfg"));
+
+    APP_ERROR_CHECK("E112", config_store_begin_section("Sit"));
     network_config_register_config_items();
+
+    APP_ERROR_CHECK("E113", config_store_begin_section("System"));
     system_config_register_config_items();
+
+    APP_ERROR_CHECK("E114", config_store_begin_section("Teplota"));
     teplota_register_config_items();
+
+    APP_ERROR_CHECK("E115", config_store_begin_section("Zasoba"));
     zasoba_register_config_items();
+
+    APP_ERROR_CHECK("E116", config_store_begin_section("Tlak"));
     tlak_register_config_items();
+
     APP_ERROR_CHECK("E106", config_webapp_prepare("app_cfg"));
 
     char wifi_ssid[32] = {0};
