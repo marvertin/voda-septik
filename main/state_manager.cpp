@@ -193,7 +193,7 @@ static void publish_zasoba_to_outputs(const sensor_event_t &event)
         enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM);
         (void)mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA);
     } else {
-        snprintf(text, sizeof(text), "O:%4.0fL", event.data.zasoba.objem);
+        snprintf(text, sizeof(text), "O:%4.2fm3", event.data.zasoba.objem);
         lcd_print(8, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_double(

@@ -11,7 +11,7 @@
     }
 
 const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] = {
-    TOPIC_ENTRY(TOPIC_STAV_ZASOBA_OBJEM,                 "stav/zasoba/objem_l",              PUBLISH_ONLY,   NUMBER,  1, true),
+    TOPIC_ENTRY(TOPIC_STAV_ZASOBA_OBJEM,                 "stav/zasoba/objem_m3",             PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_ZASOBA_HLADINA,               "stav/zasoba/hladina_m",            PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_CERPANI_PRUTOK,               "stav/cerpani/prutok_l_min",        PUBLISH_ONLY,   NUMBER,  1, true),
     TOPIC_ENTRY(TOPIC_STAV_CERPANI_CERPANO_CELKEM,       "stav/cerpani/cerpano_celkem_l",    PUBLISH_ONLY,   NUMBER,  1, true),

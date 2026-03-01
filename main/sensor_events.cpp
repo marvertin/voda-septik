@@ -94,7 +94,7 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_ZASOBA:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=zasoba ts=%lld objem=%.3fl hladina=%.3fm",
+                             "event=%s type=zasoba ts=%lld objem=%.3fm3 hladina=%.3fm",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
                              event->data.sensor.data.zasoba.objem,
