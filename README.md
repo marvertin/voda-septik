@@ -9,10 +9,18 @@
 
 Modul tlaku (`main/tlak.cpp`) meri dve 4-20 mA cidla (pred filtrem / za filtrem) a hodnoty mapuje pres kalibracni polozky dostupne v konfiguracni webapp.
 
-- `tlk_raw_4ma` (default `745`) - ADC RAW hodnota odpovidajici 4 mA.
-- `tlk_raw_20ma` (default `3722`) - ADC RAW hodnota odpovidajici 20 mA.
-- `tlk_p_min` (default `0.0`) - tlak [bar] pro 4 mA.
-- `tlk_p_max` (default `10.0`) - tlak [bar] pro 20 mA.
+- `tlk_b_raw_4ma` (default `745`) - ADC RAW hodnota pred filtrem odpovidajici 4 mA.
+- `tlk_b_raw_20ma` (default `3722`) - ADC RAW hodnota pred filtrem odpovidajici 20 mA.
+- `tlk_b_p_min` (default `0.0`) - tlak pred filtrem [bar] pro 4 mA.
+- `tlk_b_p_max` (default `10.0`) - tlak pred filtrem [bar] pro 20 mA.
+- `tlk_a_raw_4ma` (default `745`) - ADC RAW hodnota za filtrem odpovidajici 4 mA.
+- `tlk_a_raw_20ma` (default `3722`) - ADC RAW hodnota za filtrem odpovidajici 20 mA.
+- `tlk_a_p_min` (default `0.0`) - tlak za filtrem [bar] pro 4 mA.
+- `tlk_a_p_max` (default `10.0`) - tlak za filtrem [bar] pro 20 mA.
+- `tlk_ema_alpha` (default `0.55`) - spolecny EMA filtr pro obe cidla.
+- `tlk_hyst_bar` (default `0.02`) - spolecna hystereze [bar] pro obe cidla.
+- `tlk_sample_ms` (default `100`) - spolecna perioda mereni [ms] pro obe cidla.
+- `tlk_round_dec` (default `2`) - spolecny pocet desetinnych mist publikovaneho tlaku.
 - `tlk_dp_100` (default `1.0`) - rozdil tlaku [bar], ktery odpovida 100 % zanesenosti filtru.
 
 Publikovane MQTT hodnoty:
@@ -22,15 +30,17 @@ Publikovane MQTT hodnoty:
 - `stav/tlak/zanesenost_filtru_percent`
 
 Doporuceny postup prvotniho nastaveni:
-1. Pri stabilnim tlaku zmerit skutecny proud/RAW a upravit `tlk_raw_4ma` a `tlk_raw_20ma`.
-2. Nastavit realny rozsah cidla (`tlk_p_min`, `tlk_p_max`) podle datasheetu.
-3. Podle provozu filtru doladit `tlk_dp_100`, aby procenta zaneseni odpovidala realnemu stavu.
+1. Pro kazde cidlo zvlast zmerit referencni body 4 mA/20 mA a upravit `tlk_b_*` a `tlk_a_*`.
+2. Nastavit realny rozsah cidel (vychozi 0-10 bar) pomoci `tlk_b_p_min/max` a `tlk_a_p_min/max`.
+3. Podle dynamiky provozu doladit spolecnou filtraci (`tlk_ema_alpha`, `tlk_hyst_bar`, `tlk_sample_ms`, `tlk_round_dec`).
+4. Podle provozu filtru doladit `tlk_dp_100`, aby procenta zaneseni odpovidala realnemu stavu.
 
 Kalibracni checklist (rychly postup):
 - [ ] Zapnout debug pro tag `TLAK` a overit, ze hodnoty `raw` nekolisaji nestandardne.
-- [ ] Pri referencnim bode 4 mA nastavit `tlk_raw_4ma`.
-- [ ] Pri referencnim bode 20 mA nastavit `tlk_raw_20ma`.
-- [ ] Overit, ze `p=... bar` odpovida manometru, pripadne doladit `tlk_p_min`/`tlk_p_max`.
+- [ ] Pri referencnim bode 4 mA/20 mA nastavit kalibraci pred filtrem (`tlk_b_*`).
+- [ ] Pri referencnim bode 4 mA/20 mA nastavit kalibraci za filtrem (`tlk_a_*`).
+- [ ] Overit, ze tlaky odpovidaji manometru, pripadne doladit `tlk_b_p_min/max` a `tlk_a_p_min/max`.
+- [ ] Doladit spolecnou filtraci (`tlk_ema_alpha`, `tlk_hyst_bar`, `tlk_sample_ms`, `tlk_round_dec`) podle pozadovane dynamiky.
 - [ ] Pri znamem zanesenem stavu filtru doladit `tlk_dp_100`.
 
 ## Kalibrace objemu (webapp)

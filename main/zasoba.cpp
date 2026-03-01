@@ -52,6 +52,9 @@ static constexpr int32_t LEVEL_MAX_SAMPLE_MS = 1000;
 static constexpr int32_t LEVEL_MIN_ROUND_DECIMALS = 1;
 static constexpr int32_t LEVEL_MAX_ROUND_DECIMALS = 3;
 static constexpr int64_t LEVEL_CFG_DEBUG_PERIOD_US = 10LL * 1000LL * 1000LL;
+static constexpr uint32_t LEVEL_RAW_SANITY_MIN = 0;
+static constexpr uint32_t LEVEL_RAW_SANITY_MAX = 4095;
+static constexpr uint32_t LEVEL_RAW_SANITY_MIN_MARGIN = 80;
 
 static const config_item_t LEVEL_RAW_MIN_ITEM = {
     .key = "lvl_raw_min", .label = "Hladina RAW min", .description = "ADC RAW hodnota odpovidajici minimalni hladine.",
@@ -221,6 +224,12 @@ static void load_level_calibration_config(void)
 
 }
 
+static bool level_raw_is_plausible(uint32_t raw_value)
+{
+    return (raw_value <= LEVEL_RAW_SANITY_MAX - LEVEL_RAW_SANITY_MIN_MARGIN
+         && raw_value >= LEVEL_RAW_SANITY_MIN + LEVEL_RAW_SANITY_MIN_MARGIN);
+}
+
 /**
  * Inicializuje ADC pro čtení senzoru hladiny
  */
@@ -255,11 +264,26 @@ static esp_err_t adc_init(void)
  * Čte surovou hodnotu z ADC
  * @return RAW hodnota ADC
  */
-static uint32_t adc_read_raw(void)
+static bool adc_read_raw(uint32_t *raw_value)
 {
-    int raw_value = 0;
-    APP_ERROR_CHECK("E536", adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw_value));
-    return (uint32_t)raw_value;
+    if (raw_value == nullptr) {
+        return false;
+    }
+
+    int raw = 0;
+    esp_err_t result = adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Cteni ADC selhalo: %s", esp_err_to_name(result));
+        return false;
+    }
+
+    if (raw < LEVEL_RAW_SANITY_MIN || raw > LEVEL_RAW_SANITY_MAX) {
+        ESP_LOGW(TAG, "ADC vratilo nesmyslnou RAW hodnotu: %d", raw);
+        return false;
+    }
+
+    *raw_value = (uint32_t)raw;
+    return true;
 }
 
 /**
@@ -353,6 +377,33 @@ static float round_to_decimals(float value, int32_t decimals)
     return std::roundf(value * 100.0f) / 100.0f;
 }
 
+static void publish_invalid_level_measurement(int64_t timestamp_us, bool adc_ok, uint32_t raw_value)
+{
+    app_event_t invalid_event = {
+        .event_type = EVT_SENSOR,
+        .timestamp_us = timestamp_us,
+        .data = {
+            .sensor = {
+                .sensor_type = SENSOR_EVENT_ZASOBA,
+                .data = {
+                    .zasoba = {
+                        .objem = NAN,
+                        .hladina = NAN,
+                    },
+                },
+            },
+        },
+    };
+
+    bool queued = sensor_events_publish(&invalid_event, pdMS_TO_TICKS(20));
+    DEBUG_PUBLISH("zasoba_dyn",
+                  "q=%d ts=%lld invalid=1 adc_ok=%d raw=%lu",
+                  queued ? 1 : 0,
+                  (long long)timestamp_us,
+                  adc_ok ? 1 : 0,
+                  (unsigned long)(adc_ok ? raw_value : 0));
+}
+
 // Prednabi filtry tak, aby prvni publikovane hodnoty nebyly zkreslene rozbehem.
 static void warmup_filters(void)
 {
@@ -364,12 +415,17 @@ static void warmup_filters(void)
     const size_t buffer_size = level_filter.getBufferSize();
     ESP_LOGI(TAG, "Prebiha nabiti bufferu (%zu mereni)...", buffer_size);
     for (size_t index = 0; index < buffer_size; ++index) {
-        raw_value = adc_read_raw();
+        if (!adc_read_raw(&raw_value)) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+
         raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
         height_raw = adc_raw_to_height(raw_trimmed_value);
         height_ema = height_filter_ema(height_raw);
         (void)height_apply_hysteresis(height_ema);
     }
+
     ESP_LOGI(TAG, "Buffer nabit, zacinam publikovat vysledky");
 }
 
@@ -393,52 +449,60 @@ static void zasoba_task(void *pvParameters)
     float objem_m3_rounded;
 
     while (1) {
+        int64_t timestamp_us = esp_timer_get_time();
+
         // 1) Nacteni surove ADC hodnoty
-        raw_value = adc_read_raw();
-        // 2) Trimmed-mean na RAW
-        raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
-        // 3) Prevod RAW -> vyska hladiny [m]
-        hladina_raw = adc_raw_to_height(raw_trimmed_value);
-        // 4) EMA filtr na vysce
-        hladina_ema = height_filter_ema(hladina_raw);
-        // 5) Hystereze na vysce
-        hladina_hyst = height_apply_hysteresis(hladina_ema);
-        // 6) Prevod vyska -> objem [m3]
-        objem_m3_raw = height_to_volume_m3(hladina_hyst);
-        // 7) Zaokrouhleni na konfigurovany pocet desetinnych mist pro publikaci
-        objem_m3_rounded = round_to_decimals(objem_m3_raw, g_level_config.round_decimals);
-        
-        app_event_t event = {
-            .event_type = EVT_SENSOR,
-            .timestamp_us = esp_timer_get_time(),
-            .data = {
-                .sensor = {
-                    .sensor_type = SENSOR_EVENT_ZASOBA,
-                    .data = {
-                        .zasoba = {
-                            .objem = objem_m3_rounded,
-                            .hladina = hladina_hyst,
+        const bool adc_ok = adc_read_raw(&raw_value);
+        const bool raw_plausible = adc_ok && level_raw_is_plausible(raw_value);
+
+        if (!raw_plausible) {
+            publish_invalid_level_measurement(timestamp_us, adc_ok, raw_value);
+        } else {
+            // 2) Trimmed-mean na RAW
+            raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
+            // 3) Prevod RAW -> vyska hladiny [m]
+            hladina_raw = adc_raw_to_height(raw_trimmed_value);
+            // 4) EMA filtr na vysce
+            hladina_ema = height_filter_ema(hladina_raw);
+            // 5) Hystereze na vysce
+            hladina_hyst = height_apply_hysteresis(hladina_ema);
+            // 6) Prevod vyska -> objem [m3]
+            objem_m3_raw = height_to_volume_m3(hladina_hyst);
+            // 7) Zaokrouhleni na konfigurovany pocet desetinnych mist pro publikaci
+            objem_m3_rounded = round_to_decimals(objem_m3_raw, g_level_config.round_decimals);
+
+            app_event_t event = {
+                .event_type = EVT_SENSOR,
+                .timestamp_us = timestamp_us,
+                .data = {
+                    .sensor = {
+                        .sensor_type = SENSOR_EVENT_ZASOBA,
+                        .data = {
+                            .zasoba = {
+                                .objem = objem_m3_rounded,
+                                .hladina = hladina_hyst,
+                            },
                         },
                     },
                 },
-            },
-        };
+            };
 
-        bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
+            bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
-        DEBUG_PUBLISH("zasoba_dyn",
-                      "q=%d ts=%lld r=%lu rt=%lu h=%.4f he=%.4f hh=%.4f v=%.4f v2=%.3f",
-                      queued ? 1 : 0,
-                      (long long)event.timestamp_us,
-                      (unsigned long)raw_value,
-                      (unsigned long)raw_trimmed_value,
-                      (double)hladina_raw,
-                      (double)hladina_ema,
-                      (double)hladina_hyst,
-                      (double)objem_m3_raw,
-                      (double)objem_m3_rounded);
+            DEBUG_PUBLISH("zasoba_dyn",
+                          "q=%d ts=%lld r=%lu rt=%lu h=%.4f he=%.4f hh=%.4f v=%.4f v2=%.3f",
+                          queued ? 1 : 0,
+                          (long long)event.timestamp_us,
+                          (unsigned long)raw_value,
+                          (unsigned long)raw_trimmed_value,
+                          (double)hladina_raw,
+                          (double)hladina_ema,
+                          (double)hladina_hyst,
+                          (double)objem_m3_raw,
+                          (double)objem_m3_rounded);
+        }
 
-        publish_config_debug_periodic(event.timestamp_us);
+        publish_config_debug_periodic(timestamp_us);
 
         APP_ERROR_CHECK("E537", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(g_level_config.sample_ms));
