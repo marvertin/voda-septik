@@ -6,6 +6,7 @@ extern "C" {
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 
 #ifdef __cplusplus
 }
@@ -315,6 +316,7 @@ static void prefill_pressure_sensor(const pressure_sensor_ctx_t &ctx)
 static void tlak_task(void *pvParameters)
 {
     (void)pvParameters;
+    APP_ERROR_CHECK("E538", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Spoustim mereni tlaku (pred/za filtrem)...");
 
@@ -330,6 +332,7 @@ static void tlak_task(void *pvParameters)
         for (const pressure_sensor_ctx_t &sensor : sensors) {
             prefill_pressure_sensor(sensor);
         }
+        APP_ERROR_CHECK("E539", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 
@@ -401,6 +404,8 @@ static void tlak_task(void *pvParameters)
                   "pred=%lu za=%lu",
                   (unsigned long)pred_filtrem_sensor.raw_unfiltered,
                   (unsigned long)za_filtrem_sensor.raw_unfiltered);
+
+        APP_ERROR_CHECK("E540", esp_task_wdt_reset());
 
                   
         vTaskDelay(pdMS_TO_TICKS(1000));

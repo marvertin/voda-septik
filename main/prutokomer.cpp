@@ -6,6 +6,7 @@ extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include "driver/gpio.h"
 
 #ifdef __cplusplus
@@ -44,6 +45,9 @@ static void IRAM_ATTR flow_isr_handler(void *arg) {
 
 static void pocitani_pulsu(void *pvParameters)
 {
+    (void)pvParameters;
+    APP_ERROR_CHECK("E544", esp_task_wdt_add(nullptr));
+
     uint32_t previous_pulse_count = pulse_count;
     int64_t previous_sample_us = esp_timer_get_time();
     uint8_t sample_counter = 0;
@@ -133,6 +137,8 @@ static void pocitani_pulsu(void *pvParameters)
                       (double)s_prutok_ema,
                       (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
+
+        APP_ERROR_CHECK("E545", esp_task_wdt_reset());
     }
 }
 

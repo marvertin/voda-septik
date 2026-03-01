@@ -8,6 +8,7 @@ extern "C" {
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,6 +25,7 @@ extern "C" {
 #include "teplota.h"
 #include "webapp_startup.h"
 #include "debug_mqtt.h"
+#include "app_error_check.h"
 
 static const char *TAG = "mqtt_commands";
 static constexpr TickType_t REGISTER_RETRY_DELAY_TICKS = pdMS_TO_TICKS(500);
@@ -514,6 +516,7 @@ static void mqtt_commands_event_handler(void *handler_args,
 static void mqtt_commands_register_task(void *param)
 {
     (void)param;
+    APP_ERROR_CHECK("E549", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Start mqtt_commands_register_task");
 
@@ -542,8 +545,11 @@ static void mqtt_commands_register_task(void *param)
             ESP_LOGI(TAG, "MQTT client handle zatim neni k dispozici, cekam...");
         }
 
+        APP_ERROR_CHECK("E550", esp_task_wdt_reset());
         vTaskDelay(REGISTER_RETRY_DELAY_TICKS);
     }
+
+    APP_ERROR_CHECK("E551", esp_task_wdt_delete(nullptr));
 
     vTaskDelete(nullptr);
 }

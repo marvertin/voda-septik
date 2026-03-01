@@ -6,6 +6,7 @@ extern "C" {
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <driver/gpio.h>
 
 #ifdef __cplusplus
@@ -242,6 +243,9 @@ static float height_to_volume_liters(float height_m)
 
 static void zasoba_task(void *pvParameters)
 {
+    (void)pvParameters;
+    APP_ERROR_CHECK("E535", esp_task_wdt_add(nullptr));
+
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
     
     // Inicializace ADC
@@ -305,6 +309,8 @@ static void zasoba_task(void *pvParameters)
                       (long)g_level_config.adc_raw_max,
                       (double)g_level_config.height_min,
                       (double)g_level_config.height_max);
+
+        APP_ERROR_CHECK("E537", esp_task_wdt_reset());
         
         
         vTaskDelay(pdMS_TO_TICKS(20));

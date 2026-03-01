@@ -4,12 +4,15 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "mqtt_publish.h"
 #include "status_display.h"
+#include "app_error_check.h"
 
 static const char *TAG = "mqtt_publisher_task";
 static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
 static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(60 * 1000);
+static const TickType_t MQTT_PUBLISH_DEQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(1000);
 
 static QueueHandle_t s_publish_queue = nullptr;
 static TaskHandle_t s_publish_task = nullptr;
@@ -221,11 +224,13 @@ static esp_err_t publish_if_changed(const mqtt_publish_event_t &event)
 static void mqtt_publisher_task(void *param)
 {
     (void)param;
+    APP_ERROR_CHECK("E546", esp_task_wdt_add(nullptr));
 
     mqtt_publish_queue_item_t item;
     memset(&item, 0, sizeof(item));
     while (true) {
-        if (xQueueReceive(s_publish_queue, &item, portMAX_DELAY) != pdPASS) {
+        if (xQueueReceive(s_publish_queue, &item, MQTT_PUBLISH_DEQUEUE_TIMEOUT_TICKS) != pdPASS) {
+            APP_ERROR_CHECK("E547", esp_task_wdt_reset());
             continue;
         }
 
@@ -238,6 +243,8 @@ static void mqtt_publisher_task(void *param)
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "Zpracovani publish eventu selhalo: %s", esp_err_to_name(result));
         }
+
+        APP_ERROR_CHECK("E548", esp_task_wdt_reset());
     }
 }
 

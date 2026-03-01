@@ -32,12 +32,28 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_netif.h"
+#include "esp_task_wdt.h"
 
 extern "C" {
     void cpp_app_main(void);
 }
 
 static const char *TAG = "voda_septik";
+static constexpr uint32_t TASK_WDT_TIMEOUT_MS = 2000;
+
+static esp_err_t task_wdt_init_or_reconfigure(const esp_task_wdt_config_t *cfg)
+{
+    if (cfg == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const esp_err_t init_result = esp_task_wdt_init(cfg);
+    if (init_result == ESP_ERR_INVALID_STATE) {
+        return esp_task_wdt_reconfigure(cfg);
+    }
+
+    return init_result;
+}
 
 static bool is_error_reset_reason(esp_reset_reason_t reason)
 {
@@ -162,6 +178,18 @@ void cpp_app_main(void)
 
     APP_ERROR_CHECK("E102", app_config_ensure_defaults());
     ESP_LOGI(TAG, "System bezi v normalnim rezimu");
+
+    const esp_task_wdt_config_t task_wdt_cfg = {
+        .timeout_ms = TASK_WDT_TIMEOUT_MS,
+        .idle_core_mask = (1U << 0) | (1U << 1),
+        .trigger_panic = false,
+    };
+
+    APP_ERROR_CHECK("E530", task_wdt_init_or_reconfigure(&task_wdt_cfg));
+    ESP_LOGI(TAG,
+             "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
+             (unsigned long)TASK_WDT_TIMEOUT_MS,
+             (unsigned long)task_wdt_cfg.idle_core_mask);
 
     sensor_events_init(32);
     network_event_bridge_init();

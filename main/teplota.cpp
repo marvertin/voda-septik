@@ -10,6 +10,7 @@ extern "C" {
 #include <esp_log.h>
 #include <esp_err.h>
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <driver/gpio.h>
 
 #ifdef __cplusplus
@@ -502,6 +503,7 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
 static void temperature_task(void *pvParameters)
 {
     (void)pvParameters;
+    APP_ERROR_CHECK("E541", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG,
              "Init teplota: onewire_gpio=%d pullup=1 conversion_ms=%d read_period_ms=%d discovery_period_s=%d",
@@ -562,6 +564,7 @@ static void temperature_task(void *pvParameters)
         const bool conversion_started = ds18b20_start_conversion_all(TEMPERATURE_SENSOR_GPIO);
         if (conversion_started) {
             vTaskDelay(pdMS_TO_TICKS(TEMPERATURE_CONVERSION_MS));
+            APP_ERROR_CHECK("E542", esp_task_wdt_reset());
         } else {
             ESP_LOGE(TAG, "Nebylo mozne spustit hromadnou konverzi teplot");
         }
@@ -592,6 +595,7 @@ static void temperature_task(void *pvParameters)
         }
         
         // Čtení každou sekundu
+        APP_ERROR_CHECK("E543", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(READ_PERIOD_MS));
     }
 }

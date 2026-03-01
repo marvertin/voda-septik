@@ -8,6 +8,7 @@ extern "C" {
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 
@@ -25,9 +26,11 @@ extern "C" {
 #include "webapp_startup.h"
 #include "status_display.h"
 #include "restart_info.h"
+#include "app_error_check.h"
 #include <tm1637.h>
 
 static const char *TAG = "state_manager";
+static constexpr TickType_t STATE_MANAGER_EVENT_WAIT_TICKS = pdMS_TO_TICKS(1000);
 
 static bool s_temp_probe_fault_water = false;
 static bool s_temp_probe_fault_air = false;
@@ -284,6 +287,7 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
 static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
+    APP_ERROR_CHECK("E531", esp_task_wdt_add(nullptr));
 
     app_event_t event = {};
     char debug_line[128];
@@ -291,7 +295,8 @@ static void state_manager_task(void *pvParameters)
     bool boot_diagnostics_published = false;
 
     while (true) {
-        if (!sensor_events_receive(&event, portMAX_DELAY)) {
+        if (!sensor_events_receive(&event, STATE_MANAGER_EVENT_WAIT_TICKS)) {
+            APP_ERROR_CHECK("E532", esp_task_wdt_reset());
             continue;
         }
 
@@ -339,6 +344,7 @@ static void state_manager_task(void *pvParameters)
 
                     status_display_ap_mode();
                     ESP_LOGW(TAG, "AP rezim aktivni: state manager se ukoncuje (z AP vede jen reset)");
+                    APP_ERROR_CHECK("E533", esp_task_wdt_delete(nullptr));
                     vTaskDelete(NULL);
                 }
 
@@ -422,6 +428,8 @@ static void state_manager_task(void *pvParameters)
                 ESP_LOGW(TAG, "Neznamy event_type: %d", (int)event.event_type);
                 break;
         }
+
+        APP_ERROR_CHECK("E534", esp_task_wdt_reset());
     }
 }
 
