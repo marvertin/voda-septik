@@ -194,21 +194,25 @@ static esp_err_t adc_init(void)
 }
 
 /**
- * Čte průměrnou hodnotu z ADC
- * @return průměrná RAW hodnota ADC po oříznutí extrémů
+ * Čte surovou hodnotu z ADC
+ * @return RAW hodnota ADC
  */
-static uint32_t adc_read_average(void)
+static uint32_t adc_read_raw(void)
 {
     int raw_value = 0;
-    if (adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw_value) != ESP_OK) {
-        ESP_LOGE(TAG, "Chyba pri cteni ADC");
-        return 0;
-    }
-    
-    // Vložíme hodnotu do filtru
-    level_filter.insert(raw_value);
+    APP_ERROR_CHECK("E536", adc_shared_read(LEVEL_SENSOR_ADC_CHANNEL, &raw_value));
+    return (uint32_t)raw_value;
+}
+
+/**
+ * Prožene RAW hodnotu filtrem a vrátí filtrovanou hodnotu
+ * @param raw_value RAW hodnota z ADC
+ * @return filtrovaná RAW hodnota ADC po oříznutí extrémů
+ */
+static uint32_t adc_filter_value(uint32_t raw_value)
+{
+    level_filter.insert((int)raw_value);
     vTaskDelay(pdMS_TO_TICKS(10));  // Krátká pauza mezi vzorky
-    
     return level_filter.getValue();
 }
 
@@ -251,26 +255,29 @@ static void zasoba_task(void *pvParameters)
     // Inicializace ADC
     APP_ERROR_CHECK("E520", adc_init());
     
+    uint32_t raw_value;
+    uint32_t filtered_raw_value;
+    float hladina;
+    float objem;
+
     // Nabití bufferu na začátku - přečteme tolik měření, jaká je velikost bufferu
     // aby se zabránilo zkresleným údajům na začátku
     size_t buffer_size = level_filter.getBufferSize();
     ESP_LOGI(TAG, "Prebiha nabiti bufferu (%zu mereni)...", buffer_size);
     for (size_t i = 0; i < buffer_size; i++) {
-        adc_read_average();  // Jen vkládáme bez publikování
+        raw_value = adc_read_raw();
+        adc_filter_value(raw_value);  // Jen vkládáme bez publikování
     }
     ESP_LOGI(TAG, "Buffer nabit, zacinam publikovat vysledky");
     
-    uint32_t raw_value;
-    float hladina;
-    float objem;
-    
     while (1)
     {
-        // Čtení průměru z ADC
-        raw_value = adc_read_average();
+        // Čtení surové a filtrované hodnoty z ADC
+        raw_value = adc_read_raw();
+        filtered_raw_value = adc_filter_value(raw_value);
         
         // Převod na výšku
-        hladina = adc_raw_to_height(raw_value);
+        hladina = adc_raw_to_height(filtered_raw_value);
         objem = height_to_volume_liters(hladina);
         
         // Výstup do logu
@@ -298,10 +305,11 @@ static void zasoba_task(void *pvParameters)
         }
 
         DEBUG_PUBLISH("zasoba",
-                      "queued=%d ts=%lld raw=%lu hladina_m=%.6f objem_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
+                      "queued=%d ts=%lld raw=%lu raw_filt=%lu hladina_m=%.6f objem_l=%.3f area_m2=%.3f raw_min=%ld raw_max=%ld h_min=%.3f h_max=%.3f",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
                       (unsigned long)raw_value,
+                      (unsigned long)filtered_raw_value,
                       (double)hladina,
                       (double)objem,
                       (double)g_level_config.tank_area_m2,
