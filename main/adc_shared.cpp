@@ -35,14 +35,14 @@ void adc_channel_init(adc_channel_t channel)
 {
 
      adc_oneshot_chan_cfg_t chan_cfg = {
-       .atten = ADC_ATTEN_DB_0,              // nejlepší přesnost do ~1.1V
+       .atten = ADC_ATTEN_DB_12,              // nejlepší přesnost do ~1.1V
        .bitwidth = ADC_BITWIDTH_12,      // 12 bit na ESP32
     };  
 
     esp_err_t cfg_result = adc_oneshot_config_channel(s_adc_handle, channel, &chan_cfg);
 
     APP_ERROR_CHECK("E519", cfg_result);
-    ESP_LOGI(TAG, "ADC kanal nakonfigurovan (channel=%d bitwidth=%d atten=%d)", (int)channel, (int)ADC_BITWIDTH_12, (int)ADC_ATTEN_DB_0    );
+    ESP_LOGI(TAG, "ADC kanal nakonfigurovan (channel=%d bitwidth=%d atten=%d)", (int)channel, chan_cfg.bitwidth, chan_cfg.atten);
 }   
 
 int  adc_read(adc_channel_t channel)

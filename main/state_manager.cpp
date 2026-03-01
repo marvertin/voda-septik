@@ -32,14 +32,44 @@ extern "C" {
 static const char *TAG = "state_manager";
 static constexpr TickType_t STATE_MANAGER_EVENT_WAIT_TICKS = pdMS_TO_TICKS(1000);
 
-static bool s_temp_probe_fault_water = false;
-static bool s_temp_probe_fault_air = false;
 static uint32_t s_nvs_errors = 0;
 static uint32_t s_mqtt_reconnects = 0;
 static int32_t s_last_mqtt_rc = 0;
 static bool s_mqtt_ready_seen_once = false;
 static bool s_disconnect_timer_active = false;
 static int64_t s_disconnect_started_us = 0;
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_TEMP_WATER{
+    2,
+    static_cast<uint8_t>(TM1637_SEG_F)
+};
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_TEMP_AIR{
+    2,
+    static_cast<uint8_t>(TM1637_SEG_B)
+};
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_LEVEL {
+    3,
+    static_cast<uint8_t>(TM1637_SEG_D)
+};
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_PRESSURE_BEFORE {
+    3,
+    static_cast<uint8_t>(TM1637_SEG_F)
+};
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_PRESSURE_AFTER {
+    3,
+    static_cast<uint8_t>(TM1637_SEG_B)
+};
+
+
+// Toto prakticky asi nenastane, ale pro jistotu indikovat chybu senzoru i v případě, že naměřená hodnota není číslo (NaN) nebo nekonečno.
+static constexpr SensorFaultDisplay SENSOR_FAULT_FLOW{
+    3,
+    static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G)
+};
 
 static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
 {
@@ -72,9 +102,9 @@ static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
 
 
 
-static void set_sensor_fault_indicator(sensor_event_type_t sensor_type, bool is_fault)
+static void set_sensor_fault_indicator(SensorFaultDisplay fault_type, bool is_fault)
 {
-    status_display_set_sensor_fault(sensor_type, is_fault);
+    status_display_set_sensor_fault(fault_type, is_fault);
 
 
 }
@@ -136,6 +166,7 @@ static void publish_boot_diagnostics_once(void)
     }
 }
 
+
 static void publish_temperature_to_outputs(const sensor_event_t &event)
 {
     const sensor_temperature_probe_t probe = event.data.temperature.probe;
@@ -144,11 +175,11 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
     const bool sensor_fault = std::isnan(event.data.temperature.temperature_c);
 
     if (probe == SENSOR_TEMPERATURE_PROBE_AIR) {
-        s_temp_probe_fault_air = sensor_fault;
+        set_sensor_fault_indicator(SENSOR_FAULT_TEMP_AIR, sensor_fault);
     } else {
-        s_temp_probe_fault_water = sensor_fault;
+        set_sensor_fault_indicator(SENSOR_FAULT_TEMP_WATER, sensor_fault);
     }
-    set_sensor_fault_indicator(SENSOR_EVENT_TEMPERATURE, s_temp_probe_fault_water || s_temp_probe_fault_air);
+
 
     const mqtt_topic_id_t topic_id =
         (probe == SENSOR_TEMPERATURE_PROBE_AIR)
@@ -156,22 +187,26 @@ static void publish_temperature_to_outputs(const sensor_event_t &event)
             : mqtt_topic_id_t::TOPIC_STAV_TEPLOTA_VODA;
 
     if (sensor_fault) {
-        if (probe == SENSOR_TEMPERATURE_PROBE_WATER) {
-            snprintf(text, sizeof(text), "T: --.- ");
-            lcd_print(8, 0, text, false, 0);
-        }
+        snprintf(text, sizeof(text), "--.- ");
+    } else {
+        snprintf(text, sizeof(text), "%2f ", event.data.temperature.temperature_c);
+    }
+    if (probe == SENSOR_TEMPERATURE_PROBE_WATER) {
+        lcd_print(14, 0, text, false, 0);
+    }
+    if (probe == SENSOR_TEMPERATURE_PROBE_AIR) {
+        lcd_print(14, 1, text, false, 0);
+    }
 
+
+    if (sensor_fault) {
         enqueue_result = mqtt_publisher_enqueue_empty(topic_id);
     } else {
-        if (probe == SENSOR_TEMPERATURE_PROBE_WATER) {
-            snprintf(text, sizeof(text), "T:%4.1f ", event.data.temperature.temperature_c);
-            lcd_print(8, 0, text, false, 0);
-        }
-
         enqueue_result = mqtt_publisher_enqueue_double(
             topic_id,
             (double)event.data.temperature.temperature_c);
     }
+
 
     if (enqueue_result != ESP_OK) {
         const char *probe_name = (probe == SENSOR_TEMPERATURE_PROBE_AIR) ? "vzduchu" : "vody";
@@ -184,17 +219,24 @@ static void publish_zasoba_to_outputs(const sensor_event_t &event)
     char text[16];
     esp_err_t enqueue_result;
     const bool sensor_fault = !std::isfinite(event.data.zasoba.objem) || !std::isfinite(event.data.zasoba.hladina);
-    set_sensor_fault_indicator(SENSOR_EVENT_ZASOBA, sensor_fault);
+    set_sensor_fault_indicator(SENSOR_FAULT_LEVEL, sensor_fault);
 
     if (sensor_fault) {
-        snprintf(text, sizeof(text), "O: ---  ");
-        lcd_print(8, 1, text, false, 0);
+        snprintf(text, sizeof(text), "----");
+        lcd_print(5, 0, text, false, 0);
+        lcd_print(5, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM);
         (void)mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZASOBA_HLADINA);
     } else {
-        snprintf(text, sizeof(text), "O:%4.2fm3", event.data.zasoba.objem);
-        lcd_print(8, 1, text, false, 0);
+        snprintf(text, sizeof(text), "%4.0f", event.data.zasoba.hladina * 1000);
+        lcd_print(5, 0, text, false, 0);
+        if (event.data.zasoba.objem < 10.0f) {
+            snprintf(text, sizeof(text), "%4.2f", event.data.zasoba.objem);
+        } else {
+            snprintf(text, sizeof(text), "%4.1f", event.data.zasoba.objem);
+        }
+        lcd_print(5, 1, text, false, 0);
 
         enqueue_result = mqtt_publisher_enqueue_double(
             mqtt_topic_id_t::TOPIC_STAV_ZASOBA_OBJEM,
@@ -215,15 +257,15 @@ static void publish_zasoba_to_outputs(const sensor_event_t &event)
 static void publish_flow_to_outputs(const sensor_event_t &event)
 {
     const bool sensor_fault = !std::isfinite(event.data.flow.prutok) || !std::isfinite(event.data.flow.cerpano_celkem);
-    set_sensor_fault_indicator(SENSOR_EVENT_FLOW, sensor_fault);
+    set_sensor_fault_indicator(SENSOR_FAULT_FLOW, sensor_fault);
     status_display_set_prutok(event.data.flow.prutok);
 
     char liters_text[16];
-    snprintf(liters_text, sizeof(liters_text), "L:%5.1f ", event.data.flow.cerpano_celkem);
+    snprintf(liters_text, sizeof(liters_text), "%4.1f", event.data.flow.cerpano_celkem);
     lcd_print(0, 0, liters_text, false, 0);
 
     char flow_text[16];
-    snprintf(flow_text, sizeof(flow_text), "Q:%4.1f ", event.data.flow.prutok);
+    snprintf(flow_text, sizeof(flow_text), "%4.1f", event.data.flow.prutok);
     lcd_print(0, 1, flow_text, false, 0);
 
     esp_err_t flow_result = mqtt_publisher_enqueue_double(
@@ -254,7 +296,8 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
         !std::isfinite(za_filtrem) ||
         !std::isfinite(rozdil_filtru) ||
         !std::isfinite(zanesenost_filtru);
-    set_sensor_fault_indicator(SENSOR_EVENT_PRESSURE, sensor_fault);
+    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_BEFORE, !std::isfinite(pred_filtrem));
+    set_sensor_fault_indicator(SENSOR_FAULT_PRESSURE_AFTER, !std::isfinite(za_filtrem));
 
     if (sensor_fault) {
         esp_err_t before_empty = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_TLAK_PRED_FILTREM);

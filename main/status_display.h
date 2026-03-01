@@ -7,9 +7,15 @@
 extern "C" {
 #endif
 
+struct SensorFaultDisplay
+{
+    uint8_t pos;
+    uint8_t segments;
+};
+
 void status_display_init(void);
 void status_display_set_network_state(const network_event_t *event);
-void status_display_set_sensor_fault(sensor_event_type_t sensor_type, bool is_fault);
+void status_display_set_sensor_fault(SensorFaultDisplay fault_type, bool is_fault);
 void status_display_notify_mqtt_activity(void);
 void status_display_set_prutok(float prutok);
 //void status_display_set_text(const char *text);

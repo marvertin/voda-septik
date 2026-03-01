@@ -46,13 +46,7 @@ static bool s_mqtt_activity_timer_running = false;
 static float s_prutok = 0.0f;
 static uint8_t s_current_brightness_level = BRIGHTNESS_LEVEL_HIGH;
 
-static constexpr uint8_t SENSOR_FAULT_TEMP_POS = 2;
-static constexpr uint8_t SENSOR_FAULT_LEVEL_POS = 2;
-static constexpr uint8_t SENSOR_FAULT_FLOW_POS = 3;
 
-static constexpr uint8_t SENSOR_FAULT_TEMP_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_B | TM1637_SEG_C);
-static constexpr uint8_t SENSOR_FAULT_LEVEL_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_E | TM1637_SEG_F);
-static constexpr uint8_t SENSOR_FAULT_FLOW_SEGMENTS = static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G);
 
 StaticTimer_t s_mqtt_activity_colon_on_timer_buffer;
 StaticTimer_t s_mqtt_activity_colon_off_timer_buffer;
@@ -161,21 +155,9 @@ void status_display_set_prutok(float prutok)
     taskEXIT_CRITICAL(&s_status_mux);
 }
 
-void status_display_set_sensor_fault(sensor_event_type_t sensor_type, bool is_fault)
+void status_display_set_sensor_fault(SensorFaultDisplay fault_type, bool is_fault)
 {
-    switch (sensor_type) {
-        case SENSOR_EVENT_TEMPERATURE:
-            set_segments(SENSOR_FAULT_TEMP_SEGMENTS, SENSOR_FAULT_TEMP_POS, is_fault);
-            break;
-        case SENSOR_EVENT_ZASOBA:
-            set_segments(SENSOR_FAULT_LEVEL_SEGMENTS, SENSOR_FAULT_LEVEL_POS, is_fault);
-            break;
-        case SENSOR_EVENT_FLOW:
-            set_segments(SENSOR_FAULT_FLOW_SEGMENTS, SENSOR_FAULT_FLOW_POS, is_fault);
-            break;
-        default:
-            break;
-    }
+    set_segments(fault_type.segments, fault_type.pos, is_fault);
     if (is_fault) {
         set_max_briteness_for_some_time();
     }
