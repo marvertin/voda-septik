@@ -73,6 +73,13 @@ Poznamka (migrace):
 - Konfiguracni polozka `mqtt_topic` byla odstranena.
 - Korenny topic je nyni pevne dany v registru topiku (`main/mqtt_topics.*`) jako `voda/septik`.
 
+## Home Assistant MQTT discovery
+
+- Firmware po kazdem pripojeni k MQTT automaticky publikuje discovery konfiguraci pro vsechny `PUBLISH_ONLY` topicy.
+- Discovery konfigurace jsou publikovane jako retained zpravy pod vetvi `homeassistant/.../config`.
+- Device je seskupene pod identifikatorem `voda_septik_esp32`.
+- Pro odebrani starych entit je potreba smazat retained discovery topicy na brokeru.
+
 ```
 voda/septik                         Voda v nadrzi (byvaly septik), vcetne dalsich budoucih pouziti (napr. bazen)
 
