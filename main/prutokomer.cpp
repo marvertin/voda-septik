@@ -123,9 +123,6 @@ static void pocitani_pulsu(void *pvParameters)
         };
 
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
-        if (!queued) {
-            ESP_LOGW(TAG, "Fronta sensor eventu je plna, prutok zahozen");
-        }
 
         DEBUG_PUBLISH("prutok",
                       "queued=%d ts=%lld new_pulses=%lu elapsed_us=%lld raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",

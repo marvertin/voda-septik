@@ -298,9 +298,6 @@ static void tlak_task(void *pvParameters)
         };
 
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
-        if (!queued) {
-            ESP_LOGW(TAG, "Fronta sensor eventu je plna, tlak zahozen");
-        }
 
         ESP_LOGD(TAG,
              "pred: raw_pre=%lu raw_post=%lu i=%.2f mA p=%.3f bar | za: raw_pre=%lu raw_post=%lu i=%.2f mA p=%.3f bar | dP=%.3f bar clog=%.1f%% queued=%d",

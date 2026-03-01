@@ -25,47 +25,70 @@ extern "C" {
 
 #define TAG "zasoba"
 
-// ADC konfigurace pro senzor hladiny je centralizovana v pins.h
+// --- Modul zasoba: konfigurace, filtrace a publikace objemu/vysky ---
+// ADC konfigurace pro senzor hladiny je centralizovana v pins.h.
+
+// Vychozi kalibracni hodnoty a limity (jedine misto, kde jsou cisla definovana)
+static constexpr int32_t LEVEL_DEFAULT_RAW_MIN = 540;
+static constexpr int32_t LEVEL_DEFAULT_RAW_MAX = 950;
+static constexpr float LEVEL_DEFAULT_HEIGHT_MIN_M = 0.0f;
+static constexpr float LEVEL_DEFAULT_HEIGHT_MAX_M = 0.290f;
+static constexpr float LEVEL_DEFAULT_TANK_AREA_M2 = 5.4f;
+static constexpr float LEVEL_DEFAULT_EMA_ALPHA = 0.25f;
+static constexpr float LEVEL_DEFAULT_HYST_M = 0.002f;
+static constexpr int32_t LEVEL_DEFAULT_SAMPLE_MS = 20;
+
+static constexpr float LEVEL_MIN_HEIGHT_M = 0.0f;
+static constexpr float LEVEL_MAX_HEIGHT_M = 5.0f;
+static constexpr float LEVEL_MIN_TANK_AREA_M2 = 0.1f;
+static constexpr float LEVEL_MAX_TANK_AREA_M2 = 50.0f;
+static constexpr float LEVEL_MIN_EMA_ALPHA = 0.01f;
+static constexpr float LEVEL_MAX_EMA_ALPHA = 1.0f;
+static constexpr float LEVEL_MIN_HYST_M = 0.0f;
+static constexpr float LEVEL_MAX_HYST_M = 0.05f;
+static constexpr int32_t LEVEL_MIN_SAMPLE_MS = 10;
+static constexpr int32_t LEVEL_MAX_SAMPLE_MS = 1000;
+static constexpr int64_t LEVEL_CFG_DEBUG_PERIOD_US = 10LL * 1000LL * 1000LL;
 
 static const config_item_t LEVEL_RAW_MIN_ITEM = {
     .key = "lvl_raw_min", .label = "Hladina RAW min", .description = "ADC RAW hodnota odpovidajici minimalni hladine.",
-    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 540, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = LEVEL_DEFAULT_RAW_MIN, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 0, .min_int = 0, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t LEVEL_RAW_MAX_ITEM = {
     .key = "lvl_raw_max", .label = "Hladina RAW max", .description = "ADC RAW hodnota odpovidajici maximalni hladine.",
-    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 950, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = LEVEL_DEFAULT_RAW_MAX, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 0, .min_int = 1, .max_int = 4095, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t LEVEL_H_MIN_ITEM = {
     .key = "lvl_h_min", .label = "Hladina vyska min [m]", .description = "Vyska hladiny pro minimalni hodnotu senzoru.",
-    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.0f, .default_bool = false,
-    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 5.0f,
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_HEIGHT_MIN_M, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_HEIGHT_M, .max_float = LEVEL_MAX_HEIGHT_M,
 };
 static const config_item_t LEVEL_H_MAX_ITEM = {
     .key = "lvl_h_max", .label = "Hladina vyska max [m]", .description = "Vyska hladiny pro maximalni hodnotu senzoru.",
-    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.290f, .default_bool = false,
-    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 5.0f,
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_HEIGHT_MAX_M, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_HEIGHT_M, .max_float = LEVEL_MAX_HEIGHT_M,
 };
 static const config_item_t LEVEL_TANK_AREA_ITEM = {
     .key = "tank_area_m2", .label = "Plocha nadrze [m2]", .description = "Pudorysna plocha nadrze pouzita pro prepocet vysky na objem.",
-    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 5.4f, .default_bool = false,
-    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.1f, .max_float = 50.0f,
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_TANK_AREA_M2, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_TANK_AREA_M2, .max_float = LEVEL_MAX_TANK_AREA_M2,
 };
 static const config_item_t LEVEL_EMA_ALPHA_ITEM = {
     .key = "lvl_ema_alpha", .label = "Hladina EMA alpha", .description = "Koeficient EMA filtru na vysce hladiny (0-1).",
-    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.25f, .default_bool = false,
-    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.01f, .max_float = 1.0f,
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_EMA_ALPHA, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_EMA_ALPHA, .max_float = LEVEL_MAX_EMA_ALPHA,
 };
 static const config_item_t LEVEL_HYST_M_ITEM = {
     .key = "lvl_hyst_m", .label = "Hladina hystereze [m]", .description = "Mrtve pasmo hystereze vysky hladiny v metrech.",
-    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = 0.002f, .default_bool = false,
-    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.05f,
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_HYST_M, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_HYST_M, .max_float = LEVEL_MAX_HYST_M,
 };
 static const config_item_t LEVEL_SAMPLE_MS_ITEM = {
     .key = "lvl_sample_ms", .label = "Hladina perioda mereni [ms]", .description = "Perioda cteni senzoru hladiny a publikace hodnot.",
-    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = 20, .default_float = 0.0f, .default_bool = false,
-    .max_string_len = 0, .min_int = 10, .max_int = 1000, .min_float = 0.0f, .max_float = 0.0f,
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = LEVEL_DEFAULT_SAMPLE_MS, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = LEVEL_MIN_SAMPLE_MS, .max_int = LEVEL_MAX_SAMPLE_MS, .min_float = 0.0f, .max_float = 0.0f,
 };
 
 void zasoba_register_config_items(void)
@@ -92,22 +115,48 @@ typedef struct {
 } level_calibration_config_t;
 
 static level_calibration_config_t g_level_config = {
-    .adc_raw_min = 540,
-    .adc_raw_max = 950,
-    .height_min = 0.0f,
-    .height_max = 0.290f,
-    .tank_area_m2 = 5.4f,
-    .ema_alpha = 0.25f,
-    .hyst_m = 0.002f,
-    .sample_ms = 20,
+    .adc_raw_min = LEVEL_DEFAULT_RAW_MIN,
+    .adc_raw_max = LEVEL_DEFAULT_RAW_MAX,
+    .height_min = LEVEL_DEFAULT_HEIGHT_MIN_M,
+    .height_max = LEVEL_DEFAULT_HEIGHT_MAX_M,
+    .tank_area_m2 = LEVEL_DEFAULT_TANK_AREA_M2,
+    .ema_alpha = LEVEL_DEFAULT_EMA_ALPHA,
+    .hyst_m = LEVEL_DEFAULT_HYST_M,
+    .sample_ms = LEVEL_DEFAULT_SAMPLE_MS,
 };
 
-// Vytvoříme instanci filtrů pro měření hladiny (31 prvků, 5 oříznutých z obou stran)
+// Stav filtrace mereni hladiny (31 prvku, 5 orezanych z obou stran)
 static TrimmedMean<31, 5> level_filter;
 static float s_height_ema_value = 0.0f;
 static bool s_height_ema_initialized = false;
 static float s_height_hysteresis_value = 0.0f;
 static bool s_height_hysteresis_initialized = false;
+static int64_t s_last_cfg_debug_publish_us = 0;
+
+static void publish_config_debug(void)
+{
+    DEBUG_PUBLISH("zasoba_cfg",
+                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f e=%.3f hy=%.4f sm=%ld",
+                  (long)g_level_config.adc_raw_min,
+                  (long)g_level_config.adc_raw_max,
+                  (double)g_level_config.height_min,
+                  (double)g_level_config.height_max,
+                  (double)g_level_config.tank_area_m2,
+                  (double)g_level_config.ema_alpha,
+                  (double)g_level_config.hyst_m,
+                  (long)g_level_config.sample_ms);
+}
+
+static void publish_config_debug_periodic(int64_t now_us)
+{
+    if (s_last_cfg_debug_publish_us != 0
+        && (now_us - s_last_cfg_debug_publish_us) < LEVEL_CFG_DEBUG_PERIOD_US) {
+        return;
+    }
+
+    publish_config_debug();
+    s_last_cfg_debug_publish_us = now_us;
+}
 
 static void load_level_calibration_config(void)
 {
@@ -121,22 +170,22 @@ static void load_level_calibration_config(void)
     g_level_config.sample_ms = config_store_get_i32_item(&LEVEL_SAMPLE_MS_ITEM);
 
     if (g_level_config.tank_area_m2 <= 0.0f) {
-        g_level_config.tank_area_m2 = 5.4f;
+        g_level_config.tank_area_m2 = LEVEL_DEFAULT_TANK_AREA_M2;
         ESP_LOGW(TAG, "Neplatna plocha nadrze, pouzivam default %.3f m2", (double)g_level_config.tank_area_m2);
     }
 
     if (g_level_config.ema_alpha <= 0.0f || g_level_config.ema_alpha > 1.0f) {
-        g_level_config.ema_alpha = 0.25f;
+        g_level_config.ema_alpha = LEVEL_DEFAULT_EMA_ALPHA;
         ESP_LOGW(TAG, "Neplatna ema_alpha, pouzivam default %.3f", (double)g_level_config.ema_alpha);
     }
 
     if (g_level_config.hyst_m < 0.0f) {
-        g_level_config.hyst_m = 0.002f;
+        g_level_config.hyst_m = LEVEL_DEFAULT_HYST_M;
         ESP_LOGW(TAG, "Neplatna hyst_m, pouzivam default %.4f m", (double)g_level_config.hyst_m);
     }
 
     if (g_level_config.sample_ms < 1) {
-        g_level_config.sample_ms = 20;
+        g_level_config.sample_ms = LEVEL_DEFAULT_SAMPLE_MS;
         ESP_LOGW(TAG, "Neplatna sample_ms, pouzivam default %ld ms", (long)g_level_config.sample_ms);
     }
 
@@ -151,16 +200,6 @@ static void load_level_calibration_config(void)
              g_level_config.hyst_m,
              (long)g_level_config.sample_ms);
 
-    DEBUG_PUBLISH("zasoba_cfg",
-                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f e=%.3f hy=%.4f sm=%ld",
-                  (long)g_level_config.adc_raw_min,
-                  (long)g_level_config.adc_raw_max,
-                  (double)g_level_config.height_min,
-                  (double)g_level_config.height_max,
-                  (double)g_level_config.tank_area_m2,
-                  (double)g_level_config.ema_alpha,
-                  (double)g_level_config.hyst_m,
-                  (long)g_level_config.sample_ms);
 }
 
 /**
@@ -222,15 +261,16 @@ static uint32_t adc_filter_trimmed_mean(uint32_t raw_value)
  */
 static float adc_raw_to_height(uint32_t raw_value)
 {
-    // Lineární interpolace
+    // Linearni interpolace mezi kalibracnimi body RAW -> vyska.
+    const int32_t raw_span = g_level_config.adc_raw_max - g_level_config.adc_raw_min;
+    if (raw_span == 0) {
+        return g_level_config.height_min;
+    }
+
     float height = g_level_config.height_min + (float)((int)raw_value - g_level_config.adc_raw_min) *
                    (g_level_config.height_max - g_level_config.height_min) /
-                   (float)(g_level_config.adc_raw_max - g_level_config.adc_raw_min);
-    
-    // Omezení na rozsah
-    //if (height < HEIGHT_MIN) height = HEIGHT_MIN;
-    //if (height > HEIGHT_MAX) height = HEIGHT_MAX;
-    
+                   (float)raw_span;
+
     return height;
 }
 
@@ -288,16 +328,37 @@ static float round_to_2_decimals(float value)
     return std::roundf(value * 100.0f) / 100.0f;
 }
 
+// Prednabi filtry tak, aby prvni publikovane hodnoty nebyly zkreslene rozbehem.
+static void warmup_filters(void)
+{
+    uint32_t raw_value = 0;
+    uint32_t raw_trimmed_value = 0;
+    float height_raw = 0.0f;
+    float height_ema = 0.0f;
+
+    const size_t buffer_size = level_filter.getBufferSize();
+    ESP_LOGI(TAG, "Prebiha nabiti bufferu (%zu mereni)...", buffer_size);
+    for (size_t index = 0; index < buffer_size; ++index) {
+        raw_value = adc_read_raw();
+        raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
+        height_raw = adc_raw_to_height(raw_trimmed_value);
+        height_ema = height_filter_ema(height_raw);
+        (void)height_apply_hysteresis(height_ema);
+    }
+    ESP_LOGI(TAG, "Buffer nabit, zacinam publikovat vysledky");
+}
+
 static void zasoba_task(void *pvParameters)
 {
     (void)pvParameters;
     APP_ERROR_CHECK("E535", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
-    
-    // Inicializace ADC
+
+    // Inicializace ADC a filtru pred prvnim publikovanim.
     APP_ERROR_CHECK("E520", adc_init());
-    
+    warmup_filters();
+
     uint32_t raw_value;
     uint32_t raw_trimmed_value;
     float hladina_raw;
@@ -306,34 +367,20 @@ static void zasoba_task(void *pvParameters)
     float objem_m3_raw;
     float objem_m3_rounded;
 
-    // Nabití bufferu na začátku - přečteme tolik měření, jaká je velikost bufferu
-    // aby se zabránilo zkresleným údajům na začátku
-    size_t buffer_size = level_filter.getBufferSize();
-    ESP_LOGI(TAG, "Prebiha nabiti bufferu (%zu mereni)...", buffer_size);
-    for (size_t i = 0; i < buffer_size; i++) {
+    while (1) {
+        // 1) Nacteni surove ADC hodnoty
         raw_value = adc_read_raw();
+        // 2) Trimmed-mean na RAW
         raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
+        // 3) Prevod RAW -> vyska hladiny [m]
         hladina_raw = adc_raw_to_height(raw_trimmed_value);
+        // 4) EMA filtr na vysce
         hladina_ema = height_filter_ema(hladina_raw);
-        height_apply_hysteresis(hladina_ema);  // Jen plníme filtry bez publikování
-    }
-    ESP_LOGI(TAG, "Buffer nabit, zacinam publikovat vysledky");
-    
-    while (1)
-    {
-        // 1) Získám surovou ADC hodnotu
-        raw_value = adc_read_raw();
-        // 2) Proženu ji trimmed mean filtrem (stále RAW)
-        raw_trimmed_value = adc_filter_trimmed_mean(raw_value);
-        // 3) Převedu RAW na výšku hladiny
-        hladina_raw = adc_raw_to_height(raw_trimmed_value);
-        // 4) Aplikuju EMA filtr na výšku hladiny
-        hladina_ema = height_filter_ema(hladina_raw);
-        // 5) Aplikuju hysterezi na výšku hladiny
+        // 5) Hystereze na vysce
         hladina_hyst = height_apply_hysteresis(hladina_ema);
-        // 6) Přepočet na objem [m3]
+        // 6) Prevod vyska -> objem [m3]
         objem_m3_raw = height_to_volume_m3(hladina_hyst);
-        // 7) Zaokrouhlení objemu na dvě desetinná místa
+        // 7) Zaokrouhleni na 2 desetinna mista pro publikaci
         objem_m3_rounded = round_to_2_decimals(objem_m3_raw);
         
         app_event_t event = {
@@ -353,9 +400,6 @@ static void zasoba_task(void *pvParameters)
         };
 
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
-        if (!queued) {
-            ESP_LOGW(TAG, "Fronta sensor eventu je plna, hladina zahozena");
-        }
 
         DEBUG_PUBLISH("zasoba_dyn",
                       "q=%d ts=%lld r=%lu rt=%lu h=%.4f he=%.4f hh=%.4f v=%.4f v2=%.2f",
@@ -369,9 +413,9 @@ static void zasoba_task(void *pvParameters)
                       (double)objem_m3_raw,
                       (double)objem_m3_rounded);
 
+        publish_config_debug_periodic(event.timestamp_us);
+
         APP_ERROR_CHECK("E537", esp_task_wdt_reset());
-        
-        
         vTaskDelay(pdMS_TO_TICKS(g_level_config.sample_ms));
     }
 }

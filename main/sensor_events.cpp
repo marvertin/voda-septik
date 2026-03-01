@@ -3,10 +3,14 @@
 #include <stdio.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <freertos/queue.h>
 
 static const char *TAG = "sensor_events";
 static QueueHandle_t s_sensor_events_queue = nullptr;
+static int64_t s_last_publish_warn_us = 0;
+static uint32_t s_suppressed_publish_warn_count = 0;
+static const int64_t PUBLISH_WARN_MIN_INTERVAL_US = 5LL * 1000LL * 1000LL;
 
 static const char *event_type_to_string(event_type_t event_type)
 {
@@ -55,7 +59,36 @@ bool sensor_events_publish(const app_event_t *event, TickType_t timeout)
         return false;
     }
 
-    return xQueueSend(s_sensor_events_queue, event, timeout) == pdTRUE;
+    const bool queued = (xQueueSend(s_sensor_events_queue, event, timeout) == pdTRUE);
+    if (!queued) {
+        const int64_t now_us = esp_timer_get_time();
+        const bool should_log = (s_last_publish_warn_us == 0)
+                             || ((now_us - s_last_publish_warn_us) >= PUBLISH_WARN_MIN_INTERVAL_US);
+        if (!should_log) {
+            ++s_suppressed_publish_warn_count;
+            return queued;
+        }
+
+        const uint32_t suppressed = s_suppressed_publish_warn_count;
+        s_suppressed_publish_warn_count = 0;
+        s_last_publish_warn_us = now_us;
+
+        const UBaseType_t free_slots = uxQueueSpacesAvailable(s_sensor_events_queue);
+        if (free_slots == 0) {
+            ESP_LOGW(TAG,
+                     "Fronta sensor eventu je plna, event zahozen (type=%s, potlaceno=%lu)",
+                     event_type_to_string(event->event_type),
+                     (unsigned long)suppressed);
+        } else {
+            ESP_LOGW(TAG,
+                     "Publikace sensor eventu selhala (type=%s free_slots=%lu potlaceno=%lu)",
+                     event_type_to_string(event->event_type),
+                     (unsigned long)free_slots,
+                     (unsigned long)suppressed);
+        }
+    }
+
+    return queued;
 }
 
 bool sensor_events_receive(app_event_t *event, TickType_t timeout)

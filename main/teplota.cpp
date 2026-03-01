@@ -488,9 +488,6 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
     };
 
     const bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(50));
-    if (!queued) {
-        ESP_LOGW(TAG, "Fronta sensor eventu je plna, teplota zahozena (probe=%d)", (int)probe);
-    }
 
     const char *name = probe_name(probe);
     if (read_ok) {
