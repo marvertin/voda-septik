@@ -37,6 +37,7 @@ static constexpr float LEVEL_DEFAULT_TANK_AREA_M2 = 5.4f;
 static constexpr float LEVEL_DEFAULT_EMA_ALPHA = 0.25f;
 static constexpr float LEVEL_DEFAULT_HYST_M = 0.002f;
 static constexpr int32_t LEVEL_DEFAULT_SAMPLE_MS = 20;
+static constexpr int32_t LEVEL_DEFAULT_ROUND_DECIMALS = 2;
 
 static constexpr float LEVEL_MIN_HEIGHT_M = 0.0f;
 static constexpr float LEVEL_MAX_HEIGHT_M = 5.0f;
@@ -48,6 +49,8 @@ static constexpr float LEVEL_MIN_HYST_M = 0.0f;
 static constexpr float LEVEL_MAX_HYST_M = 0.05f;
 static constexpr int32_t LEVEL_MIN_SAMPLE_MS = 10;
 static constexpr int32_t LEVEL_MAX_SAMPLE_MS = 1000;
+static constexpr int32_t LEVEL_MIN_ROUND_DECIMALS = 1;
+static constexpr int32_t LEVEL_MAX_ROUND_DECIMALS = 3;
 static constexpr int64_t LEVEL_CFG_DEBUG_PERIOD_US = 10LL * 1000LL * 1000LL;
 
 static const config_item_t LEVEL_RAW_MIN_ITEM = {
@@ -90,6 +93,11 @@ static const config_item_t LEVEL_SAMPLE_MS_ITEM = {
     .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = LEVEL_DEFAULT_SAMPLE_MS, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 0, .min_int = LEVEL_MIN_SAMPLE_MS, .max_int = LEVEL_MAX_SAMPLE_MS, .min_float = 0.0f, .max_float = 0.0f,
 };
+static const config_item_t LEVEL_ROUND_DECIMALS_ITEM = {
+    .key = "lvl_round_dec", .label = "Hladina zaokrouhleni desetinna mista", .description = "Pocet desetinnych mist pro publikovany objem (1-3; 1=desetiny, 2=setiny, 3=tisiciny).",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = LEVEL_DEFAULT_ROUND_DECIMALS, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = LEVEL_MIN_ROUND_DECIMALS, .max_int = LEVEL_MAX_ROUND_DECIMALS, .min_float = 0.0f, .max_float = 0.0f,
+};
 
 void zasoba_register_config_items(void)
 {
@@ -101,6 +109,7 @@ void zasoba_register_config_items(void)
     APP_ERROR_CHECK("E685", config_store_register_item(&LEVEL_EMA_ALPHA_ITEM));
     APP_ERROR_CHECK("E686", config_store_register_item(&LEVEL_HYST_M_ITEM));
     APP_ERROR_CHECK("E687", config_store_register_item(&LEVEL_SAMPLE_MS_ITEM));
+    APP_ERROR_CHECK("E688", config_store_register_item(&LEVEL_ROUND_DECIMALS_ITEM));
 }
 
 typedef struct {
@@ -112,6 +121,7 @@ typedef struct {
     float ema_alpha;
     float hyst_m;
     int32_t sample_ms;
+    int32_t round_decimals;
 } level_calibration_config_t;
 
 static level_calibration_config_t g_level_config = {
@@ -123,6 +133,7 @@ static level_calibration_config_t g_level_config = {
     .ema_alpha = LEVEL_DEFAULT_EMA_ALPHA,
     .hyst_m = LEVEL_DEFAULT_HYST_M,
     .sample_ms = LEVEL_DEFAULT_SAMPLE_MS,
+    .round_decimals = LEVEL_DEFAULT_ROUND_DECIMALS,
 };
 
 // Stav filtrace mereni hladiny (31 prvku, 5 orezanych z obou stran)
@@ -136,7 +147,7 @@ static int64_t s_last_cfg_debug_publish_us = 0;
 static void publish_config_debug(void)
 {
     DEBUG_PUBLISH("zasoba_cfg",
-                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f e=%.3f hy=%.4f sm=%ld",
+                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f e=%.3f hy=%.4f sm=%ld rd=%ld",
                   (long)g_level_config.adc_raw_min,
                   (long)g_level_config.adc_raw_max,
                   (double)g_level_config.height_min,
@@ -144,7 +155,8 @@ static void publish_config_debug(void)
                   (double)g_level_config.tank_area_m2,
                   (double)g_level_config.ema_alpha,
                   (double)g_level_config.hyst_m,
-                  (long)g_level_config.sample_ms);
+                  (long)g_level_config.sample_ms,
+                  (long)g_level_config.round_decimals);
 }
 
 static void publish_config_debug_periodic(int64_t now_us)
@@ -168,6 +180,7 @@ static void load_level_calibration_config(void)
     g_level_config.ema_alpha = config_store_get_float_item(&LEVEL_EMA_ALPHA_ITEM);
     g_level_config.hyst_m = config_store_get_float_item(&LEVEL_HYST_M_ITEM);
     g_level_config.sample_ms = config_store_get_i32_item(&LEVEL_SAMPLE_MS_ITEM);
+    g_level_config.round_decimals = config_store_get_i32_item(&LEVEL_ROUND_DECIMALS_ITEM);
 
     if (g_level_config.tank_area_m2 <= 0.0f) {
         g_level_config.tank_area_m2 = LEVEL_DEFAULT_TANK_AREA_M2;
@@ -189,8 +202,13 @@ static void load_level_calibration_config(void)
         ESP_LOGW(TAG, "Neplatna sample_ms, pouzivam default %ld ms", (long)g_level_config.sample_ms);
     }
 
+    if (g_level_config.round_decimals < LEVEL_MIN_ROUND_DECIMALS || g_level_config.round_decimals > LEVEL_MAX_ROUND_DECIMALS) {
+        g_level_config.round_decimals = LEVEL_DEFAULT_ROUND_DECIMALS;
+        ESP_LOGW(TAG, "Neplatna round_decimals, pouzivam default %ld", (long)g_level_config.round_decimals);
+    }
+
     ESP_LOGI(TAG,
-             "Nactena kalibrace objemu: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m area=%.3f m2 ema=%.3f hyst=%.4f sm=%ld",
+             "Nactena kalibrace objemu: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m area=%.3f m2 ema=%.3f hyst=%.4f sm=%ld rd=%ld",
              (long)g_level_config.adc_raw_min,
              (long)g_level_config.adc_raw_max,
              g_level_config.height_min,
@@ -198,7 +216,8 @@ static void load_level_calibration_config(void)
              g_level_config.tank_area_m2,
              g_level_config.ema_alpha,
              g_level_config.hyst_m,
-             (long)g_level_config.sample_ms);
+             (long)g_level_config.sample_ms,
+             (long)g_level_config.round_decimals);
 
 }
 
@@ -323,8 +342,14 @@ static float height_to_volume_m3(float height_m)
     return height_m * g_level_config.tank_area_m2;
 }
 
-static float round_to_2_decimals(float value)
+static float round_to_decimals(float value, int32_t decimals)
 {
+    if (decimals <= 1) {
+        return std::roundf(value * 10.0f) / 10.0f;
+    }
+    if (decimals >= 3) {
+        return std::roundf(value * 1000.0f) / 1000.0f;
+    }
     return std::roundf(value * 100.0f) / 100.0f;
 }
 
@@ -380,8 +405,8 @@ static void zasoba_task(void *pvParameters)
         hladina_hyst = height_apply_hysteresis(hladina_ema);
         // 6) Prevod vyska -> objem [m3]
         objem_m3_raw = height_to_volume_m3(hladina_hyst);
-        // 7) Zaokrouhleni na 2 desetinna mista pro publikaci
-        objem_m3_rounded = round_to_2_decimals(objem_m3_raw);
+        // 7) Zaokrouhleni na konfigurovany pocet desetinnych mist pro publikaci
+        objem_m3_rounded = round_to_decimals(objem_m3_raw, g_level_config.round_decimals);
         
         app_event_t event = {
             .event_type = EVT_SENSOR,
@@ -402,7 +427,7 @@ static void zasoba_task(void *pvParameters)
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
         DEBUG_PUBLISH("zasoba_dyn",
-                      "q=%d ts=%lld r=%lu rt=%lu h=%.4f he=%.4f hh=%.4f v=%.4f v2=%.2f",
+                      "q=%d ts=%lld r=%lu rt=%lu h=%.4f he=%.4f hh=%.4f v=%.4f v2=%.3f",
                       queued ? 1 : 0,
                       (long long)event.timestamp_us,
                       (unsigned long)raw_value,
