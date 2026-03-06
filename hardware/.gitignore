@@ -1,0 +1,4 @@
+*.lck
+#auto_saved_files#
+*-backups/
+*.kicad_prl

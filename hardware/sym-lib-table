@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "martin")(type "KiCad")(uri "${KIPRJMOD}/martin.kicad_sym")(options "")(descr "Martinova knihovna pro zkopírované i upravené věci"))
+)

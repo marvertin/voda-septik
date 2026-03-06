@@ -1,0 +1,4 @@
+"Reference","Qty","Value","DNP","Exclude from BOM","Exclude from Board","Footprint","Datasheet"
+"BT1","1","3V","","","","Battery:BatteryHolder_Keystone_1058_1x2032","~"
+"D1","1","red","","","","LED_THT:LED_D5.0mm","~"
+"R1","1","1k","","","","Resistor_THT:R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal","~"
