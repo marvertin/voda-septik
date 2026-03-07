@@ -14,12 +14,14 @@ extern "C" {
 #include "network_config.h"
 #include "config_webapp.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "restart_info.h"
 
 static const char *TAG = "webapp_startup";
 static bool s_webapp_started = false;
 static TimerHandle_t s_webapp_auto_stop_timer = nullptr;
 static constexpr uint32_t WEBAPP_AUTO_STOP_MS = 2U * 60U * 60U * 1000U;
+static constexpr const char *AP_MODE_SSID = "voda-septik-config";
 
 static void webapp_auto_stop_timer_cb(TimerHandle_t timer)
 {
@@ -70,8 +72,18 @@ static void restart_webapp_auto_stop_timer(void)
 
 void webapp_startup_on_network_event(const network_event_t *event)
 {
-    (void)event;
-    // Webova aplikace je implicitne vypnuta, startuje se pouze explicitnim commandem.
+    if (event == nullptr) {
+        return;
+    }
+
+    if (event->level != SYS_NET_AP_CONFIG) {
+        return;
+    }
+
+    esp_err_t start_result = webapp_startup_start();
+    if (start_result != ESP_OK) {
+        ESP_LOGW(TAG, "Automaticky start webapp v AP rezimu selhal: %s", esp_err_to_name(start_result));
+    }
 }
 
 esp_err_t webapp_startup_start(void)
@@ -105,9 +117,12 @@ esp_err_t webapp_startup_start(void)
         .last_restart_unix = restart_info.last_restart_unix,
     };
 
+    const esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    const bool is_ap_mode = (ap_netif != nullptr);
+
     config_webapp_network_info_t webapp_network_info = {
-        .is_ap_mode = false,
-        .active_ssid = wifi_ssid,
+        .is_ap_mode = is_ap_mode,
+        .active_ssid = is_ap_mode ? AP_MODE_SSID : wifi_ssid,
     };
 
     esp_err_t start_result = config_webapp_start(80,

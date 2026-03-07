@@ -32,6 +32,7 @@
 #include "network_init.h"
 #include "app_error_check.h"
 #include "status_display.h"
+#include "webapp_startup.h"
 
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -133,6 +134,10 @@ static void on_boot_button_pressed(void *ctx)
     if (ap_result == ESP_OK) {
         s_ap_switch_done = true;
         ESP_LOGI(TAG, "Konfiguracni AP rezim aktivni");
+        esp_err_t webapp_result = webapp_startup_start();
+        if (webapp_result != ESP_OK) {
+            ESP_LOGW(TAG, "Automaticky start konfiguracni webapp po prepnuti do AP selhal: %s", esp_err_to_name(webapp_result));
+        }
         vTaskDelay(pdMS_TO_TICKS(300));
         log_config_webapp_url();
     } else {

@@ -420,6 +420,9 @@ static void state_manager_task(void *pvParameters)
                          (unsigned long)network_snapshot->reconnect_attempts,
                          (unsigned long)network_snapshot->reconnect_successes);
 
+                status_display_set_network_state(network_snapshot);
+                webapp_startup_on_network_event(network_snapshot);
+
                 if (event.data.network_state_change.to_level == SYS_NET_AP_CONFIG) {
                     esp_err_t mqtt_state_result = mqtt_publisher_set_mqtt_connected(false);
                     if (mqtt_state_result != ESP_OK) {
@@ -431,9 +434,6 @@ static void state_manager_task(void *pvParameters)
                     APP_ERROR_CHECK("E603", esp_task_wdt_delete(nullptr));
                     vTaskDelete(NULL);
                 }
-
-                status_display_set_network_state(network_snapshot);
-                webapp_startup_on_network_event(network_snapshot);
 
                 const bool mqtt_ready = (event.data.network_state_change.to_level == SYS_NET_MQTT_READY);
 
