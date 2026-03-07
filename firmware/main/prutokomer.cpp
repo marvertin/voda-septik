@@ -28,10 +28,13 @@ static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 static constexpr float FLOW_EMA_ALPHA = 0.25f;
 static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
 static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
+static constexpr uint32_t FLOW_MAX_LITERS_PER_MIN = 120;
+static constexpr uint32_t FLOW_PULSE_SPIKE_MARGIN = 8;
 static const char *FLOW_COUNTER_PARTITION_LABEL = "flow_data0";
 
 // sdílený counter z ISR
 static volatile uint32_t pulse_count = 0;
+static portMUX_TYPE s_pulse_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static FlashMonotonicCounter s_flow_counter;
 static uint64_t s_total_pulses = 0;
 static uint64_t s_persisted_counter_steps = 0;
@@ -40,7 +43,20 @@ static bool s_prutok_inicializovan = false;
 
 // ISR handler
 static void IRAM_ATTR flow_isr_handler(void *arg) {
+    (void)arg;
+    portENTER_CRITICAL_ISR(&s_pulse_count_mux);
     pulse_count += 1;
+    portEXIT_CRITICAL_ISR(&s_pulse_count_mux);
+}
+
+static uint32_t get_and_clear_pulse_count(void)
+{
+    uint32_t count = 0;
+    portENTER_CRITICAL(&s_pulse_count_mux);
+    count = pulse_count;
+    pulse_count = 0;
+    portEXIT_CRITICAL(&s_pulse_count_mux);
+    return count;
 }
 
 static void pocitani_pulsu(void *pvParameters)
@@ -48,7 +64,6 @@ static void pocitani_pulsu(void *pvParameters)
     (void)pvParameters;
     APP_ERROR_CHECK("E707", esp_task_wdt_add(nullptr));
 
-    uint32_t previous_pulse_count = pulse_count;
     int64_t previous_sample_us = esp_timer_get_time();
     uint8_t sample_counter = 0;
 
@@ -59,9 +74,27 @@ static void pocitani_pulsu(void *pvParameters)
         const int64_t elapsed_us = now_us - previous_sample_us;
         previous_sample_us = now_us;
 
-        const uint32_t current_pulse_count = pulse_count;
-        const uint32_t new_pulses = current_pulse_count - previous_pulse_count;
-        previous_pulse_count = current_pulse_count;
+        uint32_t sampled_pulses = get_and_clear_pulse_count();
+
+        const uint64_t max_pulses_by_rate = // Výpočet maximálního počtu pulsů, které by mohly přijít za dobu elapsed_us při maximálním průtoku.
+            (static_cast<uint64_t>(FLOW_MAX_LITERS_PER_MIN) *
+             static_cast<uint64_t>(FLOW_PULSES_PER_LITER) *
+             static_cast<uint64_t>(elapsed_us) +
+             60000000ULL - 1ULL) / 
+            60000000ULL;
+
+        const uint64_t max_allowed_pulses_u64 = max_pulses_by_rate + FLOW_PULSE_SPIKE_MARGIN;
+        const uint32_t max_allowed_pulses =
+            (max_allowed_pulses_u64 > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : static_cast<uint32_t>(max_allowed_pulses_u64);
+
+        const uint32_t new_pulses = (sampled_pulses > max_allowed_pulses) ? max_allowed_pulses : sampled_pulses;
+        if (sampled_pulses > max_allowed_pulses) {
+            ESP_LOGW(TAG,
+                     "Ignoruji spike impulzu: sampled=%lu max_allowed=%lu elapsed_us=%lld",
+                     (unsigned long)sampled_pulses,
+                     (unsigned long)max_allowed_pulses,
+                     (long long)elapsed_us);
+        }
 
         s_total_pulses += new_pulses;
 //        ESP_LOGI(TAG, "Nové pulzy: %lu, Celkem pulzů: %llu, Elapsed: %lld us",
@@ -125,9 +158,10 @@ static void pocitani_pulsu(void *pvParameters)
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
         DEBUG_PUBLISH("prutok",
-                      "queued=%d ts=%lld new_pulses=%lu elapsed_us=%lld raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",
+                      "queued=%d ts=%lld sampled_pulses=%lu new_pulses=%lu elapsed_us=%lld raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",
                       queued ? 1 : 0,
                       (long long)now_us,
+                      (unsigned long)sampled_pulses,
                       (unsigned long)new_pulses,
                       (long long)elapsed_us,
                       (double)surovy_prutok,

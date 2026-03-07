@@ -144,6 +144,7 @@ static void flush_cached_values(void)
         }
 
         mark_published(last, xTaskGetTickCount());
+        APP_ERROR_CHECK("E508", esp_task_wdt_reset());
     }
 }
 
@@ -292,6 +293,7 @@ static void mqtt_publisher_task(void *param)
 
         if (item.type == queue_item_type_t::FLUSH_CACHED) {
             flush_cached_values();
+            APP_ERROR_CHECK("E506", esp_task_wdt_reset());
             continue;
         }
 
@@ -300,7 +302,7 @@ static void mqtt_publisher_task(void *param)
             ESP_LOGW(TAG, "Zpracovani publish eventu selhalo: %s", esp_err_to_name(result));
         }
 
-        APP_ERROR_CHECK("E506", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E507", esp_task_wdt_reset());
     }
 }
 
