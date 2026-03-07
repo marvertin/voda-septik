@@ -371,7 +371,7 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
 static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
-    APP_ERROR_CHECK("E531", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E601", esp_task_wdt_add(nullptr));
 
     app_event_t event = {};
     char debug_line[128];
@@ -380,7 +380,7 @@ static void state_manager_task(void *pvParameters)
 
     while (true) {
         if (!sensor_events_receive(&event, STATE_MANAGER_EVENT_WAIT_TICKS)) {
-            APP_ERROR_CHECK("E532", esp_task_wdt_reset());
+            APP_ERROR_CHECK("E602", esp_task_wdt_reset());
             continue;
         }
 
@@ -428,7 +428,7 @@ static void state_manager_task(void *pvParameters)
 
                     status_display_ap_mode();
                     ESP_LOGW(TAG, "AP rezim aktivni: state manager se ukoncuje (z AP vede jen reset)");
-                    APP_ERROR_CHECK("E533", esp_task_wdt_delete(nullptr));
+                    APP_ERROR_CHECK("E603", esp_task_wdt_delete(nullptr));
                     vTaskDelete(NULL);
                 }
 
@@ -518,7 +518,7 @@ static void state_manager_task(void *pvParameters)
                 break;
         }
 
-        APP_ERROR_CHECK("E534", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
     }
 }
 

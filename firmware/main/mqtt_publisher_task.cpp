@@ -280,13 +280,13 @@ static esp_err_t publish_if_changed(const mqtt_publish_event_t &event)
 static void mqtt_publisher_task(void *param)
 {
     (void)param;
-    APP_ERROR_CHECK("E546", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E504", esp_task_wdt_add(nullptr));
 
     mqtt_publish_queue_item_t item;
     memset(&item, 0, sizeof(item));
     while (true) {
         if (xQueueReceive(s_publish_queue, &item, MQTT_PUBLISH_DEQUEUE_TIMEOUT_TICKS) != pdPASS) {
-            APP_ERROR_CHECK("E547", esp_task_wdt_reset());
+            APP_ERROR_CHECK("E505", esp_task_wdt_reset());
             continue;
         }
 
@@ -300,7 +300,7 @@ static void mqtt_publisher_task(void *param)
             ESP_LOGW(TAG, "Zpracovani publish eventu selhalo: %s", esp_err_to_name(result));
         }
 
-        APP_ERROR_CHECK("E548", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E506", esp_task_wdt_reset());
     }
 }
 

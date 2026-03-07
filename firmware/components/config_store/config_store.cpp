@@ -190,12 +190,12 @@ const char *config_store_section_for_item_at(size_t index)
 
 int32_t config_store_get_i32_item(const config_item_t *item)
 {
-    check_or_abort("E650", (item != nullptr && item->type == CONFIG_VALUE_INT32) ? ESP_OK : ESP_ERR_INVALID_ARG);
-    check_or_abort("E651", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
+    check_or_abort("E301", (item != nullptr && item->type == CONFIG_VALUE_INT32) ? ESP_OK : ESP_ERR_INVALID_ARG);
+    check_or_abort("E302", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
 
     nvs_handle_t nvs_handle;
     esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    check_or_abort("E652", result);
+    check_or_abort("E303", result);
 
     int32_t value = 0;
     result = nvs_get_i32(nvs_handle, item->key, &value);
@@ -208,18 +208,18 @@ int32_t config_store_get_i32_item(const config_item_t *item)
     }
 
     nvs_close(nvs_handle);
-    check_or_abort("E653", result);
+    check_or_abort("E304", result);
     return value;
 }
 
 float config_store_get_float_item(const config_item_t *item)
 {
-    check_or_abort("E654", (item != nullptr && item->type == CONFIG_VALUE_FLOAT) ? ESP_OK : ESP_ERR_INVALID_ARG);
-    check_or_abort("E655", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
+    check_or_abort("E305", (item != nullptr && item->type == CONFIG_VALUE_FLOAT) ? ESP_OK : ESP_ERR_INVALID_ARG);
+    check_or_abort("E306", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
 
     nvs_handle_t nvs_handle;
     esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    check_or_abort("E656", result);
+    check_or_abort("E307", result);
 
     float value = 0.0f;
     result = nvs_get_float(nvs_handle, item->key, &value);
@@ -232,18 +232,18 @@ float config_store_get_float_item(const config_item_t *item)
     }
 
     nvs_close(nvs_handle);
-    check_or_abort("E657", result);
+    check_or_abort("E308", result);
     return value;
 }
 
 bool config_store_get_bool_item(const config_item_t *item)
 {
-    check_or_abort("E658", (item != nullptr && item->type == CONFIG_VALUE_BOOL) ? ESP_OK : ESP_ERR_INVALID_ARG);
-    check_or_abort("E659", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
+    check_or_abort("E309", (item != nullptr && item->type == CONFIG_VALUE_BOOL) ? ESP_OK : ESP_ERR_INVALID_ARG);
+    check_or_abort("E310", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
 
     nvs_handle_t nvs_handle;
     esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    check_or_abort("E660", result);
+    check_or_abort("E311", result);
 
     bool value = false;
     uint8_t raw = 0;
@@ -257,20 +257,20 @@ bool config_store_get_bool_item(const config_item_t *item)
     }
 
     nvs_close(nvs_handle);
-    check_or_abort("E661", result);
+    check_or_abort("E312", result);
     value = (raw != 0);
     return value;
 }
 
 void config_store_get_string_item(const config_item_t *item, char *buffer, size_t buffer_len)
 {
-    check_or_abort("E662", (item != nullptr && item->type == CONFIG_VALUE_STRING) ? ESP_OK : ESP_ERR_INVALID_ARG);
-    check_or_abort("E663", (buffer != nullptr && buffer_len > 0) ? ESP_OK : ESP_ERR_INVALID_ARG);
-    check_or_abort("E664", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
+    check_or_abort("E313", (item != nullptr && item->type == CONFIG_VALUE_STRING) ? ESP_OK : ESP_ERR_INVALID_ARG);
+    check_or_abort("E314", (buffer != nullptr && buffer_len > 0) ? ESP_OK : ESP_ERR_INVALID_ARG);
+    check_or_abort("E315", config_store_find_item(item->key) != nullptr ? ESP_OK : ESP_ERR_NOT_FOUND);
 
     nvs_handle_t nvs_handle;
     esp_err_t result = open_nvs(NVS_READWRITE, &nvs_handle);
-    check_or_abort("E665", result);
+    check_or_abort("E316", result);
 
     size_t required_size = buffer_len;
     result = nvs_get_str(nvs_handle, item->key, buffer, &required_size);
@@ -280,7 +280,7 @@ void config_store_get_string_item(const config_item_t *item, char *buffer, size_
             normalized = normalized.substr(0, item->max_string_len);
         }
 
-        check_or_abort("E666", (normalized.size() + 1 <= buffer_len) ? ESP_OK : ESP_ERR_NVS_INVALID_LENGTH);
+        check_or_abort("E317", (normalized.size() + 1 <= buffer_len) ? ESP_OK : ESP_ERR_NVS_INVALID_LENGTH);
 
         result = nvs_set_str(nvs_handle, item->key, normalized.c_str());
         if (result == ESP_OK) {
@@ -292,7 +292,7 @@ void config_store_get_string_item(const config_item_t *item, char *buffer, size_
     }
 
     nvs_close(nvs_handle);
-    check_or_abort("E667", result);
+    check_or_abort("E318", result);
 }
 
 esp_err_t config_store_set_i32_item(const config_item_t *item, int32_t value)

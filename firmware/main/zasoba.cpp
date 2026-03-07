@@ -104,15 +104,15 @@ static const config_item_t LEVEL_ROUND_DECIMALS_ITEM = {
 
 void zasoba_register_config_items(void)
 {
-    APP_ERROR_CHECK("E680", config_store_register_item(&LEVEL_RAW_MIN_ITEM));
-    APP_ERROR_CHECK("E681", config_store_register_item(&LEVEL_RAW_MAX_ITEM));
-    APP_ERROR_CHECK("E682", config_store_register_item(&LEVEL_H_MIN_ITEM));
-    APP_ERROR_CHECK("E683", config_store_register_item(&LEVEL_H_MAX_ITEM));
-    APP_ERROR_CHECK("E684", config_store_register_item(&LEVEL_TANK_AREA_ITEM));
-    APP_ERROR_CHECK("E685", config_store_register_item(&LEVEL_EMA_ALPHA_ITEM));
-    APP_ERROR_CHECK("E686", config_store_register_item(&LEVEL_HYST_M_ITEM));
-    APP_ERROR_CHECK("E687", config_store_register_item(&LEVEL_SAMPLE_MS_ITEM));
-    APP_ERROR_CHECK("E688", config_store_register_item(&LEVEL_ROUND_DECIMALS_ITEM));
+    APP_ERROR_CHECK("E756", config_store_register_item(&LEVEL_RAW_MIN_ITEM));
+    APP_ERROR_CHECK("E757", config_store_register_item(&LEVEL_RAW_MAX_ITEM));
+    APP_ERROR_CHECK("E758", config_store_register_item(&LEVEL_H_MIN_ITEM));
+    APP_ERROR_CHECK("E759", config_store_register_item(&LEVEL_H_MAX_ITEM));
+    APP_ERROR_CHECK("E760", config_store_register_item(&LEVEL_TANK_AREA_ITEM));
+    APP_ERROR_CHECK("E761", config_store_register_item(&LEVEL_EMA_ALPHA_ITEM));
+    APP_ERROR_CHECK("E762", config_store_register_item(&LEVEL_HYST_M_ITEM));
+    APP_ERROR_CHECK("E763", config_store_register_item(&LEVEL_SAMPLE_MS_ITEM));
+    APP_ERROR_CHECK("E764", config_store_register_item(&LEVEL_ROUND_DECIMALS_ITEM));
 }
 
 typedef struct {
@@ -412,7 +412,7 @@ static void warmup_filters(void)
 static void zasoba_task(void *pvParameters)
 {
     (void)pvParameters;
-    APP_ERROR_CHECK("E535", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E765", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Spousteni cteni hladiny...");
     warmup_filters();
@@ -481,7 +481,7 @@ static void zasoba_task(void *pvParameters)
 
         publish_config_debug_periodic(timestamp_us);
 
-        APP_ERROR_CHECK("E537", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E766", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(g_level_config.sample_ms));
     }
 }
@@ -490,9 +490,9 @@ void zasoba_init(void)
 {
     load_level_calibration_config();
 
-    APP_ERROR_CHECK("E520", adc_init());
+    APP_ERROR_CHECK("E767", adc_init());
 
-    APP_ERROR_CHECK("E522",
+    APP_ERROR_CHECK("E768",
                     xTaskCreate(zasoba_task, TAG, configMINIMAL_STACK_SIZE * 6, NULL, 5, NULL) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);

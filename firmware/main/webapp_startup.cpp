@@ -34,7 +34,7 @@ static void webapp_auto_stop_timer_cb(TimerHandle_t timer)
         s_webapp_started = false;
         ESP_LOGI(TAG, "Config web app automaticky vypnuta po 2 hodinach");
     } else {
-        ESP_LOGW(TAG, "Automaticke vypnuti config web app selhalo: %s", esp_err_to_name(stop_result));
+        ESP_LOGW(TAG, "Automaton_booicke vypnuti config web app selhalo: %s", esp_err_to_name(stop_result));
     }
 }
 

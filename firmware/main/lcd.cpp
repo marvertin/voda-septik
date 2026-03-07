@@ -42,10 +42,10 @@ static void lcd_task(void *pvParameters)
 
 void lcd_init(void)
 {
-    APP_ERROR_CHECK("E400", i2cdev_init());
+    APP_ERROR_CHECK("E901", i2cdev_init());
 
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    APP_ERROR_CHECK("E401", pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO));
+    APP_ERROR_CHECK("E902", pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO));
 
     lcd.write_cb = write_lcd_data;
     lcd.font = HD44780_FONT_5X8;
@@ -58,7 +58,7 @@ void lcd_init(void)
     lcd.pins.d7 = 7;
     lcd.pins.bl = 3;
 
-    APP_ERROR_CHECK("E402", hd44780_init(&lcd));
+    APP_ERROR_CHECK("E903", hd44780_init(&lcd));
     hd44780_switch_backlight(&lcd, true);
 
     lcd_queue = xQueueCreate(LCD_QUEUE_LENGTH, sizeof(lcd_msg_t));

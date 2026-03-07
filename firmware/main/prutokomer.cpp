@@ -46,7 +46,7 @@ static void IRAM_ATTR flow_isr_handler(void *arg) {
 static void pocitani_pulsu(void *pvParameters)
 {
     (void)pvParameters;
-    APP_ERROR_CHECK("E544", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E707", esp_task_wdt_add(nullptr));
 
     uint32_t previous_pulse_count = pulse_count;
     int64_t previous_sample_us = esp_timer_get_time();
@@ -135,7 +135,7 @@ static void pocitani_pulsu(void *pvParameters)
                       (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
 
-        APP_ERROR_CHECK("E545", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E708", esp_task_wdt_reset());
     }
 }
 
@@ -148,9 +148,9 @@ void prutokomer_init(void)
              (unsigned long)pdTICKS_TO_MS(FLOW_SAMPLE_PERIOD),
              (double)FLOW_EMA_ALPHA);
 
-    APP_ERROR_CHECK("E200", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
+    APP_ERROR_CHECK("E709", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
 
-    // APP_ERROR_CHECK("E201", s_flow_counter.reset());
+    // APP_ERROR_CHECK("E710", s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
     s_total_pulses = s_persisted_counter_steps * static_cast<uint64_t>(PULSES_PER_COUNTER_INCREMENT);
@@ -170,17 +170,17 @@ void prutokomer_init(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_POSEDGE
     };
-    APP_ERROR_CHECK("E525", gpio_config(&io_conf));
+    APP_ERROR_CHECK("E711", gpio_config(&io_conf));
 
-    APP_ERROR_CHECK("E526", gpio_install_isr_service(0));
-    APP_ERROR_CHECK("E527", gpio_isr_handler_add(FLOW_SENSOR_GPIO, flow_isr_handler, NULL));
+    APP_ERROR_CHECK("E712", gpio_install_isr_service(0));
+    APP_ERROR_CHECK("E713", gpio_isr_handler_add(FLOW_SENSOR_GPIO, flow_isr_handler, NULL));
 
     ESP_LOGI(TAG,
              "GPIO flow nastaven: pullup=1 pulldown=0 intr=posedge pin=%d",
              (int)FLOW_SENSOR_GPIO);
     ESP_LOGI(TAG, "Startuji mereni pulzu...");
 
-    APP_ERROR_CHECK("E528",
+    APP_ERROR_CHECK("E714",
                     xTaskCreate(pocitani_pulsu, "pocitani_pulsu", FLOW_TASK_STACK_SIZE, NULL, 1, NULL) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);

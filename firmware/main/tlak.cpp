@@ -516,7 +516,7 @@ static void warmup_filters(pressure_sensor_static_t *before_sensor,
     for (size_t index = 0; index < buffer_size; ++index) {
         prefill_pressure_sensor(before_sensor);
         prefill_pressure_sensor(after_sensor);
-        APP_ERROR_CHECK("E539", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E723", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 
@@ -528,7 +528,7 @@ static void warmup_filters(pressure_sensor_static_t *before_sensor,
 static void tlak_task(void *pvParameters)
 {
     (void)pvParameters;
-    APP_ERROR_CHECK("E538", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E724", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Spoustim mereni tlaku (pred/za filtrem)...");
 
@@ -589,7 +589,7 @@ static void tlak_task(void *pvParameters)
 
         publish_config_debug_periodic(timestamp_us);
 
-        APP_ERROR_CHECK("E540", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E725", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(g_pressure_config.sample_ms));
     }
 }
@@ -598,26 +598,26 @@ static void tlak_task(void *pvParameters)
 
 void tlak_register_config_items(void)
 {
-    APP_ERROR_CHECK("E685", config_store_register_item(&PRESSURE_BEFORE_RAW_4MA_ITEM));
-    APP_ERROR_CHECK("E686", config_store_register_item(&PRESSURE_BEFORE_RAW_20MA_ITEM));
-    APP_ERROR_CHECK("E687", config_store_register_item(&PRESSURE_BEFORE_MIN_ITEM));
-    APP_ERROR_CHECK("E688", config_store_register_item(&PRESSURE_BEFORE_MAX_ITEM));
-    APP_ERROR_CHECK("E689", config_store_register_item(&PRESSURE_AFTER_RAW_4MA_ITEM));
-    APP_ERROR_CHECK("E690", config_store_register_item(&PRESSURE_AFTER_RAW_20MA_ITEM));
-    APP_ERROR_CHECK("E691", config_store_register_item(&PRESSURE_AFTER_MIN_ITEM));
-    APP_ERROR_CHECK("E692", config_store_register_item(&PRESSURE_AFTER_MAX_ITEM));
-    APP_ERROR_CHECK("E693", config_store_register_item(&PRESSURE_EMA_ALPHA_ITEM));
-    APP_ERROR_CHECK("E694", config_store_register_item(&PRESSURE_HYST_BAR_ITEM));
-    APP_ERROR_CHECK("E695", config_store_register_item(&PRESSURE_SAMPLE_MS_ITEM));
-    APP_ERROR_CHECK("E696", config_store_register_item(&PRESSURE_ROUND_DECIMALS_ITEM));
-    APP_ERROR_CHECK("E697", config_store_register_item(&PRESSURE_DP100_ITEM));
+    APP_ERROR_CHECK("E726", config_store_register_item(&PRESSURE_BEFORE_RAW_4MA_ITEM));
+    APP_ERROR_CHECK("E727", config_store_register_item(&PRESSURE_BEFORE_RAW_20MA_ITEM));
+    APP_ERROR_CHECK("E728", config_store_register_item(&PRESSURE_BEFORE_MIN_ITEM));
+    APP_ERROR_CHECK("E729", config_store_register_item(&PRESSURE_BEFORE_MAX_ITEM));
+    APP_ERROR_CHECK("E730", config_store_register_item(&PRESSURE_AFTER_RAW_4MA_ITEM));
+    APP_ERROR_CHECK("E731", config_store_register_item(&PRESSURE_AFTER_RAW_20MA_ITEM));
+    APP_ERROR_CHECK("E732", config_store_register_item(&PRESSURE_AFTER_MIN_ITEM));
+    APP_ERROR_CHECK("E733", config_store_register_item(&PRESSURE_AFTER_MAX_ITEM));
+    APP_ERROR_CHECK("E734", config_store_register_item(&PRESSURE_EMA_ALPHA_ITEM));
+    APP_ERROR_CHECK("E735", config_store_register_item(&PRESSURE_HYST_BAR_ITEM));
+    APP_ERROR_CHECK("E736", config_store_register_item(&PRESSURE_SAMPLE_MS_ITEM));
+    APP_ERROR_CHECK("E737", config_store_register_item(&PRESSURE_ROUND_DECIMALS_ITEM));
+    APP_ERROR_CHECK("E738", config_store_register_item(&PRESSURE_DP100_ITEM));
 }
 
 void tlak_init(void)
 {
     load_pressure_calibration_config();
-    APP_ERROR_CHECK("E521", adc_init());
-    APP_ERROR_CHECK("E523",
+    APP_ERROR_CHECK("E739", adc_init());
+    APP_ERROR_CHECK("E740",
                     xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);

@@ -516,7 +516,7 @@ static void mqtt_commands_event_handler(void *handler_args,
 static void mqtt_commands_register_task(void *param)
 {
     (void)param;
-    APP_ERROR_CHECK("E549", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E501", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG, "Start mqtt_commands_register_task");
 
@@ -545,11 +545,11 @@ static void mqtt_commands_register_task(void *param)
             ESP_LOGI(TAG, "MQTT client handle zatim neni k dispozici, cekam...");
         }
 
-        APP_ERROR_CHECK("E550", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E502", esp_task_wdt_reset());
         vTaskDelay(REGISTER_RETRY_DELAY_TICKS);
     }
 
-    APP_ERROR_CHECK("E551", esp_task_wdt_delete(nullptr));
+    APP_ERROR_CHECK("E503", esp_task_wdt_delete(nullptr));
 
     vTaskDelete(nullptr);
 }

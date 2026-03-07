@@ -25,9 +25,9 @@ void adc_shared_init()
     adc_oneshot_unit_init_cfg_t init_config = {};
     init_config.unit_id = ADC_UNIT_1;
 
-    APP_ERROR_CHECK("E519", adc_oneshot_new_unit(&init_config, &s_adc_handle));
+    APP_ERROR_CHECK("E701", adc_oneshot_new_unit(&init_config, &s_adc_handle));
     s_adc_read_mutex = xSemaphoreCreateMutexStatic(&s_adc_read_mutex_buffer);
-    APP_ERROR_CHECK("E519", s_adc_read_mutex != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
+    APP_ERROR_CHECK("E702", s_adc_read_mutex != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_LOGI(TAG, "ADC jednotka inicializovana (unit=%d)", (int)ADC_UNIT_1);
 }
 
@@ -41,14 +41,14 @@ void adc_channel_init(adc_channel_t channel)
 
     esp_err_t cfg_result = adc_oneshot_config_channel(s_adc_handle, channel, &chan_cfg);
 
-    APP_ERROR_CHECK("E519", cfg_result);
+    APP_ERROR_CHECK("E703", cfg_result);
     ESP_LOGI(TAG, "ADC kanal nakonfigurovan (channel=%d bitwidth=%d atten=%d)", (int)channel, chan_cfg.bitwidth, chan_cfg.atten);
 }   
 
 int  adc_read(adc_channel_t channel)
 {
-    APP_ERROR_CHECK("E536", s_adc_read_mutex != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);
-    APP_ERROR_CHECK("E536", xSemaphoreTake(s_adc_read_mutex, portMAX_DELAY) == pdTRUE ? ESP_OK : ESP_ERR_TIMEOUT);
+    APP_ERROR_CHECK("E704", s_adc_read_mutex != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);
+    APP_ERROR_CHECK("E705", xSemaphoreTake(s_adc_read_mutex, portMAX_DELAY) == pdTRUE ? ESP_OK : ESP_ERR_TIMEOUT);
 
     int raw = 0;
     esp_err_t result = adc_oneshot_read(s_adc_handle, channel, &raw);
@@ -57,6 +57,6 @@ int  adc_read(adc_channel_t channel)
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Cteni ADC selhalo (channel=%d): %s", (int)channel, esp_err_to_name(result));
     }
-    APP_ERROR_CHECK("E536", result);        
+    APP_ERROR_CHECK("E706", result);        
     return raw  ;
 }
