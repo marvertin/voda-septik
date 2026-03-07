@@ -19,13 +19,19 @@ esp_err_t mqtt_publish(const char *topic, const char *data, bool retain)
         return ESP_ERR_INVALID_STATE;
     }
 
-    int msg_id = esp_mqtt_client_publish(mqtt_client, topic, data, 0, 1, retain);
-    if (msg_id == -1) {
-        ESP_LOGE(TAG, "Publikovani selhalo: %s = %s", topic, data);
+    const int msg_id = esp_mqtt_client_enqueue(mqtt_client,
+                                               topic,
+                                               data,
+                                               0,
+                                               1,
+                                               retain,
+                                               true);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Enqueue publikace selhala: %s = %s (rc=%d)", topic, data, msg_id);
         return ESP_FAIL;
     }
 
-    ESP_LOGD(TAG, "Publikovano: %s = %s (msg_id: %d)", topic, data, msg_id);
+    ESP_LOGD(TAG, "MQTT enqueue: %s = %s (msg_id: %d)", topic, data, msg_id);
     return ESP_OK;
 }
 
