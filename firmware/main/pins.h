@@ -17,8 +17,8 @@ static const gpio_num_t FLOW_SENSOR_GPIO = GPIO_NUM_26;         // GPIO26
 static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;          // GPIO0
 static const gpio_num_t TEMPERATURE_SENSOR_GPIO = GPIO_NUM_27;  // GPIO27
 
-static const adc_channel_t LEVEL_SENSOR_ADC_CHANNEL = ADC_CHANNEL_6;          // ADC1_CH6 (GPIO34)
+static const adc_channel_t LEVEL_SENSOR_ADC_CHANNEL = ADC_CHANNEL_0;          // ADC1_CH6 (GPIO34)
 
-static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_4; // ADC1_CH4 (GPIO32)
-static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_5;  // ADC1_CH5 (GPIO33)
+static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_6; // ADC1_CH4 (GPIO32)
+static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_7;  // ADC1_CH5 (GPIO33)
 
