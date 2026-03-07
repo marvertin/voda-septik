@@ -260,7 +260,7 @@ void cpp_app_main(void)
 
 
     
-    lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
+    // lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
 
     state_manager_start();
 

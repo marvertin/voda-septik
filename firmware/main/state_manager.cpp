@@ -384,6 +384,8 @@ static void state_manager_task(void *pvParameters)
             continue;
         }
 
+        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
+
         sensor_event_to_string(&event, debug_line, sizeof(debug_line));
         ESP_LOGD(TAG, "%s", debug_line);
 
@@ -392,16 +394,20 @@ static void state_manager_task(void *pvParameters)
                 switch (event.data.sensor.sensor_type) {
                     case SENSOR_EVENT_TEMPERATURE:
                         publish_temperature_to_outputs(event.data.sensor);
+                        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                         break;
                     case SENSOR_EVENT_ZASOBA:
                         publish_zasoba_to_outputs(event.data.sensor);
+                        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                         break;
                     case SENSOR_EVENT_FLOW: {
                         publish_flow_to_outputs(event.data.sensor);
+                        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                         break;
                     }
                     case SENSOR_EVENT_PRESSURE:
                         publish_pressure_to_outputs(event.data.sensor);
+                        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                         break;
                     default:
                         ESP_LOGW(TAG, "Neznamy sensor event: %d", (int)event.data.sensor.sensor_type);
@@ -470,6 +476,7 @@ static void state_manager_task(void *pvParameters)
                 if (mqtt_ready) {
 
                     esp_err_t discovery_result = mqtt_ha_discovery_publish_all();
+                    APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                     if (discovery_result != ESP_OK && discovery_result != ESP_ERR_INVALID_STATE) {
                         ESP_LOGW(TAG, "Publikace HA discovery selhala: %s", esp_err_to_name(discovery_result));
                     }
@@ -496,6 +503,7 @@ static void state_manager_task(void *pvParameters)
                 }
 
                 publish_runtime_diagnostics(network_snapshot);
+                APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                 break;
             }
             case EVT_NETWORK_TELEMETRY: {
@@ -508,6 +516,7 @@ static void state_manager_task(void *pvParameters)
                          (unsigned long)network_snapshot->reconnect_attempts,
                          (unsigned long)network_snapshot->reconnect_successes);
                 publish_runtime_diagnostics(network_snapshot);
+                APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                 break;
             }
             case EVT_TICK:

@@ -10,7 +10,7 @@
 #include "app_error_check.h"
 
 static const char *TAG = "mqtt_publisher_task";
-static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(50);
+static const TickType_t MQTT_PUBLISH_ENQUEUE_TIMEOUT_TICKS = 0;
 static const TickType_t MQTT_PUBLISH_REFRESH_INTERVAL_TICKS = pdMS_TO_TICKS(60 * 1000);
 static const TickType_t MQTT_PUBLISH_DEQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(1000);
 
