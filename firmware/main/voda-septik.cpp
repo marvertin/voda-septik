@@ -194,11 +194,11 @@ void cpp_app_main(void)
         .trigger_panic = false,
     };
 
-    APP_ERROR_CHECK("E103", task_wdt_init_or_reconfigure(&task_wdt_cfg));
-    ESP_LOGI(TAG,
-             "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
-             (unsigned long)TASK_WDT_TIMEOUT_MS,
-             (unsigned long)task_wdt_cfg.idle_core_mask);
+//    APP_ERROR_CHECK("E103", task_wdt_init_or_reconfigure(&task_wdt_cfg));
+//    ESP_LOGI(TAG,
+//             "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
+//             (unsigned long)TASK_WDT_TIMEOUT_MS,
+//             (unsigned long)task_wdt_cfg.idle_core_mask);
 
     sensor_events_init(32);
     network_event_bridge_init();
@@ -218,7 +218,7 @@ void cpp_app_main(void)
     zasoba_register_config_items();
 
     APP_ERROR_CHECK("E109", config_store_begin_section("Tlak"));
-    tlak_register_config_items();
+    tlak_register_config_items(); 
 
     APP_ERROR_CHECK("E110", config_webapp_prepare("app_cfg"));
 
@@ -270,7 +270,7 @@ void cpp_app_main(void)
     prutokomer_init();
 
     // vytvoření paralelních tasků
-    teplota_init();
+    // teplota_init();
     zasoba_init();
     tlak_init();
 

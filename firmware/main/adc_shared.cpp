@@ -35,7 +35,7 @@ void adc_channel_init(adc_channel_t channel)
 {
 
      adc_oneshot_chan_cfg_t chan_cfg = {
-       .atten = ADC_ATTEN_DB_12,              // nejlepší přesnost do ~1.1V
+       .atten = ADC_ATTEN_DB_0,              // nejlepší přesnost do ~1.1V
        .bitwidth = ADC_BITWIDTH_12,      // 12 bit na ESP32
     };  
 

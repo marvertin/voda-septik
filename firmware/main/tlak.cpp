@@ -473,9 +473,6 @@ static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_s
     }
 
     if (!pressure_raw_is_plausible(sensor->calibration, sample->raw_unfiltered)) {
-        ESP_LOGW(TAG, "[%s] ADC RAW mimo ocekavany rozsah: %lu",
-                 sensor->name,
-                 (unsigned long)sample->raw_unfiltered);
         DEBUG_PUBLISH("tlak_dyn",
                       "sensor_proc name=%s ok=0 reason=raw_out_of_range raw=%lu",
                       sensor->name,

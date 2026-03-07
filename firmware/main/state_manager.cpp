@@ -69,8 +69,8 @@ static constexpr SensorFaultDisplay SENSOR_FAULT_PRESSURE_AFTER {
 
 // Toto prakticky asi nenastane, ale pro jistotu indikovat chybu senzoru i v případě, že naměřená hodnota není číslo (NaN) nebo nekonečno.
 static constexpr SensorFaultDisplay SENSOR_FAULT_FLOW{
-    3,
-    static_cast<uint8_t>(TM1637_SEG_D | TM1637_SEG_G)
+    2,
+    static_cast<uint8_t>(TM1637_SEG_G)
 };
 
 static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
