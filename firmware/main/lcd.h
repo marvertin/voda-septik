@@ -17,6 +17,9 @@ typedef struct {
 // Inicializace LCD a fronty
 void lcd_init(void);
 
+// Vraci true, pokud je LCD dostupne a inicializovane
+bool lcd_is_available(void);
+
 // Pošle zprávu do fronty LCD (z libovolného tasku)
 BaseType_t lcd_print(uint8_t x, uint8_t y, const char *text, bool clear_line, TickType_t timeout);
 

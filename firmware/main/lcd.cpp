@@ -22,6 +22,7 @@ extern "C" {
 static QueueHandle_t lcd_queue = NULL;
 static i2c_dev_t pcf8574;
 static hd44780_t lcd;
+static bool s_lcd_available = false;
 
 static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
 {
@@ -42,10 +43,27 @@ static void lcd_task(void *pvParameters)
 
 void lcd_init(void)
 {
-    APP_ERROR_CHECK("E901", i2cdev_init());
+    s_lcd_available = false;
+
+    esp_err_t result = i2cdev_init();
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "LCD disabled: i2cdev_init failed: %s", esp_err_to_name(result));
+        return;
+    }
 
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    APP_ERROR_CHECK("E902", pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO));
+    result = pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "LCD disabled: pcf8574_init_desc failed: %s", esp_err_to_name(result));
+        return;
+    }
+
+    uint8_t probe_value = 0;
+    result = pcf8574_port_read(&pcf8574, &probe_value);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "LCD not detected on I2C address 0x27: %s", esp_err_to_name(result));
+        return;
+    }
 
     lcd.write_cb = write_lcd_data;
     lcd.font = HD44780_FONT_5X8;
@@ -58,17 +76,41 @@ void lcd_init(void)
     lcd.pins.d7 = 7;
     lcd.pins.bl = 3;
 
-    APP_ERROR_CHECK("E903", hd44780_init(&lcd));
+    result = hd44780_init(&lcd);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "LCD disabled: hd44780_init failed: %s", esp_err_to_name(result));
+        return;
+    }
     hd44780_switch_backlight(&lcd, true);
 
     lcd_queue = xQueueCreate(LCD_QUEUE_LENGTH, sizeof(lcd_msg_t));
-    configASSERT(lcd_queue);
+    if (lcd_queue == NULL) {
+        ESP_LOGW(TAG, "LCD disabled: queue allocation failed");
+        return;
+    }
 
-    xTaskCreate(lcd_task, "lcd_task", 2048, NULL, 4, NULL);
+    if (xTaskCreate(lcd_task, "lcd_task", 2048, NULL, 4, NULL) != pdPASS) {
+        vQueueDelete(lcd_queue);
+        lcd_queue = NULL;
+        ESP_LOGW(TAG, "LCD disabled: task creation failed");
+        return;
+    }
+
+    s_lcd_available = true;
+    ESP_LOGI(TAG, "LCD initialized and task started");
+}
+
+bool lcd_is_available(void)
+{
+    return s_lcd_available;
 }
 
 BaseType_t lcd_print(uint8_t x, uint8_t y, const char *text, bool clear_line, TickType_t timeout)
 {
+    if (!s_lcd_available || lcd_queue == NULL || text == NULL) {
+        return pdFALSE;
+    }
+
     lcd_msg_t msg;
     memset(&msg, 0, sizeof(msg));
     msg.x = x;
@@ -81,5 +123,9 @@ BaseType_t lcd_print(uint8_t x, uint8_t y, const char *text, bool clear_line, Ti
 
 BaseType_t lcd_send_msg(const lcd_msg_t *msg, TickType_t timeout)
 {
+    if (!s_lcd_available || lcd_queue == NULL || msg == NULL) {
+        return pdFALSE;
+    }
+
     return xQueueSend(lcd_queue, msg, timeout);
 }
