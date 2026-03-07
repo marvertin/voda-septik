@@ -4,7 +4,7 @@
 #include "driver/gpio.h"
 #include <esp_adc/adc_oneshot.h>
 
-static const gpio_num_t STATUS_LED_GPIO = GPIO_NUM_5;           // GPIO5
+static const gpio_num_t STATUS_LED_GPIO = GPIO_NUM_23;           // GPIO23
 static const gpio_num_t AUX_LED_GPIO = GPIO_NUM_4;              // GPIO4
 
 static const gpio_num_t TM1637_CLK_GPIO = GPIO_NUM_18;          // GPIO18
