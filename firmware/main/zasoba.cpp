@@ -334,15 +334,6 @@ static void log_hysteresis_debug_periodic(int64_t now_us, float input_height_m, 
         && (now_us - s_last_hysteresis_debug_log_us) < LEVEL_HYST_DEBUG_PERIOD_US) {
         return;
     }
-
-    ESP_LOGI(TAG,
-             "HYST dbg: in=%.4f out=%.4f delta=%.4f dir=%d hyst=%.4f",
-             (double)input_height_m,
-             (double)output_height_m,
-             (double)(input_height_m - output_height_m),
-             s_height_hysteresis.direction(),
-             (double)g_level_config.hyst_m);
-
     s_last_hysteresis_debug_log_us = now_us;
 }
 

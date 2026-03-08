@@ -593,8 +593,6 @@ static void temperature_task(void *pvParameters)
         if (conversion_started) {
             vTaskDelay(pdMS_TO_TICKS(TEMPERATURE_CONVERSION_MS));
             APP_ERROR_CHECK("E719", esp_task_wdt_reset());
-        } else {
-            ESP_LOGE(TAG, "Nebylo mozne spustit hromadnou konverzi teplot");
         }
 
         for (size_t index = 0; index < sizeof(probes) / sizeof(probes[0]); ++index) {
