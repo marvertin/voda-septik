@@ -143,9 +143,13 @@ static level_calibration_config_t g_level_config = {
 static TrimmedMean<31, 5> level_filter;
 static float s_height_ema_value = 0.0f;
 static bool s_height_ema_initialized = false;
+
 static float s_height_hysteresis_value = 0.0f;
+static int s_height_hysteresis_direction = 0; // -1 = klesani, 0 = nezavazne, 1 = stoupani
 static bool s_height_hysteresis_initialized = false;
+static int64_t s_last_hysteresis_debug_log_us = 0;
 static int64_t s_last_cfg_debug_publish_us = 0;
+static constexpr int64_t LEVEL_HYST_DEBUG_PERIOD_US = 2LL * 1000LL * 1000LL;
 
 static void publish_config_debug(void)
 {
@@ -329,12 +333,60 @@ static float height_apply_hysteresis(float height_m)
         return s_height_hysteresis_value;
     }
 
+    if (g_level_config.hyst_m <= 0.0f) {
+        s_height_hysteresis_value = height_m;
+        s_height_hysteresis_direction = 0;
+        return s_height_hysteresis_value;
+    }
+
     const float delta = height_m - s_height_hysteresis_value;
-    if (delta >= g_level_config.hyst_m || delta <= -g_level_config.hyst_m) {
+    if (delta == 0.0f) {
+        return s_height_hysteresis_value;
+    }
+
+    if (delta > 0.0f) {
+        // Stoupani hladiny
+        if (s_height_hysteresis_direction < 0) {
+            // Menime smer z klesani na stoupani az po prekonani hystereze.
+            if (delta < g_level_config.hyst_m) {
+                return s_height_hysteresis_value;
+            }
+        }
+        // Ve stejnem smeru uz hladinu sledujeme bez dalsiho zadrzeni.
+        s_height_hysteresis_direction = 1;
+        s_height_hysteresis_value = height_m;
+    } else if (delta < 0.0f) {
+        // Klesani hladiny
+        if (s_height_hysteresis_direction > 0) {
+            // Menime smer ze stoupani na klesani az po prekonani hystereze.
+            if (delta > -g_level_config.hyst_m) {
+                return s_height_hysteresis_value;
+            }
+        }
+        // Ve stejnem smeru uz hladinu sledujeme bez dalsiho zadrzeni.
+        s_height_hysteresis_direction = -1;
         s_height_hysteresis_value = height_m;
     }
 
     return s_height_hysteresis_value;
+}
+
+static void log_hysteresis_debug_periodic(int64_t now_us, float input_height_m, float output_height_m)
+{
+    if (s_last_hysteresis_debug_log_us != 0
+        && (now_us - s_last_hysteresis_debug_log_us) < LEVEL_HYST_DEBUG_PERIOD_US) {
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "HYST dbg: in=%.4f out=%.4f delta=%.4f dir=%d hyst=%.4f",
+             (double)input_height_m,
+             (double)output_height_m,
+             (double)(input_height_m - output_height_m),
+             s_height_hysteresis_direction,
+             (double)g_level_config.hyst_m);
+
+    s_last_hysteresis_debug_log_us = now_us;
 }
 
 static float height_to_volume_m3(float height_m)
@@ -415,6 +467,7 @@ static void zasoba_task(void *pvParameters)
         hladina_ema = height_filter_ema(hladina_raw);
         // 5) Hystereze na vysce
         hladina_hyst = height_apply_hysteresis(hladina_ema);
+        log_hysteresis_debug_periodic(timestamp_us, hladina_ema, hladina_hyst);
         // 6) Prevod vyska -> objem [m3]
         objem_m3_raw = height_to_volume_m3(hladina_hyst);
         // 7) Zaokrouhleni na konfigurovany pocet desetinnych mist pro publikaci
