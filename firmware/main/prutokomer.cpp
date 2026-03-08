@@ -30,6 +30,12 @@ static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
 static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
 static constexpr uint32_t FLOW_MAX_LITERS_PER_MIN = 120;
 static constexpr uint32_t FLOW_PULSE_SPIKE_MARGIN = 8;
+
+static constexpr bool FLOW_SIMULATOR_ENABLED = false;
+static constexpr float FLOW_SIMULATED_LITERS_PER_MIN = 60.0f;
+static constexpr TickType_t FLOW_SIMULATOR_PERIOD = pdMS_TO_TICKS(100);
+static constexpr UBaseType_t FLOW_SIMULATOR_TASK_STACK_SIZE = 2048;
+
 static const char *FLOW_COUNTER_PARTITION_LABEL = "flow_data0";
 
 // sdílený counter z ISR
@@ -57,6 +63,32 @@ static uint32_t get_and_clear_pulse_count(void)
     pulse_count = 0;
     portEXIT_CRITICAL(&s_pulse_count_mux);
     return count;
+}
+
+static void flow_pulse_simulator_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    const float pulses_per_period =
+        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(FLOW_PULSES_PER_LITER)
+         * static_cast<float>(pdTICKS_TO_MS(FLOW_SIMULATOR_PERIOD)))
+        / 60000.0f;
+    float pulse_accumulator = 0.0f;
+
+    while (1) {
+        vTaskDelay(FLOW_SIMULATOR_PERIOD);
+
+        pulse_accumulator += pulses_per_period;
+        const uint32_t pulses_to_add = static_cast<uint32_t>(pulse_accumulator);
+        if (pulses_to_add == 0) {
+            continue;
+        }
+        pulse_accumulator -= static_cast<float>(pulses_to_add);
+
+        portENTER_CRITICAL(&s_pulse_count_mux);
+        pulse_count += pulses_to_add;
+        portEXIT_CRITICAL(&s_pulse_count_mux);
+    }
 }
 
 static void pocitani_pulsu(void *pvParameters)
@@ -87,7 +119,8 @@ static void pocitani_pulsu(void *pvParameters)
         const uint32_t max_allowed_pulses =
             (max_allowed_pulses_u64 > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : static_cast<uint32_t>(max_allowed_pulses_u64);
 
-        const uint32_t new_pulses = (sampled_pulses > max_allowed_pulses) ? max_allowed_pulses : sampled_pulses;
+        uint32_t new_pulses = (sampled_pulses > max_allowed_pulses) ? max_allowed_pulses : sampled_pulses;
+
         if (sampled_pulses > max_allowed_pulses) {
             ESP_LOGW(TAG,
                      "Ignoruji spike impulzu: sampled=%lu max_allowed=%lu elapsed_us=%lld",
@@ -193,8 +226,6 @@ void prutokomer_init(void)
              (double)FLOW_EMA_ALPHA);
 
     APP_ERROR_CHECK("E709", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
-    //s_flow_counter.reset();
-
     // APP_ERROR_CHECK("E710", s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
@@ -223,6 +254,23 @@ void prutokomer_init(void)
     ESP_LOGI(TAG,
              "GPIO flow nastaven: pullup=1 pulldown=0 intr=posedge pin=%d",
              (int)FLOW_SENSOR_GPIO);
+
+    if (FLOW_SIMULATOR_ENABLED) {
+        ESP_LOGW(TAG,
+                 "Flow simulator ENABLED: %.2f l/min, period=%lu ms",
+                 (double)FLOW_SIMULATED_LITERS_PER_MIN,
+                 (unsigned long)pdTICKS_TO_MS(FLOW_SIMULATOR_PERIOD));
+        APP_ERROR_CHECK("E715",
+                        xTaskCreate(flow_pulse_simulator_task,
+                                    "flow_sim",
+                                    FLOW_SIMULATOR_TASK_STACK_SIZE,
+                                    NULL,
+                                    1,
+                                    NULL) == pdPASS
+                            ? ESP_OK
+                            : ESP_FAIL);
+    }
+
     ESP_LOGI(TAG, "Startuji mereni pulzu...");
 
     APP_ERROR_CHECK("E714",

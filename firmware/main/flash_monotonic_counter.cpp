@@ -366,6 +366,12 @@ esp_err_t FlashMonotonicCounter::rollover_()
 {
     const int64_t new_base = signed_value_();
 
+    ESP_LOGI(TAG, "Rollover: base=%lld used_bits=%lu total_bits=%lu new_base=%lld",
+             (long long)base_value_,
+             (unsigned long)used_bits_,
+             (unsigned long)total_bits_,
+             (long long)new_base);
+
     esp_err_t result = save_rollover_state_to_nvs_(new_base, true);
     if (result != ESP_OK) {
         return result;
