@@ -20,6 +20,7 @@ static constexpr const char *DEVICE_ID = "voda_septik_esp32";
 static constexpr const char *DEVICE_NAME = "Voda Septik";
 static constexpr const char *DEVICE_MODEL = "ESP32 voda-septik";
 static constexpr const char *DEVICE_MANUFACTURER = "voda-septik";
+static constexpr uint32_t FLOW_RATE_EXPIRE_AFTER_SEC = 30;
 
 struct ha_entity_meta_t {
     const char *component;
@@ -480,6 +481,20 @@ static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topi
                                true) ||
             !append_json_field(payload, sizeof(payload), &offset, &first, "payload_available", "online", true) ||
             !append_json_field(payload, sizeof(payload), &offset, &first, "payload_not_available", "offline", true)) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (topic.id == mqtt_topic_id_t::TOPIC_STAV_CERPANI_PRUTOK) {
+        char expire_after_value[16] = {0};
+        snprintf(expire_after_value, sizeof(expire_after_value), "%lu", (unsigned long)FLOW_RATE_EXPIRE_AFTER_SEC);
+        if (!append_json_field(payload,
+                               sizeof(payload),
+                               &offset,
+                               &first,
+                               "expire_after",
+                               expire_after_value,
+                               false)) {
             return ESP_ERR_NO_MEM;
         }
     }
