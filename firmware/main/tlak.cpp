@@ -330,32 +330,10 @@ static esp_err_t adc_init(void)
     return ESP_OK;
 }
 
-static bool pressure_raw_is_plausible(const pressure_sensor_calibration_t &calibration, uint32_t raw_value)
+static bool pressure_raw_is_plausible(uint32_t raw_value)
 {
-    if (raw_value > (uint32_t)PRESSURE_RAW_SANITY_MAX) {
-        return false;
-    }
-
-    const int32_t raw_min = calibration.raw_at_4ma;
-    const int32_t raw_max = calibration.raw_at_20ma;
-    const int32_t span = (raw_max >= raw_min) ? (raw_max - raw_min) : (raw_min - raw_max);
-    int32_t margin = span / 4;
-    if (margin < PRESSURE_RAW_SANITY_MIN_MARGIN) {
-        margin = PRESSURE_RAW_SANITY_MIN_MARGIN;
-    }
-
-    int32_t plausible_min = ((raw_min < raw_max) ? raw_min : raw_max) - margin;
-    int32_t plausible_max = ((raw_min > raw_max) ? raw_min : raw_max) + margin;
-
-    if (plausible_min < PRESSURE_RAW_SANITY_MIN) {
-        plausible_min = PRESSURE_RAW_SANITY_MIN;
-    }
-    if (plausible_max > PRESSURE_RAW_SANITY_MAX) {
-        plausible_max = PRESSURE_RAW_SANITY_MAX;
-    }
-
-    const int32_t raw_signed = (int32_t)raw_value;
-    return raw_signed >= plausible_min && raw_signed <= plausible_max;
+    return (raw_value <= PRESSURE_RAW_SANITY_MAX - PRESSURE_RAW_SANITY_MIN_MARGIN
+         && raw_value >= PRESSURE_RAW_SANITY_MIN + PRESSURE_RAW_SANITY_MIN_MARGIN);
 }
 
 static bool adc_read_raw(adc_channel_t channel, uint32_t *raw_value)
@@ -451,9 +429,6 @@ static float pressure_diff_to_clogging_percent(float pressure_diff_bar)
 static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_sensor_sample_t *sample)
 {
     if (sensor == nullptr || sample == nullptr) {
-        DEBUG_PUBLISH("tlak_dyn",
-                      "sensor_proc name=%s ok=0 reason=null_input",
-                      (sensor != nullptr && sensor->name != nullptr) ? sensor->name : "?");
         return false;
     }
 
@@ -465,20 +440,13 @@ static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_s
     sample->pressure_rounded = NAN;
 
     if (!adc_read_raw(sensor->channel, &sample->raw_unfiltered)) {
-        DEBUG_PUBLISH("tlak_dyn",
+        DEBUG_PUBLISH("tlak",
                       "sensor_proc name=%s ok=0 reason=adc_read_fail ch=%d",
                       sensor->name,
                       (int)sensor->channel);
         return false;
     }
 
-    if (!pressure_raw_is_plausible(sensor->calibration, sample->raw_unfiltered)) {
-        DEBUG_PUBLISH("tlak_dyn",
-                      "sensor_proc name=%s ok=0 reason=raw_out_of_range raw=%lu",
-                      sensor->name,
-                      (unsigned long)sample->raw_unfiltered);
-        return false;
-    }
 
     sample->raw_filtered = adc_filter_trimmed_mean(*sensor->filter, sample->raw_unfiltered);
     sample->pressure_raw = adc_raw_to_pressure_bar(sensor->calibration, sample->raw_filtered);
@@ -486,8 +454,8 @@ static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_s
     sample->pressure_hyst = pressure_apply_hysteresis(sensor, sample->pressure_ema);
     sample->pressure_rounded = round_to_decimals(sample->pressure_hyst, g_pressure_config.round_decimals);
 
-    DEBUG_PUBLISH("tlak_dyn",
-                  "sensor_proc name=%s ok=1 raw=%lu raw_f=%lu p_raw=%.3f p_ema=%.3f p_hys=%.3f p=%.3f",
+    DEBUG_PUBLISH("tlak",
+                  "sensor_proc name=%4s ok=1 raw=%lu raw_f=%lu p_raw=%.3f p_ema=%.3f p_hys=%.3f p=%.3f",
                   sensor->name,
                   (unsigned long)sample->raw_unfiltered,
                   (unsigned long)sample->raw_filtered,
@@ -495,7 +463,7 @@ static bool process_pressure_sensor(pressure_sensor_static_t *sensor, pressure_s
                   (double)sample->pressure_ema,
                   (double)sample->pressure_hyst,
                   (double)sample->pressure_rounded);
-    return true;
+    return pressure_raw_is_plausible(sample->raw_unfiltered);
 }
 
 static void prefill_pressure_sensor(pressure_sensor_static_t *sensor)
@@ -573,7 +541,7 @@ static void tlak_task(void *pvParameters)
 
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
-        DEBUG_PUBLISH("tlak_dyn",
+        DEBUG_PUBLISH("filtr",
                   "q=%d ts=%lld valid_pred=%d valid_za=%d pred=%.3f za=%.3f dp=%.3f clog=%.1f",
                   queued ? 1 : 0,
                   (long long)event.timestamp_us,

@@ -44,7 +44,7 @@ extern "C" {
 }
 
 static const char *TAG = "voda_septik";
-static constexpr uint32_t TASK_WDT_TIMEOUT_MS = 2000;
+static constexpr uint32_t TASK_WDT_TIMEOUT_MS = 5000;
 
 static esp_err_t task_wdt_init_or_reconfigure(const esp_task_wdt_config_t *cfg)
 {
@@ -194,11 +194,11 @@ void cpp_app_main(void)
         .trigger_panic = false,
     };
 
-//    APP_ERROR_CHECK("E103", task_wdt_init_or_reconfigure(&task_wdt_cfg));
-//    ESP_LOGI(TAG,
-//             "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
-//             (unsigned long)TASK_WDT_TIMEOUT_MS,
-//             (unsigned long)task_wdt_cfg.idle_core_mask);
+  APP_ERROR_CHECK("E103", task_wdt_init_or_reconfigure(&task_wdt_cfg));
+  ESP_LOGI(TAG,
+            "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
+             (unsigned long)TASK_WDT_TIMEOUT_MS,
+             (unsigned long)task_wdt_cfg.idle_core_mask);
 
     sensor_events_init(32);
     network_event_bridge_init();
@@ -260,7 +260,7 @@ void cpp_app_main(void)
 
 
     
-    // lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
+    lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
 
     state_manager_start();
 
@@ -270,7 +270,7 @@ void cpp_app_main(void)
     prutokomer_init();
 
     // vytvoření paralelních tasků
-    // teplota_init();
+    teplota_init();
     zasoba_init();
     tlak_init();
 

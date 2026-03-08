@@ -104,6 +104,11 @@ static void pocitani_pulsu(void *pvParameters)
 
         const uint64_t target_persisted_steps = s_total_pulses / PULSES_PER_COUNTER_INCREMENT;
         while (s_persisted_counter_steps < target_persisted_steps) {
+            ESP_LOGW(TAG,
+                     "Persistuji krok flow counteru: %llu -> %llu (pulses=%llu)",
+                     (unsigned long long)s_persisted_counter_steps,
+                     (unsigned long long)(s_persisted_counter_steps + 1),
+                     (unsigned long long)s_total_pulses);
             const esp_err_t increment_result = s_flow_counter.increment(1);
             if (increment_result != ESP_OK) {
                 ESP_LOGE(TAG, "Nelze zapsat flow counter: %s", esp_err_to_name(increment_result));
@@ -169,6 +174,11 @@ static void pocitani_pulsu(void *pvParameters)
                       (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
 
+        // ESP_LOGI(TAG,
+        //      "Prutok: %.2f l/min, Cerpano celkem: %.2f l (publikováno: %s)",
+        //      s_prutok_ema,
+        //      cerpano_celkem,
+        //      queued ? "ano" : "ne");              
         APP_ERROR_CHECK("E708", esp_task_wdt_reset());
     }
 }
