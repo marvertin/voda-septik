@@ -22,6 +22,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "debug_mqtt.h"
 #include "app_error_check.h"
+#include "directional_hysteresis.hpp"
 
 #define TAG "zasoba"
 
@@ -143,10 +144,7 @@ static level_calibration_config_t g_level_config = {
 static TrimmedMean<31, 5> level_filter;
 static float s_height_ema_value = 0.0f;
 static bool s_height_ema_initialized = false;
-
-static float s_height_hysteresis_value = 0.0f;
-static int s_height_hysteresis_direction = 0; // -1 = klesani, 0 = nezavazne, 1 = stoupani
-static bool s_height_hysteresis_initialized = false;
+static DirectionalHysteresis s_height_hysteresis(LEVEL_DEFAULT_HYST_M);
 static int64_t s_last_hysteresis_debug_log_us = 0;
 static int64_t s_last_cfg_debug_publish_us = 0;
 static constexpr int64_t LEVEL_HYST_DEBUG_PERIOD_US = 2LL * 1000LL * 1000LL;
@@ -327,48 +325,7 @@ static float height_filter_ema(float height_raw_m)
  */
 static float height_apply_hysteresis(float height_m)
 {
-    if (!s_height_hysteresis_initialized) {
-        s_height_hysteresis_value = height_m;
-        s_height_hysteresis_initialized = true;
-        return s_height_hysteresis_value;
-    }
-
-    if (g_level_config.hyst_m <= 0.0f) {
-        s_height_hysteresis_value = height_m;
-        s_height_hysteresis_direction = 0;
-        return s_height_hysteresis_value;
-    }
-
-    const float delta = height_m - s_height_hysteresis_value;
-    if (delta == 0.0f) {
-        return s_height_hysteresis_value;
-    }
-
-    if (delta > 0.0f) {
-        // Stoupani hladiny
-        if (s_height_hysteresis_direction < 0) {
-            // Menime smer z klesani na stoupani az po prekonani hystereze.
-            if (delta < g_level_config.hyst_m) {
-                return s_height_hysteresis_value;
-            }
-        }
-        // Ve stejnem smeru uz hladinu sledujeme bez dalsiho zadrzeni.
-        s_height_hysteresis_direction = 1;
-        s_height_hysteresis_value = height_m;
-    } else if (delta < 0.0f) {
-        // Klesani hladiny
-        if (s_height_hysteresis_direction > 0) {
-            // Menime smer ze stoupani na klesani az po prekonani hystereze.
-            if (delta > -g_level_config.hyst_m) {
-                return s_height_hysteresis_value;
-            }
-        }
-        // Ve stejnem smeru uz hladinu sledujeme bez dalsiho zadrzeni.
-        s_height_hysteresis_direction = -1;
-        s_height_hysteresis_value = height_m;
-    }
-
-    return s_height_hysteresis_value;
+    return s_height_hysteresis.process(height_m);
 }
 
 static void log_hysteresis_debug_periodic(int64_t now_us, float input_height_m, float output_height_m)
@@ -383,7 +340,7 @@ static void log_hysteresis_debug_periodic(int64_t now_us, float input_height_m, 
              (double)input_height_m,
              (double)output_height_m,
              (double)(input_height_m - output_height_m),
-             s_height_hysteresis_direction,
+             s_height_hysteresis.direction(),
              (double)g_level_config.hyst_m);
 
     s_last_hysteresis_debug_log_us = now_us;
@@ -513,6 +470,7 @@ static void zasoba_task(void *pvParameters)
 void zasoba_init(void)
 {
     load_level_calibration_config();
+    s_height_hysteresis = DirectionalHysteresis(g_level_config.hyst_m);
 
     APP_ERROR_CHECK("E767", adc_init());
 

@@ -21,6 +21,7 @@ extern "C" {
 #include "config_store.h"
 #include "debug_mqtt.h"
 #include "app_error_check.h"
+#include "directional_hysteresis.hpp"
 
 #define TAG "tlak"
 
@@ -138,6 +139,8 @@ static pressure_runtime_config_t g_pressure_config = {
 
 static TrimmedMean<31, 5> pressure_before_filter;
 static TrimmedMean<31, 5> pressure_after_filter;
+static DirectionalHysteresis s_pressure_hysteresis_before(PRESSURE_DEFAULT_HYST_BAR);
+static DirectionalHysteresis s_pressure_hysteresis_after(PRESSURE_DEFAULT_HYST_BAR);
 
 static int64_t s_last_cfg_debug_publish_us = 0;
 
@@ -148,8 +151,7 @@ typedef struct {
     pressure_sensor_calibration_t calibration;
     float ema_value;
     bool ema_initialized;
-    float hyst_value;
-    bool hyst_initialized;
+    DirectionalHysteresis *hysteresis;
 } pressure_sensor_static_t;
 
 typedef struct {
@@ -173,8 +175,7 @@ static pressure_sensor_static_t s_pressure_sensor_before = {
     },
     .ema_value = 0.0f,
     .ema_initialized = false,
-    .hyst_value = 0.0f,
-    .hyst_initialized = false,
+    .hysteresis = &s_pressure_hysteresis_before,
 };
 
 static pressure_sensor_static_t s_pressure_sensor_after = {
@@ -189,8 +190,7 @@ static pressure_sensor_static_t s_pressure_sensor_after = {
     },
     .ema_value = 0.0f,
     .ema_initialized = false,
-    .hyst_value = 0.0f,
-    .hyst_initialized = false,
+    .hysteresis = &s_pressure_hysteresis_after,
 };
 
 static float clamp01(float value)
@@ -391,22 +391,11 @@ static float pressure_filter_ema(pressure_sensor_static_t *sensor, float pressur
 
 static float pressure_apply_hysteresis(pressure_sensor_static_t *sensor, float pressure_bar)
 {
-    if (sensor == nullptr) {
+    if (sensor == nullptr || sensor->hysteresis == nullptr) {
         return NAN;
     }
 
-    if (!sensor->hyst_initialized) {
-        sensor->hyst_value = pressure_bar;
-        sensor->hyst_initialized = true;
-        return sensor->hyst_value;
-    }
-
-    const float delta = pressure_bar - sensor->hyst_value;
-    if (delta >= g_pressure_config.hyst_bar || delta <= -g_pressure_config.hyst_bar) {
-        sensor->hyst_value = pressure_bar;
-    }
-
-    return sensor->hyst_value;
+    return sensor->hysteresis->process(pressure_bar);
 }
 
 static float round_to_decimals(float value, int32_t decimals)
@@ -581,6 +570,9 @@ void tlak_register_config_items(void)
 void tlak_init(void)
 {
     load_pressure_calibration_config();
+    s_pressure_hysteresis_before = DirectionalHysteresis(g_pressure_config.hyst_bar);
+    s_pressure_hysteresis_after = DirectionalHysteresis(g_pressure_config.hyst_bar);
+
     APP_ERROR_CHECK("E739", adc_init());
     APP_ERROR_CHECK("E740",
                     xTaskCreate(tlak_task, TAG, configMINIMAL_STACK_SIZE * 6, nullptr, 5, nullptr) == pdPASS
