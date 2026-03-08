@@ -10513,7 +10513,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1N4007"
+		(property "Value" "~"
 			(at 33.02 38.0999 90)
 			(effects
 				(font
@@ -10522,7 +10522,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"
+		(property "Footprint" ""
 			(at 30.48 36.83 0)
 			(effects
 				(font

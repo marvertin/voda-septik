@@ -464,7 +464,7 @@ def print_subscribe_command_with_password(host: str,
                                           topic_root: str) -> None:
     cmd = (
         f"mosquitto_sub -h {shlex.quote(host)} -p {port} -u {shlex.quote(user)} "
-        f"-P {shlex.quote(password)} -q {qos} -v -t {shlex.quote(f'{topic_root}/#')}"
+        f"-P {shlex.quote(password)} -q {qos} -v -t {f'{topic_root}/#'}"
     )
     print("\nPrikaz s heslem natvrdo (lokalni pouziti, nedavat do git):")
     print(f"  {cmd}")
