@@ -31,7 +31,7 @@ static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
 static constexpr uint32_t FLOW_MAX_LITERS_PER_MIN = 120;
 static constexpr uint32_t FLOW_PULSE_SPIKE_MARGIN = 8;
 
-static constexpr bool FLOW_SIMULATOR_ENABLED = true;
+static constexpr bool FLOW_SIMULATOR_ENABLED = false;
 static constexpr float FLOW_SIMULATED_LITERS_PER_MIN = 60.0f;
 static constexpr TickType_t FLOW_SIMULATOR_PERIOD = pdMS_TO_TICKS(100);
 static constexpr UBaseType_t FLOW_SIMULATOR_TASK_STACK_SIZE = 2048;
