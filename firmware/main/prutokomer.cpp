@@ -104,7 +104,7 @@ static void pocitani_pulsu(void *pvParameters)
 
         const uint64_t target_persisted_steps = s_total_pulses / PULSES_PER_COUNTER_INCREMENT;
         while (s_persisted_counter_steps < target_persisted_steps) {
-            ESP_LOGW(TAG,
+            ESP_LOGD(TAG,
                      "Persistuji krok flow counteru: %llu -> %llu (pulses=%llu)",
                      (unsigned long long)s_persisted_counter_steps,
                      (unsigned long long)(s_persisted_counter_steps + 1),
@@ -193,6 +193,7 @@ void prutokomer_init(void)
              (double)FLOW_EMA_ALPHA);
 
     APP_ERROR_CHECK("E709", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
+    //s_flow_counter.reset();
 
     // APP_ERROR_CHECK("E710", s_flow_counter.reset());
 
