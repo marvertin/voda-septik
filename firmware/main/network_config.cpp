@@ -5,27 +5,27 @@
 
 static const config_item_t WIFI_SSID_ITEM = {
     .key = "wifi_ssid", .label = "WiFi SSID", .description = "SSID site, ke ktere se ma zarizeni pripojit.",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "vevenet", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 31, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t WIFI_PASS_ITEM = {
     .key = "wifi_pass", .label = "WiFi heslo", .description = "Heslo k WiFi. Kdyz je prazdne, spusti se konfiguracni AP.",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "drobecekaspik", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 63, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t MQTT_URI_ITEM = {
     .key = "mqtt_uri", .label = "MQTT URI", .description = "Adresa MQTT brokeru, napr. mqtt://mqtt:1883.",
-    .type = CONFIG_VALUE_STRING, .default_string = "mqtt://mqtt:1883", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "mqtt://mqtt.veve:1883", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 127, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t MQTT_USER_ITEM = {
     .key = "mqtt_user", .label = "MQTT uzivatel", .description = "Uzivatelske jmeno pro pripojeni k MQTT brokeru.",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "destovka", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 63, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t MQTT_PASS_ITEM = {
     .key = "mqtt_pass", .label = "MQTT heslo", .description = "Heslo pro pripojeni k MQTT brokeru.",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "prsi.cely-rok", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 127, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 

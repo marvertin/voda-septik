@@ -30,10 +30,10 @@ extern "C" {
 // ADC konfigurace pro senzor hladiny je centralizovana v pins.h.
 
 // Vychozi kalibracni hodnoty a limity (jedine misto, kde jsou cisla definovana)
-static constexpr int32_t LEVEL_DEFAULT_RAW_MIN = 540;
-static constexpr int32_t LEVEL_DEFAULT_RAW_MAX = 950;
+static constexpr int32_t LEVEL_DEFAULT_RAW_MIN = 480;
+static constexpr int32_t LEVEL_DEFAULT_RAW_MAX = 3720;
 static constexpr float LEVEL_DEFAULT_HEIGHT_MIN_M = 0.0f;
-static constexpr float LEVEL_DEFAULT_HEIGHT_MAX_M = 0.290f;
+static constexpr float LEVEL_DEFAULT_HEIGHT_MAX_M = 1.900;
 static constexpr float LEVEL_DEFAULT_TANK_AREA_M2 = 5.4f;
 static constexpr float LEVEL_DEFAULT_EMA_ALPHA = 0.25f;
 static constexpr float LEVEL_DEFAULT_HYST_M = 0.002f;

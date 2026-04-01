@@ -73,12 +73,12 @@ static const config_item_t TEMP_MAX_ITEM = {
 };
 static const config_item_t TEMP_ADDR_WATER_ITEM = {
     .key = "temp_addr_water", .label = "Adresa cidla voda", .description = "ROM adresa DS18B20 pro vodni sondu (hex, napr. 28FF1A2B3C4D5E6F).",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "87000000c9be1728", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 18, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t TEMP_ADDR_AIR_ITEM = {
     .key = "temp_addr_air", .label = "Adresa cidla vzduch", .description = "ROM adresa DS18B20 pro vzduchovou sondu (hex, napr. 28FF1A2B3C4D5E6F).",
-    .type = CONFIG_VALUE_STRING, .default_string = "", .default_int = 0, .default_float = 0.0f, .default_bool = false,
+    .type = CONFIG_VALUE_STRING, .default_string = "a70000006060fd28", .default_int = 0, .default_float = 0.0f, .default_bool = false,
     .max_string_len = 18, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = 0.0f,
 };
 

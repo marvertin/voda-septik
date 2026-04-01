@@ -188,7 +188,7 @@ zalevaci tags
 ```
 
 Skript:
-- pouziva default parametry: `mqtt.home.arpa:1883`, uzivatel `ha`, `qos=1`, root `voda/septik`,
+- pouziva default parametry: `mqtt.veve:1883`, uzivatel `ha`, `qos=1`, root `voda/septik`,
 - cte heslo ze souboru `~/.voda-septik/mqtt_password`,
 - kdyz soubor neexistuje, zepta se na heslo a ulozi ho (`chmod 600`),
 - nabidne menu pro command topiky (`reboot`, `webapp/start`, `debug/start|stop`, ...),
@@ -200,7 +200,7 @@ Skript:
 Volitelne lze prepsat parametry pres promenne prostredi:
 
 ```bash
-MQTT_HOST=mqtt.home.arpa MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=voda/septik zalevaci
+MQTT_HOST=mqtt.veve MQTT_PORT=1883 MQTT_USER=ha TOPIC_ROOT=voda/septik zalevaci
 ```
 
 Pokud je potreba smazat stare retained command zpravy na brokeru, pouzij volbu `Vycistit retained cmd/*` v menu skriptu `zalevaci`.

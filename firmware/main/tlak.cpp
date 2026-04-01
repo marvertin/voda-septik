@@ -27,8 +27,8 @@ extern "C" {
 
 namespace {
 
-static constexpr int32_t PRESSURE_DEFAULT_RAW_4MA = 745;
-static constexpr int32_t PRESSURE_DEFAULT_RAW_20MA = 3722;
+static constexpr int32_t PRESSURE_DEFAULT_RAW_4MA = 480;
+static constexpr int32_t PRESSURE_DEFAULT_RAW_20MA = 3740;
 static constexpr float PRESSURE_DEFAULT_MIN_BAR = 0.0f;
 static constexpr float PRESSURE_DEFAULT_MAX_BAR = 10.0f;
 static constexpr float PRESSURE_DEFAULT_DP100_BAR = 1.0f;
