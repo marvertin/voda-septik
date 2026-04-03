@@ -15,6 +15,7 @@ extern "C" {
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <limits>
 
 #include "kws_303l.h"
 #include "config_store.h"
@@ -93,9 +94,240 @@ enum meter_type_t {
     METER_TYPE_TAC1100,
 };
 
+enum class reg_read_kind_t : uint8_t {
+    NONE = 0,
+    HOLDING_U16,
+    INPUT_FLOAT,
+};
+
+typedef struct {
+    reg_read_kind_t kind;
+    uint16_t reg;
+    float multiplier;
+} reg_binding_t;
+
+typedef struct {
+    float voltage_v;
+    float current_a;
+    float power_w;
+    float reactive_power_var;
+    float apparent_power_va;
+    float frequency_hz;
+    float energy_total_wh;
+    float energy_aux_wh;
+} meter_values_t;
+
+typedef struct {
+    const char *name;
+    reg_binding_t voltage;
+    reg_binding_t current;
+    reg_binding_t power;
+    reg_binding_t reactive_power;
+    reg_binding_t apparent_power;
+    reg_binding_t frequency;
+    reg_binding_t energy_total;
+    reg_binding_t energy_aux;
+} meter_register_map_t;
+
+static constexpr uint32_t METER_READ_RETRIES = 3;
+
+static const meter_register_map_t KWS_METER_MAP = {
+    .name = "KWS",
+    .voltage = {reg_read_kind_t::HOLDING_U16, KWS_REG_VOLTAGE, 0.01f},
+    .current = {reg_read_kind_t::HOLDING_U16, KWS_REG_CURRENT, 0.001f},
+    .power = {reg_read_kind_t::HOLDING_U16, KWS_REG_POWER, 0.1f},
+    .reactive_power = {reg_read_kind_t::HOLDING_U16, KWS_REG_REACTIVE_POWER, 0.1f},
+    .apparent_power = {reg_read_kind_t::HOLDING_U16, KWS_REG_APPARENT_POWER, 0.1f},
+    .frequency = {reg_read_kind_t::HOLDING_U16, KWS_REG_FREQUENCY, 1.0f},
+    .energy_total = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_TOTAL, 1.0f},
+    .energy_aux = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_AUX, 1.0f},
+};
+
+static const meter_register_map_t TAC_METER_MAP = {
+    .name = "TAC1100",
+    .voltage = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_VOLTAGE, 1.0f},
+    .current = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_CURRENT, 1.0f},
+    .power = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_POWER, 1.0f},
+    .reactive_power = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_REACTIVE_POWER, 1.0f},
+    .apparent_power = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_APPARENT_POWER, 1.0f},
+    .frequency = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_FREQUENCY, 1.0f},
+    .energy_total = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_TOTAL_ACTIVE_ENERGY_KWH, 1000.0f},
+    .energy_aux = {reg_read_kind_t::NONE, 0, 0.0f},
+};
+
 static meter_type_t meter_type_for_addr(int32_t addr)
 {
     return (addr == KWS_HARDCODED_SLAVE_ADDR_B) ? METER_TYPE_TAC1100 : METER_TYPE_KWS;
+}
+
+static inline float float_nan()
+{
+    return std::numeric_limits<float>::quiet_NaN();
+}
+
+static inline bool binding_enabled(const reg_binding_t &binding)
+{
+    return binding.kind != reg_read_kind_t::NONE;
+}
+
+static bool modbus_read_u16(uint16_t reg, uint16_t *value);
+static bool modbus_read_input_float(uint16_t reg, float *value);
+
+static bool read_binding_value(const reg_binding_t &binding, float *value)
+{
+    if (value == nullptr) {
+        return false;
+    }
+
+    if (binding.kind == reg_read_kind_t::HOLDING_U16) {
+        uint16_t raw = 0;
+        if (!modbus_read_u16(binding.reg, &raw)) {
+            return false;
+        }
+        *value = (float)raw * binding.multiplier;
+        return true;
+    }
+
+    if (binding.kind == reg_read_kind_t::INPUT_FLOAT) {
+        float raw = 0.0f;
+        if (!modbus_read_input_float(binding.reg, &raw)) {
+            return false;
+        }
+        *value = raw * binding.multiplier;
+        return true;
+    }
+
+    return false;
+}
+
+static bool values_complete(const meter_values_t &values, const meter_register_map_t &map)
+{
+    if (binding_enabled(map.voltage) && std::isnan(values.voltage_v)) {
+        return false;
+    }
+    if (binding_enabled(map.current) && std::isnan(values.current_a)) {
+        return false;
+    }
+    if (binding_enabled(map.power) && std::isnan(values.power_w)) {
+        return false;
+    }
+    if (binding_enabled(map.reactive_power) && std::isnan(values.reactive_power_var)) {
+        return false;
+    }
+    if (binding_enabled(map.apparent_power) && std::isnan(values.apparent_power_va)) {
+        return false;
+    }
+    if (binding_enabled(map.frequency) && std::isnan(values.frequency_hz)) {
+        return false;
+    }
+    if (binding_enabled(map.energy_total) && std::isnan(values.energy_total_wh)) {
+        return false;
+    }
+    if (binding_enabled(map.energy_aux) && std::isnan(values.energy_aux_wh)) {
+        return false;
+    }
+    return true;
+}
+
+static void read_values_once(const meter_register_map_t &map, meter_values_t *values)
+{
+    if (values == nullptr) {
+        return;
+    }
+
+    float v = 0.0f;
+    if (std::isnan(values->voltage_v) && binding_enabled(map.voltage) && read_binding_value(map.voltage, &v)) {
+        values->voltage_v = v;
+    }
+    if (std::isnan(values->current_a) && binding_enabled(map.current) && read_binding_value(map.current, &v)) {
+        values->current_a = v;
+    }
+    if (std::isnan(values->power_w) && binding_enabled(map.power) && read_binding_value(map.power, &v)) {
+        values->power_w = v;
+    }
+    if (std::isnan(values->reactive_power_var) && binding_enabled(map.reactive_power) && read_binding_value(map.reactive_power, &v)) {
+        values->reactive_power_var = v;
+    }
+    if (std::isnan(values->apparent_power_va) && binding_enabled(map.apparent_power) && read_binding_value(map.apparent_power, &v)) {
+        values->apparent_power_va = v;
+    }
+    if (std::isnan(values->frequency_hz) && binding_enabled(map.frequency) && read_binding_value(map.frequency, &v)) {
+        values->frequency_hz = v;
+    }
+    if (std::isnan(values->energy_total_wh) && binding_enabled(map.energy_total) && read_binding_value(map.energy_total, &v)) {
+        values->energy_total_wh = v;
+    }
+    if (std::isnan(values->energy_aux_wh) && binding_enabled(map.energy_aux) && read_binding_value(map.energy_aux, &v)) {
+        values->energy_aux_wh = v;
+    }
+}
+
+static meter_values_t read_meter_values_with_retry(int32_t slave_addr, const meter_register_map_t &map)
+{
+    meter_values_t values = {
+        .voltage_v = float_nan(),
+        .current_a = float_nan(),
+        .power_w = float_nan(),
+        .reactive_power_var = float_nan(),
+        .apparent_power_va = float_nan(),
+        .frequency_hz = float_nan(),
+        .energy_total_wh = float_nan(),
+        .energy_aux_wh = float_nan(),
+    };
+
+    if (!binding_enabled(map.energy_aux)) {
+        values.energy_aux_wh = float_nan();
+    }
+
+    const int32_t previous_addr = s_active_slave_addr;
+    s_active_slave_addr = slave_addr;
+
+    for (uint32_t attempt = 0; attempt < METER_READ_RETRIES; ++attempt) {
+        read_values_once(map, &values);
+        if (values_complete(values, map)) {
+            break;
+        }
+    }
+
+    s_active_slave_addr = previous_addr;
+    return values;
+}
+
+static uint16_t reg_or_na(const reg_binding_t &binding)
+{
+    return binding_enabled(binding) ? binding.reg : 0xFFFF;
+}
+
+static void log_meter_values_fixed(int32_t slave_addr,
+                                   const meter_register_map_t &map,
+                                   const meter_values_t &values,
+                                   float ui_va,
+                                   float q_from_ps,
+                                   float pf_from_ui)
+{
+    ESP_LOGI(TAG,
+             "meter addr=%3ld type=%-7s | U=%7.2fV I=%6.3fA P=%7.2fW Q=%7.2fvar S=%7.2fVA PF=%5.3f f=%6.2fHz | E=%8.1fWh E2=%8.1fWh UI=%7.2fVA Qps=%7.2fvar | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
+             (long)slave_addr,
+             map.name,
+             (double)values.voltage_v,
+             (double)values.current_a,
+             (double)values.power_w,
+             (double)values.reactive_power_var,
+             (double)values.apparent_power_va,
+             (double)pf_from_ui,
+             (double)values.frequency_hz,
+             (double)values.energy_total_wh,
+             (double)values.energy_aux_wh,
+             (double)ui_va,
+             (double)q_from_ps,
+             (unsigned)reg_or_na(map.voltage),
+             (unsigned)reg_or_na(map.current),
+             (unsigned)reg_or_na(map.power),
+             (unsigned)reg_or_na(map.reactive_power),
+             (unsigned)reg_or_na(map.apparent_power),
+             (unsigned)reg_or_na(map.frequency),
+             (unsigned)reg_or_na(map.energy_total),
+             (unsigned)reg_or_na(map.energy_aux));
 }
 
 static inline float u32_to_float(uint32_t raw)
@@ -470,150 +702,43 @@ static void kws_task(void *pvParameters)
     };
 
     while (true) {
-        s_active_slave_addr = kHardcodedMeterAddrs[meter_index];
-        const meter_type_t meter_type = meter_type_for_addr(s_active_slave_addr);
+        const int32_t slave_addr = kHardcodedMeterAddrs[meter_index];
+        const meter_type_t meter_type = meter_type_for_addr(slave_addr);
+        const meter_register_map_t &map = (meter_type == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
+        const meter_values_t values = read_meter_values_with_retry(slave_addr, map);
 
-        uint16_t raw_voltage = 0;
-        uint16_t raw_current = 0;
-        uint16_t raw_power = 0;
-        uint16_t raw_energy_total = 0;
-        uint16_t raw_energy_aux = 0;
-        uint16_t raw_apparent_power = 0;
-        uint16_t raw_reactive_power = 0;
-        uint16_t raw_frequency = 0;
+        const float ui_va = (std::isnan(values.voltage_v) || std::isnan(values.current_a))
+                                ? float_nan()
+                                : (values.voltage_v * values.current_a);
+        const float pf_from_ui = (std::isnan(ui_va) || std::isnan(values.power_w) || ui_va <= 0.01f)
+                                     ? float_nan()
+                                     : (values.power_w / ui_va);
+        const float q_from_ps = (std::isnan(values.apparent_power_va) || std::isnan(values.power_w))
+                                    ? float_nan()
+                                    : std::sqrt(std::fmax(0.0f, (values.apparent_power_va * values.apparent_power_va) - (values.power_w * values.power_w)));
 
+        if (!std::isnan(values.voltage_v) && !std::isnan(values.current_a) && !std::isnan(values.power_w)) {
+            log_meter_values_fixed(slave_addr, map, values, ui_va, q_from_ps, pf_from_ui);
 
-        if (meter_type == METER_TYPE_KWS) {
-            const bool voltage_ok = modbus_read_u16(KWS_REG_VOLTAGE, &raw_voltage);
-            const bool current_ok = modbus_read_u16(KWS_REG_CURRENT, &raw_current);
-            const bool power_ok = modbus_read_u16(KWS_REG_POWER, &raw_power);
-            const bool energy_total_ok = modbus_read_u16(KWS_REG_ENERGY_TOTAL, &raw_energy_total);
-            const bool energy_aux_ok = modbus_read_u16(KWS_REG_ENERGY_AUX, &raw_energy_aux);
-            const bool apparent_power_ok = modbus_read_u16(KWS_REG_APPARENT_POWER, &raw_apparent_power);
-            const bool reactive_power_ok = modbus_read_u16(KWS_REG_REACTIVE_POWER, &raw_reactive_power);
-            const bool frequency_ok = modbus_read_u16(KWS_REG_FREQUENCY, &raw_frequency);
-
-            if (voltage_ok && current_ok && power_ok) {
-                const float voltage_v = (float)raw_voltage / KWS_VOLTAGE_DIV;
-                const float current_a = (float)raw_current / KWS_CURRENT_DIV;
-                const float power_w = (float)raw_power / KWS_POWER_DIV;
-                const float apparent_power_va = (float)raw_apparent_power / KWS_APPARENT_POWER_DIV;
-                const float reactive_power_var = (float)raw_reactive_power / KWS_POWER_DIV;
-                const float frequency_hz = (float)raw_frequency / KWS_FREQUENCY_DIV;
-                const float ui_va = voltage_v * current_a;
-                const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
-                const float q_from_ps = std::sqrt(std::fmax(0.0f, (apparent_power_va * apparent_power_va) - (power_w * power_w)));
-
+            if (!values_complete(values, map)) {
                 ESP_LOGI(TAG,
-                         "addr=%ld meter=KWS U=%.1fV (reg[%u]=%u), I=%.3fA (reg[%u]=%u), P=%.1fW (reg[%u]=%u), Q=%.1fvar (reg[%u]=%u), E_total=%.1fWh (reg[%u]=%u), E_aux=%.1fWh (reg[%u]=%u), S=%.1fVA (reg[%u]=%u), UI=%.1fVA, Qps=%.1fvar, PF=%.3f, f=%.1fHz (reg[%u]=%u)",
-                         (long)s_active_slave_addr,
-                         (double)voltage_v,
-                         (unsigned)KWS_REG_VOLTAGE,
-                         (unsigned)raw_voltage,
-                         (double)current_a,
-                         (unsigned)KWS_REG_CURRENT,
-                         (unsigned)raw_current,
-                         (double)power_w,
-                         (unsigned)KWS_REG_POWER,
-                         (unsigned)raw_power,
-                         (double)reactive_power_var,
-                         (unsigned)KWS_REG_REACTIVE_POWER,
-                         (unsigned)raw_reactive_power,
-                         (double)raw_energy_total,
-                         (unsigned)KWS_REG_ENERGY_TOTAL,
-                         (unsigned)raw_energy_total,
-                         (double)raw_energy_aux,
-                         (unsigned)KWS_REG_ENERGY_AUX,
-                         (unsigned)raw_energy_aux,
-                         (double)apparent_power_va,
-                         (unsigned)KWS_REG_APPARENT_POWER,
-                         (unsigned)raw_apparent_power,
-                         (double)ui_va,
-                         (double)q_from_ps,
-                         (double)pf_from_ui,
-                         (double)frequency_hz,
-                         (unsigned)KWS_REG_FREQUENCY,
-                         (unsigned)raw_frequency);
-
-                if (!energy_total_ok || !energy_aux_ok || !apparent_power_ok || !reactive_power_ok || !frequency_ok) {
-                    ESP_LOGI(TAG,
-                             "addr=%ld meter=KWS Doplnkove cteni selhalo: E_total=%d E_aux=%d S=%d Q=%d f=%d",
-                             (long)s_active_slave_addr,
-                             energy_total_ok ? 1 : 0,
-                             energy_aux_ok ? 1 : 0,
-                             apparent_power_ok ? 1 : 0,
-                             reactive_power_ok ? 1 : 0,
-                             frequency_ok ? 1 : 0);
-                }
-            } else {
-                ESP_LOGI(TAG,
-                         "addr=%ld meter=KWS Cilene cteni selhalo: U=%d I=%d P=%d",
-                         (long)s_active_slave_addr,
-                         voltage_ok ? 1 : 0,
-                         current_ok ? 1 : 0,
-                         power_ok ? 1 : 0);
+                         "addr=%ld meter=%s doplnkove cteni nedokonceno: E_total=%d E_aux=%d S=%d Q=%d f=%d",
+                         (long)slave_addr,
+                         map.name,
+                         std::isnan(values.energy_total_wh) ? 0 : 1,
+                         binding_enabled(map.energy_aux) ? (std::isnan(values.energy_aux_wh) ? 0 : 1) : 1,
+                         std::isnan(values.apparent_power_va) ? 0 : 1,
+                         std::isnan(values.reactive_power_var) ? 0 : 1,
+                         std::isnan(values.frequency_hz) ? 0 : 1);
             }
         } else {
-            float voltage_v = 0.0f;
-            float current_a = 0.0f;
-            float power_w = 0.0f;
-            float reactive_power_var = 0.0f;
-            float apparent_power_va = 0.0f;
-            float frequency_hz = 0.0f;
-            float energy_total_kwh = 0.0f;
-
-            const bool voltage_ok = modbus_read_input_float(TAC_REG_VOLTAGE, &voltage_v);
-            const bool current_ok = modbus_read_input_float(TAC_REG_CURRENT, &current_a);
-            const bool power_ok = modbus_read_input_float(TAC_REG_POWER, &power_w);
-            const bool reactive_power_ok = modbus_read_input_float(TAC_REG_REACTIVE_POWER, &reactive_power_var);
-            const bool apparent_power_ok = modbus_read_input_float(TAC_REG_APPARENT_POWER, &apparent_power_va);
-            const bool frequency_ok = modbus_read_input_float(TAC_REG_FREQUENCY, &frequency_hz);
-            const bool energy_total_ok = modbus_read_input_float(TAC_REG_TOTAL_ACTIVE_ENERGY_KWH, &energy_total_kwh);
-
-            if (voltage_ok && current_ok && power_ok) {
-                const float ui_va = voltage_v * current_a;
-                const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
-                const float q_from_ps = std::sqrt(std::fmax(0.0f, (apparent_power_va * apparent_power_va) - (power_w * power_w)));
-                const float energy_total_wh = energy_total_kwh * 1000.0f;
-
-                ESP_LOGI(TAG,
-                         "addr=%ld meter=TAC1100 U=%.1fV (reg[0x%04X]), I=%.3fA (reg[0x%04X]), P=%.1fW (reg[0x%04X]), Q=%.1fvar (reg[0x%04X]), E_total=%.1fWh (reg[0x%04X]), S=%.1fVA (reg[0x%04X]), UI=%.1fVA, Qps=%.1fvar, PF=%.3f, f=%.2fHz (reg[0x%04X])",
-                         (long)s_active_slave_addr,
-                         (double)voltage_v,
-                         (unsigned)TAC_REG_VOLTAGE,
-                         (double)current_a,
-                         (unsigned)TAC_REG_CURRENT,
-                         (double)power_w,
-                         (unsigned)TAC_REG_POWER,
-                         (double)reactive_power_var,
-                         (unsigned)TAC_REG_REACTIVE_POWER,
-                         (double)energy_total_wh,
-                         (unsigned)TAC_REG_TOTAL_ACTIVE_ENERGY_KWH,
-                         (double)apparent_power_va,
-                         (unsigned)TAC_REG_APPARENT_POWER,
-                         (double)ui_va,
-                         (double)q_from_ps,
-                         (double)pf_from_ui,
-                         (double)frequency_hz,
-                         (unsigned)TAC_REG_FREQUENCY);
-
-                if (!energy_total_ok || !reactive_power_ok || !apparent_power_ok || !frequency_ok) {
-                    ESP_LOGI(TAG,
-                             "addr=%ld meter=TAC1100 Doplnkove cteni selhalo: E_total=%d Q=%d S=%d f=%d",
-                             (long)s_active_slave_addr,
-                             energy_total_ok ? 1 : 0,
-                             reactive_power_ok ? 1 : 0,
-                             apparent_power_ok ? 1 : 0,
-                             frequency_ok ? 1 : 0);
-                }
-            } else {
-                ESP_LOGI(TAG,
-                         "addr=%ld meter=TAC1100 Cilene cteni selhalo: U=%d I=%d P=%d",
-                         (long)s_active_slave_addr,
-                         voltage_ok ? 1 : 0,
-                         current_ok ? 1 : 0,
-                         power_ok ? 1 : 0);
-            }
+            ESP_LOGI(TAG,
+                     "addr=%ld meter=%s cilene cteni selhalo: U=%d I=%d P=%d",
+                     (long)slave_addr,
+                     map.name,
+                     std::isnan(values.voltage_v) ? 0 : 1,
+                     std::isnan(values.current_a) ? 0 : 1,
+                     std::isnan(values.power_w) ? 0 : 1);
         }
 
         if ((cycle % KWS_ENERGY_SCAN_EVERY_N_CYCLES) == 0U) {
