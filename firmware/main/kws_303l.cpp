@@ -5,6 +5,7 @@ extern "C" {
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <driver/gpio.h>
 #include <driver/uart.h>
 
@@ -300,13 +301,13 @@ static uint16_t reg_or_na(const reg_binding_t &binding)
 
 static void log_meter_values_fixed(int32_t slave_addr,
                                    const meter_register_map_t &map,
-                                   const meter_values_t &values,
-                                   float ui_va,
-                                   float q_from_ps,
-                                   float pf_from_ui)
+                                   const meter_values_t &values)
 {
+    const uint64_t uptime_s = (uint64_t)(esp_timer_get_time() / 1000000LL);
+
     ESP_LOGI(TAG,
-             "meter addr=%3ld type=%-7s | U=%7.2fV I=%6.3fA P=%7.2fW Q=%7.2fvar S=%7.2fVA PF=%5.3f f=%6.2fHz | E=%8.1fWh E2=%8.1fWh UI=%7.2fVA Qps=%7.2fvar | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
+             "t=%8llus meter addr=%3ld type=%-7s | inst{U=%7.2fV I=%6.3fA P=%7.2fW Q=%7.2fvar S=%7.2fVA f=%6.2fHz} | cum{E=%8.1fWh E2=%8.1fWh} | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
+             (unsigned long long)uptime_s,
              (long)slave_addr,
              map.name,
              (double)values.voltage_v,
@@ -314,12 +315,9 @@ static void log_meter_values_fixed(int32_t slave_addr,
              (double)values.power_w,
              (double)values.reactive_power_var,
              (double)values.apparent_power_va,
-             (double)pf_from_ui,
              (double)values.frequency_hz,
              (double)values.energy_total_wh,
              (double)values.energy_aux_wh,
-             (double)ui_va,
-             (double)q_from_ps,
              (unsigned)reg_or_na(map.voltage),
              (unsigned)reg_or_na(map.current),
              (unsigned)reg_or_na(map.power),
@@ -707,18 +705,8 @@ static void kws_task(void *pvParameters)
         const meter_register_map_t &map = (meter_type == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
         const meter_values_t values = read_meter_values_with_retry(slave_addr, map);
 
-        const float ui_va = (std::isnan(values.voltage_v) || std::isnan(values.current_a))
-                                ? float_nan()
-                                : (values.voltage_v * values.current_a);
-        const float pf_from_ui = (std::isnan(ui_va) || std::isnan(values.power_w) || ui_va <= 0.01f)
-                                     ? float_nan()
-                                     : (values.power_w / ui_va);
-        const float q_from_ps = (std::isnan(values.apparent_power_va) || std::isnan(values.power_w))
-                                    ? float_nan()
-                                    : std::sqrt(std::fmax(0.0f, (values.apparent_power_va * values.apparent_power_va) - (values.power_w * values.power_w)));
-
         if (!std::isnan(values.voltage_v) && !std::isnan(values.current_a) && !std::isnan(values.power_w)) {
-            log_meter_values_fixed(slave_addr, map, values, ui_va, q_from_ps, pf_from_ui);
+            log_meter_values_fixed(slave_addr, map, values);
 
             if (!values_complete(values, map)) {
                 ESP_LOGI(TAG,
