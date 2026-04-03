@@ -13,6 +13,8 @@ extern "C" {
 #endif
 
 #include <cstdint>
+#include <cstring>
+#include <cmath>
 
 #include "kws_303l.h"
 #include "config_store.h"
@@ -30,6 +32,9 @@ static constexpr int32_t KWS_UART_BAUD = 9600;
 static constexpr TickType_t KWS_MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
 static constexpr TickType_t KWS_RS485_TURNAROUND_TICKS = pdMS_TO_TICKS(2);
 static constexpr uint8_t KWS_MODBUS_FUNC_READ_HOLDING = 0x03;
+static constexpr uint8_t KWS_MODBUS_FUNC_READ_INPUT = 0x04;
+static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR_A = 165;
+static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR_B = 1;
 
 static constexpr uint16_t KWS_REG_VOLTAGE = 14;
 static constexpr uint16_t KWS_REG_CURRENT = 18;
@@ -37,7 +42,16 @@ static constexpr uint16_t KWS_REG_POWER = 26;
 static constexpr uint16_t KWS_REG_ENERGY_TOTAL = 55;
 static constexpr uint16_t KWS_REG_ENERGY_AUX = 61;
 static constexpr uint16_t KWS_REG_APPARENT_POWER = 42;
+static constexpr uint16_t KWS_REG_REACTIVE_POWER = 34;
 static constexpr uint16_t KWS_REG_FREQUENCY = 72;
+
+static constexpr uint16_t TAC_REG_VOLTAGE = 0x0000;
+static constexpr uint16_t TAC_REG_CURRENT = 0x0006;
+static constexpr uint16_t TAC_REG_POWER = 0x000C;
+static constexpr uint16_t TAC_REG_REACTIVE_POWER = 0x0012;
+static constexpr uint16_t TAC_REG_APPARENT_POWER = 0x0018;
+static constexpr uint16_t TAC_REG_FREQUENCY = 0x0030;
+static constexpr uint16_t TAC_REG_TOTAL_ACTIVE_ENERGY_KWH = 0x0504;
 
 static constexpr float KWS_VOLTAGE_DIV = 100.0f;
 static constexpr float KWS_CURRENT_DIV = 1000.0f;
@@ -71,6 +85,25 @@ static kws_config_t s_cfg = {
     .slave_addr = KWS_DEFAULT_SLAVE_ADDR,
     .sample_ms = KWS_DEFAULT_SAMPLE_MS,
 };
+
+static int32_t s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
+
+enum meter_type_t {
+    METER_TYPE_KWS,
+    METER_TYPE_TAC1100,
+};
+
+static meter_type_t meter_type_for_addr(int32_t addr)
+{
+    return (addr == KWS_HARDCODED_SLAVE_ADDR_B) ? METER_TYPE_TAC1100 : METER_TYPE_KWS;
+}
+
+static inline float u32_to_float(uint32_t raw)
+{
+    float value = 0.0f;
+    std::memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 static inline void rs485_set_tx_mode()
 {
@@ -149,7 +182,7 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
     }
 
     uint8_t request[8] = {
-        (uint8_t)s_cfg.slave_addr,
+        (uint8_t)s_active_slave_addr,
         0x03,
         (uint8_t)(reg >> 8),
         (uint8_t)(reg & 0xFF),
@@ -200,7 +233,7 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
         return false;
     }
 
-    if (response[0] != (uint8_t)s_cfg.slave_addr) {
+    if (response[0] != (uint8_t)s_active_slave_addr) {
         ESP_LOGI(TAG,
                  "Neplatna Modbus odpoved 1 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
@@ -285,20 +318,111 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
     return true;
 }
 
-static void load_config(void)
+static bool modbus_read_input_float(uint16_t reg, float *value)
 {
-    s_cfg.slave_addr = config_store_get_i32_item(&KWS_SLAVE_ADDR_ITEM);
-    s_cfg.sample_ms = config_store_get_i32_item(&KWS_SAMPLE_MS_ITEM);
-    s_cfg.slave_addr = 165; // TODO: remove, pro testovani s emulátorem
-
-     if (s_cfg.slave_addr < 1 || s_cfg.slave_addr > 247) {
-        s_cfg.slave_addr = KWS_DEFAULT_SLAVE_ADDR;
-        ESP_LOGW(TAG, "Neplatna Modbus adresa, pouzivam default %d", (int)s_cfg.slave_addr);
+    if (value == nullptr) {
+        return false;
     }
 
+    uint8_t request[8] = {
+        (uint8_t)s_active_slave_addr,
+        KWS_MODBUS_FUNC_READ_INPUT,
+        (uint8_t)(reg >> 8),
+        (uint8_t)(reg & 0xFF),
+        0x00,
+        0x02,
+        0,
+        0,
+    };
+
+    const uint16_t req_crc = modbus_crc16(request, 6);
+    request[6] = (uint8_t)(req_crc & 0xFF);
+    request[7] = (uint8_t)(req_crc >> 8);
+
+    // log_modbus_frame_bytes("Modbus TX f04", reg, request, sizeof(request));
+
+    rs485_set_tx_mode();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
+    if (tx != (int)sizeof(request)) {
+        ESP_LOGI(TAG, "UART TX selhal (f04 reg=%u tx=%d)", (unsigned)reg, tx);
+        rs485_set_rx_mode();
+        modbus_rx_resync();
+        return false;
+    }
+
+    (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    modbus_rx_resync();
+    rs485_set_rx_mode();
+    vTaskDelay(pdMS_TO_TICKS(10));
+    modbus_rx_resync();
+
+    uint8_t response[9] = {0};
+    const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (header_rx == 0) {
+        ESP_LOGI(TAG, "Slave neodpovedel (timeout) (f04 reg=%u)", (unsigned)reg);
+        modbus_rx_resync();
+        return false;
+    }
+    if (header_rx != 3) {
+        ESP_LOGI(TAG, "Slave odpovedel neuplnym ramcem (f04 reg=%u rx=%d)", (unsigned)reg, header_rx);
+        log_modbus_frame_bytes("f04 neuplna hlavicka", reg, response, header_rx);
+        modbus_rx_resync();
+        return false;
+    }
+
+    if (response[0] != (uint8_t)s_active_slave_addr || response[1] != KWS_MODBUS_FUNC_READ_INPUT || response[2] != 0x04) {
+        ESP_LOGI(TAG,
+                 "Neplatna Modbus odpoved f04 (reg=%u addr=%u func=%u len=%u)",
+                 (unsigned)reg,
+                 (unsigned)response[0],
+                 (unsigned)response[1],
+                 (unsigned)response[2]);
+        log_modbus_frame_bytes("Neplatna Modbus odpoved f04 - bajty", reg, response, 3);
+        modbus_rx_resync();
+        return false;
+    }
+
+    const int tail_rx = uart_read_exact(response + 3, 6, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (tail_rx != 6) {
+        ESP_LOGI(TAG, "Slave odpovedel neuplnym datovym ramcem (f04 reg=%u rx=%d)", (unsigned)reg, tail_rx + 3);
+        log_modbus_frame_bytes("f04 neuplny datovy ramec", reg, response, tail_rx + 3);
+        modbus_rx_resync();
+        return false;
+    }
+
+    // log_modbus_frame_bytes("Modbus RX f04", reg, response, sizeof(response));
+
+    const uint16_t rx_crc = (uint16_t)response[7] | ((uint16_t)response[8] << 8);
+    const uint16_t calc_crc = modbus_crc16(response, 7);
+    if (rx_crc != calc_crc) {
+        ESP_LOGI(TAG,
+                 "CRC mismatch f04 (reg=%u rx=0x%04x calc=0x%04x)",
+                 (unsigned)reg,
+                 (unsigned)rx_crc,
+                 (unsigned)calc_crc);
+        log_modbus_frame_bytes("f04 odpoved s chybnym CRC", reg, response, 9);
+        modbus_rx_resync();
+        return false;
+    }
+
+    const uint32_t raw = ((uint32_t)response[3] << 24) | ((uint32_t)response[4] << 16) | ((uint32_t)response[5] << 8) | (uint32_t)response[6];
+    *value = u32_to_float(raw);
+    return true;
+}
+
+static void load_config(void)
+{
+    s_cfg.sample_ms = config_store_get_i32_item(&KWS_SAMPLE_MS_ITEM);
+
+    s_cfg.slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
+    s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
+
     ESP_LOGI(TAG,
-             "cfg addr=%ld sm=%ld uart=%d baud=%ld rx=%d tx=%d",
-             (long)s_cfg.slave_addr,
+             "cfg addrA=%ld addrB=%ld sm=%ld uart=%d baud=%ld rx=%d tx=%d",
+             (long)KWS_HARDCODED_SLAVE_ADDR_A,
+             (long)KWS_HARDCODED_SLAVE_ADDR_B,
              (long)s_cfg.sample_ms,
              (int)KWS_UART_PORT,
              (long)KWS_UART_BAUD,
@@ -339,74 +463,157 @@ static void kws_task(void *pvParameters)
 {
     (void)pvParameters;
     uint32_t cycle = 0;
+    size_t meter_index = 0;
+    static constexpr int32_t kHardcodedMeterAddrs[2] = {
+        KWS_HARDCODED_SLAVE_ADDR_A,
+        KWS_HARDCODED_SLAVE_ADDR_B,
+    };
 
     while (true) {
+        s_active_slave_addr = kHardcodedMeterAddrs[meter_index];
+        const meter_type_t meter_type = meter_type_for_addr(s_active_slave_addr);
+
         uint16_t raw_voltage = 0;
         uint16_t raw_current = 0;
         uint16_t raw_power = 0;
         uint16_t raw_energy_total = 0;
         uint16_t raw_energy_aux = 0;
         uint16_t raw_apparent_power = 0;
+        uint16_t raw_reactive_power = 0;
         uint16_t raw_frequency = 0;
 
 
-        const bool voltage_ok = modbus_read_u16(KWS_REG_VOLTAGE, &raw_voltage);
-        const bool current_ok = modbus_read_u16(KWS_REG_CURRENT, &raw_current);
-        const bool power_ok = modbus_read_u16(KWS_REG_POWER, &raw_power);
-        const bool energy_total_ok = modbus_read_u16(KWS_REG_ENERGY_TOTAL, &raw_energy_total);
-        const bool energy_aux_ok = modbus_read_u16(KWS_REG_ENERGY_AUX, &raw_energy_aux);
-        const bool apparent_power_ok = modbus_read_u16(KWS_REG_APPARENT_POWER, &raw_apparent_power);
-        const bool frequency_ok = modbus_read_u16(KWS_REG_FREQUENCY, &raw_frequency);
+        if (meter_type == METER_TYPE_KWS) {
+            const bool voltage_ok = modbus_read_u16(KWS_REG_VOLTAGE, &raw_voltage);
+            const bool current_ok = modbus_read_u16(KWS_REG_CURRENT, &raw_current);
+            const bool power_ok = modbus_read_u16(KWS_REG_POWER, &raw_power);
+            const bool energy_total_ok = modbus_read_u16(KWS_REG_ENERGY_TOTAL, &raw_energy_total);
+            const bool energy_aux_ok = modbus_read_u16(KWS_REG_ENERGY_AUX, &raw_energy_aux);
+            const bool apparent_power_ok = modbus_read_u16(KWS_REG_APPARENT_POWER, &raw_apparent_power);
+            const bool reactive_power_ok = modbus_read_u16(KWS_REG_REACTIVE_POWER, &raw_reactive_power);
+            const bool frequency_ok = modbus_read_u16(KWS_REG_FREQUENCY, &raw_frequency);
 
-        if (voltage_ok && current_ok && power_ok) {
-            const float voltage_v = (float)raw_voltage / KWS_VOLTAGE_DIV;
-            const float current_a = (float)raw_current / KWS_CURRENT_DIV;
-            const float power_w = (float)raw_power / KWS_POWER_DIV;
-            const float apparent_power_va = (float)raw_apparent_power / KWS_APPARENT_POWER_DIV;
-            const float frequency_hz = (float)raw_frequency / KWS_FREQUENCY_DIV;
-            const float ui_va = voltage_v * current_a;
-            const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
+            if (voltage_ok && current_ok && power_ok) {
+                const float voltage_v = (float)raw_voltage / KWS_VOLTAGE_DIV;
+                const float current_a = (float)raw_current / KWS_CURRENT_DIV;
+                const float power_w = (float)raw_power / KWS_POWER_DIV;
+                const float apparent_power_va = (float)raw_apparent_power / KWS_APPARENT_POWER_DIV;
+                const float reactive_power_var = (float)raw_reactive_power / KWS_POWER_DIV;
+                const float frequency_hz = (float)raw_frequency / KWS_FREQUENCY_DIV;
+                const float ui_va = voltage_v * current_a;
+                const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
+                const float q_from_ps = std::sqrt(std::fmax(0.0f, (apparent_power_va * apparent_power_va) - (power_w * power_w)));
 
-            ESP_LOGI(TAG,
-                     "U=%.1fV (reg[%u]=%u), I=%.3fA (reg[%u]=%u), P=%.1fW (reg[%u]=%u), E_total=%.1fWh (reg[%u]=%u), E_aux=%.1fWh (reg[%u]=%u), S=%.1fVA (reg[%u]=%u), UI=%.1fVA, PF=%.3f, f=%.1fHz (reg[%u]=%u)",
-                     (double)voltage_v,
-                     (unsigned)KWS_REG_VOLTAGE,
-                     (unsigned)raw_voltage,
-                     (double)current_a,
-                     (unsigned)KWS_REG_CURRENT,
-                     (unsigned)raw_current,
-                     (double)power_w,
-                     (unsigned)KWS_REG_POWER,
-                     (unsigned)raw_power,
-                     (double)raw_energy_total,
-                     (unsigned)KWS_REG_ENERGY_TOTAL,
-                     (unsigned)raw_energy_total,
-                     (double)raw_energy_aux,
-                     (unsigned)KWS_REG_ENERGY_AUX,
-                     (unsigned)raw_energy_aux,
-                     (double)apparent_power_va,
-                     (unsigned)KWS_REG_APPARENT_POWER,
-                     (unsigned)raw_apparent_power,
-                     (double)ui_va,
-                     (double)pf_from_ui,
-                     (double)frequency_hz,
-                     (unsigned)KWS_REG_FREQUENCY,
-                     (unsigned)raw_frequency);
-
-            if (!energy_total_ok || !energy_aux_ok || !apparent_power_ok || !frequency_ok) {
                 ESP_LOGI(TAG,
-                         "Doplnkove cteni selhalo: E_total=%d E_aux=%d S=%d f=%d",
-                         energy_total_ok ? 1 : 0,
-                         energy_aux_ok ? 1 : 0,
-                         apparent_power_ok ? 1 : 0,
-                         frequency_ok ? 1 : 0);
+                         "addr=%ld meter=KWS U=%.1fV (reg[%u]=%u), I=%.3fA (reg[%u]=%u), P=%.1fW (reg[%u]=%u), Q=%.1fvar (reg[%u]=%u), E_total=%.1fWh (reg[%u]=%u), E_aux=%.1fWh (reg[%u]=%u), S=%.1fVA (reg[%u]=%u), UI=%.1fVA, Qps=%.1fvar, PF=%.3f, f=%.1fHz (reg[%u]=%u)",
+                         (long)s_active_slave_addr,
+                         (double)voltage_v,
+                         (unsigned)KWS_REG_VOLTAGE,
+                         (unsigned)raw_voltage,
+                         (double)current_a,
+                         (unsigned)KWS_REG_CURRENT,
+                         (unsigned)raw_current,
+                         (double)power_w,
+                         (unsigned)KWS_REG_POWER,
+                         (unsigned)raw_power,
+                         (double)reactive_power_var,
+                         (unsigned)KWS_REG_REACTIVE_POWER,
+                         (unsigned)raw_reactive_power,
+                         (double)raw_energy_total,
+                         (unsigned)KWS_REG_ENERGY_TOTAL,
+                         (unsigned)raw_energy_total,
+                         (double)raw_energy_aux,
+                         (unsigned)KWS_REG_ENERGY_AUX,
+                         (unsigned)raw_energy_aux,
+                         (double)apparent_power_va,
+                         (unsigned)KWS_REG_APPARENT_POWER,
+                         (unsigned)raw_apparent_power,
+                         (double)ui_va,
+                         (double)q_from_ps,
+                         (double)pf_from_ui,
+                         (double)frequency_hz,
+                         (unsigned)KWS_REG_FREQUENCY,
+                         (unsigned)raw_frequency);
+
+                if (!energy_total_ok || !energy_aux_ok || !apparent_power_ok || !reactive_power_ok || !frequency_ok) {
+                    ESP_LOGI(TAG,
+                             "addr=%ld meter=KWS Doplnkove cteni selhalo: E_total=%d E_aux=%d S=%d Q=%d f=%d",
+                             (long)s_active_slave_addr,
+                             energy_total_ok ? 1 : 0,
+                             energy_aux_ok ? 1 : 0,
+                             apparent_power_ok ? 1 : 0,
+                             reactive_power_ok ? 1 : 0,
+                             frequency_ok ? 1 : 0);
+                }
+            } else {
+                ESP_LOGI(TAG,
+                         "addr=%ld meter=KWS Cilene cteni selhalo: U=%d I=%d P=%d",
+                         (long)s_active_slave_addr,
+                         voltage_ok ? 1 : 0,
+                         current_ok ? 1 : 0,
+                         power_ok ? 1 : 0);
             }
         } else {
-            ESP_LOGI(TAG,
-                     "Cilene cteni selhalo: U=%d I=%d P=%d",
-                     voltage_ok ? 1 : 0,
-                     current_ok ? 1 : 0,
-                     power_ok ? 1 : 0);
+            float voltage_v = 0.0f;
+            float current_a = 0.0f;
+            float power_w = 0.0f;
+            float reactive_power_var = 0.0f;
+            float apparent_power_va = 0.0f;
+            float frequency_hz = 0.0f;
+            float energy_total_kwh = 0.0f;
+
+            const bool voltage_ok = modbus_read_input_float(TAC_REG_VOLTAGE, &voltage_v);
+            const bool current_ok = modbus_read_input_float(TAC_REG_CURRENT, &current_a);
+            const bool power_ok = modbus_read_input_float(TAC_REG_POWER, &power_w);
+            const bool reactive_power_ok = modbus_read_input_float(TAC_REG_REACTIVE_POWER, &reactive_power_var);
+            const bool apparent_power_ok = modbus_read_input_float(TAC_REG_APPARENT_POWER, &apparent_power_va);
+            const bool frequency_ok = modbus_read_input_float(TAC_REG_FREQUENCY, &frequency_hz);
+            const bool energy_total_ok = modbus_read_input_float(TAC_REG_TOTAL_ACTIVE_ENERGY_KWH, &energy_total_kwh);
+
+            if (voltage_ok && current_ok && power_ok) {
+                const float ui_va = voltage_v * current_a;
+                const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
+                const float q_from_ps = std::sqrt(std::fmax(0.0f, (apparent_power_va * apparent_power_va) - (power_w * power_w)));
+                const float energy_total_wh = energy_total_kwh * 1000.0f;
+
+                ESP_LOGI(TAG,
+                         "addr=%ld meter=TAC1100 U=%.1fV (reg[0x%04X]), I=%.3fA (reg[0x%04X]), P=%.1fW (reg[0x%04X]), Q=%.1fvar (reg[0x%04X]), E_total=%.1fWh (reg[0x%04X]), S=%.1fVA (reg[0x%04X]), UI=%.1fVA, Qps=%.1fvar, PF=%.3f, f=%.2fHz (reg[0x%04X])",
+                         (long)s_active_slave_addr,
+                         (double)voltage_v,
+                         (unsigned)TAC_REG_VOLTAGE,
+                         (double)current_a,
+                         (unsigned)TAC_REG_CURRENT,
+                         (double)power_w,
+                         (unsigned)TAC_REG_POWER,
+                         (double)reactive_power_var,
+                         (unsigned)TAC_REG_REACTIVE_POWER,
+                         (double)energy_total_wh,
+                         (unsigned)TAC_REG_TOTAL_ACTIVE_ENERGY_KWH,
+                         (double)apparent_power_va,
+                         (unsigned)TAC_REG_APPARENT_POWER,
+                         (double)ui_va,
+                         (double)q_from_ps,
+                         (double)pf_from_ui,
+                         (double)frequency_hz,
+                         (unsigned)TAC_REG_FREQUENCY);
+
+                if (!energy_total_ok || !reactive_power_ok || !apparent_power_ok || !frequency_ok) {
+                    ESP_LOGI(TAG,
+                             "addr=%ld meter=TAC1100 Doplnkove cteni selhalo: E_total=%d Q=%d S=%d f=%d",
+                             (long)s_active_slave_addr,
+                             energy_total_ok ? 1 : 0,
+                             reactive_power_ok ? 1 : 0,
+                             apparent_power_ok ? 1 : 0,
+                             frequency_ok ? 1 : 0);
+                }
+            } else {
+                ESP_LOGI(TAG,
+                         "addr=%ld meter=TAC1100 Cilene cteni selhalo: U=%d I=%d P=%d",
+                         (long)s_active_slave_addr,
+                         voltage_ok ? 1 : 0,
+                         current_ok ? 1 : 0,
+                         power_ok ? 1 : 0);
+            }
         }
 
         if ((cycle % KWS_ENERGY_SCAN_EVERY_N_CYCLES) == 0U) {
@@ -450,6 +657,7 @@ static void kws_task(void *pvParameters)
         }
 
         ++cycle;
+        meter_index = (meter_index + 1U) % 2U;
         //vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
         vTaskDelay(pdMS_TO_TICKS(100));
     }
