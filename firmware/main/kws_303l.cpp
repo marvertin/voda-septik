@@ -31,9 +31,24 @@ static constexpr TickType_t KWS_MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
 static constexpr TickType_t KWS_RS485_TURNAROUND_TICKS = pdMS_TO_TICKS(2);
 static constexpr uint8_t KWS_MODBUS_FUNC_READ_HOLDING = 0x03;
 
-static constexpr uint16_t KWS_DEBUG_REG_0 = 0;
-static constexpr uint16_t KWS_DEBUG_REG_1 = 1;
-static constexpr uint16_t KWS_DEBUG_REG_2 = 2;
+static constexpr uint16_t KWS_REG_VOLTAGE = 14;
+static constexpr uint16_t KWS_REG_CURRENT = 18;
+static constexpr uint16_t KWS_REG_POWER = 26;
+static constexpr uint16_t KWS_REG_ENERGY_TOTAL = 55;
+static constexpr uint16_t KWS_REG_ENERGY_AUX = 61;
+static constexpr uint16_t KWS_REG_APPARENT_POWER = 42;
+static constexpr uint16_t KWS_REG_FREQUENCY = 72;
+
+static constexpr float KWS_VOLTAGE_DIV = 100.0f;
+static constexpr float KWS_CURRENT_DIV = 1000.0f;
+static constexpr float KWS_POWER_DIV = 10.0f;
+static constexpr float KWS_APPARENT_POWER_DIV = 10.0f;
+static constexpr float KWS_FREQUENCY_DIV = 1.0f;
+
+static constexpr uint16_t KWS_ENERGY_SCAN_START = 32;
+static constexpr uint16_t KWS_ENERGY_SCAN_END = 80;
+static constexpr uint32_t KWS_ENERGY_SCAN_EVERY_N_CYCLES = 10;
+static constexpr bool KWS_ENABLE_DIAG_SCANS = false;
 
 static const config_item_t KWS_SLAVE_ADDR_ITEM = {
     .key = "kws_addr", .label = "KWS-303L Modbus adresa", .description = "Adresa Modbus slave (1-247).",
@@ -65,6 +80,19 @@ static inline void rs485_set_tx_mode()
 static inline void rs485_set_rx_mode()
 {
     APP_ERROR_CHECK("E866", gpio_set_level(KWS_RS485_EN_GPIO, 0));
+}
+
+static inline void modbus_rx_resync()
+{
+    (void)uart_flush_input(KWS_UART_PORT);
+}
+
+static void log_modbus_frame_bytes(const char *label, uint16_t reg, const uint8_t *data, int len)
+{
+    ESP_LOGI(TAG, "%s (reg=%u len=%d)", label, (unsigned)reg, len);
+    if (data != nullptr && len > 0) {
+        ESP_LOG_BUFFER_HEX_LEVEL(TAG, data, len, ESP_LOG_INFO);
+    }
 }
 
 
@@ -134,28 +162,32 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
     const uint16_t req_crc = modbus_crc16(request, 6);
     request[6] = (uint8_t)(req_crc & 0xFF);
     request[7] = (uint8_t)(req_crc >> 8);
-    
-    //vTaskDelay(pdMS_TO_TICKS(500));
+
     rs485_set_tx_mode();
-    vTaskDelay(pdMS_TO_TICKS(200));
-    (void)uart_flush_input(KWS_UART_PORT);
+    vTaskDelay(pdMS_TO_TICKS(10)); // Kratka prodleva pro jistotu, aby se RS485 modul stihl prepnout do TX modu pred odesilanim dat. Bez toho se obcas stava, ze prvni bajt odesilaneho requestu je ztracen.
 
     //ESP_LOG_BUFFER_HEX(TAG, request, sizeof(request));
     const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
     if (tx != (int)sizeof(request)) {
         ESP_LOGI(TAG, "UART TX selhal (reg=%u tx=%d)", (unsigned)reg, tx);
         rs485_set_rx_mode();
+        modbus_rx_resync();
         return false;
     }
 
     (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    modbus_rx_resync();
     rs485_set_rx_mode();
+    vTaskDelay(pdMS_TO_TICKS(10)); // Kratka prodleva pro jistotu, protože jinak se stává, že je vložen extra byte před zprávu. 8 je málo, 20 moc, 10 se zdá být akorát. Bez toho se občas stává, že první bajt přijímané odpovědi je ztracen nebo je vložen extra byte před odpověď.
+    modbus_rx_resync();
+    //vTaskDelay(KWS_RS485_TURNAROUND_TICKS);
     //ESP_LOGI(TAG, "Request odeslan, cekam na odpoved (reg=%u)...", (unsigned)reg);
 
     uint8_t response[7] = {0};
     const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
     if (header_rx == 0) {
         ESP_LOGI(TAG, "Slave neodpovedel (timeout) (reg=%u)", (unsigned)reg);
+        modbus_rx_resync();
         return false;
     }
     if (header_rx != 3) {
@@ -163,16 +195,20 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
                  "Slave odpovedel necitelnym/neuplnym hlavickovym ramcem (reg=%u rx=%d)",
                  (unsigned)reg,
                  header_rx);
+        log_modbus_frame_bytes("Neuplna hlavicka odpovedi", reg, response, header_rx);
+        modbus_rx_resync();
         return false;
     }
 
     if (response[0] != (uint8_t)s_cfg.slave_addr) {
         ESP_LOGI(TAG,
-                 "Neplatna Modbus odpoved (reg=%u addr=%u func=%u len=%u)",
+                 "Neplatna Modbus odpoved 1 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
                  (unsigned)response[0],
                  (unsigned)response[1],
                  (unsigned)response[2]);
+        log_modbus_frame_bytes("Neplatna Modbus odpoved 1 - bajty", reg, response, 3);
+        modbus_rx_resync();
         return false;
     }
 
@@ -184,6 +220,8 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
                      (unsigned)reg,
                      (unsigned)response[2],
                      tail_rx + 3);
+            log_modbus_frame_bytes("Neuplna exception odpoved - bajty", reg, response, tail_rx + 3);
+            modbus_rx_resync();
             return false;
         }
 
@@ -195,6 +233,8 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
                      (unsigned)reg,
                      (unsigned)rx_crc,
                      (unsigned)calc_crc);
+            log_modbus_frame_bytes("Exception odpoved s chybnym CRC - bajty", reg, response, 5);
+            modbus_rx_resync();
             return false;
         }
 
@@ -207,11 +247,13 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
 
     if (response[1] != KWS_MODBUS_FUNC_READ_HOLDING || response[2] != 0x02) {
         ESP_LOGI(TAG,
-                 "Neplatna Modbus odpoved (reg=%u addr=%u func=%u len=%u)",
+                 "Neplatna Modbus odpoved 2 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
                  (unsigned)response[0],
                  (unsigned)response[1],
                  (unsigned)response[2]);
+        log_modbus_frame_bytes("Neplatna Modbus odpoved 2 - bajty", reg, response, 3);
+        modbus_rx_resync();
         return false;
     }
 
@@ -221,6 +263,8 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
                  "Slave odpovedel neuplnym datovym ramcem (reg=%u rx=%d)",
                  (unsigned)reg,
                  tail_rx + 3);
+        log_modbus_frame_bytes("Neuplny datovy ramec - bajty", reg, response, tail_rx + 3);
+        modbus_rx_resync();
         return false;
     }
 
@@ -232,6 +276,8 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
                  (unsigned)reg,
                  (unsigned)rx_crc,
                  (unsigned)calc_crc);
+        log_modbus_frame_bytes("Datova odpoved s chybnym CRC - bajty", reg, response, 7);
+        modbus_rx_resync();
         return false;
     }
 
@@ -243,6 +289,12 @@ static void load_config(void)
 {
     s_cfg.slave_addr = config_store_get_i32_item(&KWS_SLAVE_ADDR_ITEM);
     s_cfg.sample_ms = config_store_get_i32_item(&KWS_SAMPLE_MS_ITEM);
+    s_cfg.slave_addr = 165; // TODO: remove, pro testovani s emulátorem
+
+     if (s_cfg.slave_addr < 1 || s_cfg.slave_addr > 247) {
+        s_cfg.slave_addr = KWS_DEFAULT_SLAVE_ADDR;
+        ESP_LOGW(TAG, "Neplatna Modbus adresa, pouzivam default %d", (int)s_cfg.slave_addr);
+    }
 
     ESP_LOGI(TAG,
              "cfg addr=%ld sm=%ld uart=%d baud=%ld rx=%d tx=%d",
@@ -286,26 +338,120 @@ static esp_err_t init_uart(void)
 static void kws_task(void *pvParameters)
 {
     (void)pvParameters;
+    uint32_t cycle = 0;
 
     while (true) {
-        uint16_t reg0 = 0;
-        uint16_t reg1 = 0;
-        uint16_t reg2 = 0;
+        uint16_t raw_voltage = 0;
+        uint16_t raw_current = 0;
+        uint16_t raw_power = 0;
+        uint16_t raw_energy_total = 0;
+        uint16_t raw_energy_aux = 0;
+        uint16_t raw_apparent_power = 0;
+        uint16_t raw_frequency = 0;
 
-        const bool reg0_ok = modbus_read_u16(KWS_DEBUG_REG_0, &reg0);
-        const bool reg1_ok = modbus_read_u16(KWS_DEBUG_REG_1, &reg1);
-        const bool reg2_ok = modbus_read_u16(KWS_DEBUG_REG_2, &reg2);
 
-        ESP_LOGI(TAG,
-                 "poll ok0=%d reg0=%u ok1=%d reg1=%u ok2=%d reg2=%u",
-                 reg0_ok ? 1 : 0,
-                 (unsigned)reg0,
-                 reg1_ok ? 1 : 0,
-                 (unsigned)reg1,
-                 reg2_ok ? 1 : 0,
-                 (unsigned)reg2);
+        const bool voltage_ok = modbus_read_u16(KWS_REG_VOLTAGE, &raw_voltage);
+        const bool current_ok = modbus_read_u16(KWS_REG_CURRENT, &raw_current);
+        const bool power_ok = modbus_read_u16(KWS_REG_POWER, &raw_power);
+        const bool energy_total_ok = modbus_read_u16(KWS_REG_ENERGY_TOTAL, &raw_energy_total);
+        const bool energy_aux_ok = modbus_read_u16(KWS_REG_ENERGY_AUX, &raw_energy_aux);
+        const bool apparent_power_ok = modbus_read_u16(KWS_REG_APPARENT_POWER, &raw_apparent_power);
+        const bool frequency_ok = modbus_read_u16(KWS_REG_FREQUENCY, &raw_frequency);
 
-        vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
+        if (voltage_ok && current_ok && power_ok) {
+            const float voltage_v = (float)raw_voltage / KWS_VOLTAGE_DIV;
+            const float current_a = (float)raw_current / KWS_CURRENT_DIV;
+            const float power_w = (float)raw_power / KWS_POWER_DIV;
+            const float apparent_power_va = (float)raw_apparent_power / KWS_APPARENT_POWER_DIV;
+            const float frequency_hz = (float)raw_frequency / KWS_FREQUENCY_DIV;
+            const float ui_va = voltage_v * current_a;
+            const float pf_from_ui = (ui_va > 0.01f) ? (power_w / ui_va) : 0.0f;
+
+            ESP_LOGI(TAG,
+                     "U=%.1fV (reg[%u]=%u), I=%.3fA (reg[%u]=%u), P=%.1fW (reg[%u]=%u), E_total=%.1fWh (reg[%u]=%u), E_aux=%.1fWh (reg[%u]=%u), S=%.1fVA (reg[%u]=%u), UI=%.1fVA, PF=%.3f, f=%.1fHz (reg[%u]=%u)",
+                     (double)voltage_v,
+                     (unsigned)KWS_REG_VOLTAGE,
+                     (unsigned)raw_voltage,
+                     (double)current_a,
+                     (unsigned)KWS_REG_CURRENT,
+                     (unsigned)raw_current,
+                     (double)power_w,
+                     (unsigned)KWS_REG_POWER,
+                     (unsigned)raw_power,
+                     (double)raw_energy_total,
+                     (unsigned)KWS_REG_ENERGY_TOTAL,
+                     (unsigned)raw_energy_total,
+                     (double)raw_energy_aux,
+                     (unsigned)KWS_REG_ENERGY_AUX,
+                     (unsigned)raw_energy_aux,
+                     (double)apparent_power_va,
+                     (unsigned)KWS_REG_APPARENT_POWER,
+                     (unsigned)raw_apparent_power,
+                     (double)ui_va,
+                     (double)pf_from_ui,
+                     (double)frequency_hz,
+                     (unsigned)KWS_REG_FREQUENCY,
+                     (unsigned)raw_frequency);
+
+            if (!energy_total_ok || !energy_aux_ok || !apparent_power_ok || !frequency_ok) {
+                ESP_LOGI(TAG,
+                         "Doplnkove cteni selhalo: E_total=%d E_aux=%d S=%d f=%d",
+                         energy_total_ok ? 1 : 0,
+                         energy_aux_ok ? 1 : 0,
+                         apparent_power_ok ? 1 : 0,
+                         frequency_ok ? 1 : 0);
+            }
+        } else {
+            ESP_LOGI(TAG,
+                     "Cilene cteni selhalo: U=%d I=%d P=%d",
+                     voltage_ok ? 1 : 0,
+                     current_ok ? 1 : 0,
+                     power_ok ? 1 : 0);
+        }
+
+        if ((cycle % KWS_ENERGY_SCAN_EVERY_N_CYCLES) == 0U) {
+            if (!KWS_ENABLE_DIAG_SCANS) {
+                ++cycle;
+                vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
+                continue;
+            }
+
+            ESP_LOGI(TAG,
+                     "Energy scan registru %u..%u (nenulove + 32bit dvojice)",
+                     (unsigned)KWS_ENERGY_SCAN_START,
+                     (unsigned)KWS_ENERGY_SCAN_END);
+
+            for (uint16_t reg = KWS_ENERGY_SCAN_START; reg <= KWS_ENERGY_SCAN_END; ++reg) {
+                uint16_t value = 0;
+                if (modbus_read_u16(reg, &value) && value != 0U) {
+                    ESP_LOGI(TAG,
+                             "E-cand reg[%u] = 0x%04X (%u)",
+                             (unsigned)reg,
+                             (unsigned)value,
+                             (unsigned)value);
+                }
+            }
+
+            for (uint16_t reg = KWS_ENERGY_SCAN_START; reg < KWS_ENERGY_SCAN_END; ++reg) {
+                uint16_t hi = 0;
+                uint16_t lo = 0;
+                if (modbus_read_u16(reg, &hi) && modbus_read_u16((uint16_t)(reg + 1), &lo)) {
+                    const uint32_t be32 = ((uint32_t)hi << 16) | lo;
+                    if (be32 != 0U) {
+                        ESP_LOGI(TAG,
+                                 "E32-cand reg[%u:%u] = 0x%08lX (%lu)",
+                                 (unsigned)reg,
+                                 (unsigned)(reg + 1),
+                                 (unsigned long)be32,
+                                 (unsigned long)be32);
+                    }
+                }
+            }
+        }
+
+        ++cycle;
+        //vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
