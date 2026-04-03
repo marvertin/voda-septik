@@ -61,11 +61,6 @@ static constexpr float KWS_POWER_DIV = 10.0f;
 static constexpr float KWS_APPARENT_POWER_DIV = 10.0f;
 static constexpr float KWS_FREQUENCY_DIV = 1.0f;
 
-static constexpr uint16_t KWS_ENERGY_SCAN_START = 32;
-static constexpr uint16_t KWS_ENERGY_SCAN_END = 80;
-static constexpr uint32_t KWS_ENERGY_SCAN_EVERY_N_CYCLES = 10;
-static constexpr bool KWS_ENABLE_DIAG_SCANS = false;
-
 static const config_item_t KWS_SLAVE_ADDR_ITEM = {
     .key = "kws_addr", .label = "KWS-303L Modbus adresa", .description = "Adresa Modbus slave (1-247).",
     .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = KWS_DEFAULT_SLAVE_ADDR, .default_float = 0.0f, .default_bool = false,
@@ -299,25 +294,48 @@ static uint16_t reg_or_na(const reg_binding_t &binding)
     return binding_enabled(binding) ? binding.reg : 0xFFFF;
 }
 
+static const char *fmt_float_or_nan(char *dst, size_t dst_len, float value, const char *fmt)
+{
+    if (dst == nullptr || dst_len == 0) {
+        return "";
+    }
+
+    if (std::isnan(value)) {
+        (void)snprintf(dst, dst_len, "NaN");
+    } else {
+        (void)snprintf(dst, dst_len, fmt, (double)value);
+    }
+    return dst;
+}
+
 static void log_meter_values_fixed(int32_t slave_addr,
                                    const meter_register_map_t &map,
                                    const meter_values_t &values)
 {
     const uint64_t uptime_s = (uint64_t)(esp_timer_get_time() / 1000000LL);
 
+    char u_text[16];
+    char i_text[16];
+    char p_text[16];
+    char q_text[16];
+    char s_text[16];
+    char f_text[16];
+    char e_text[16];
+    char e2_text[16];
+
     ESP_LOGI(TAG,
-             "t=%8llus meter addr=%3ld type=%-7s | inst{U=%7.2fV I=%6.3fA P=%7.2fW Q=%7.2fvar S=%7.2fVA f=%6.2fHz} | cum{E=%8.1fWh E2=%8.1fWh} | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
+             "t=%8llus meter addr=%3ld type=%-7s | inst{U=%sV I=%sA P=%sW Q=%svar S=%sVA f=%sHz} | cum{E=%sWh E2=%sWh} | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
              (unsigned long long)uptime_s,
              (long)slave_addr,
              map.name,
-             (double)values.voltage_v,
-             (double)values.current_a,
-             (double)values.power_w,
-             (double)values.reactive_power_var,
-             (double)values.apparent_power_va,
-             (double)values.frequency_hz,
-             (double)values.energy_total_wh,
-             (double)values.energy_aux_wh,
+             fmt_float_or_nan(u_text, sizeof(u_text), values.voltage_v, "%7.2f"),
+             fmt_float_or_nan(i_text, sizeof(i_text), values.current_a, "%6.3f"),
+             fmt_float_or_nan(p_text, sizeof(p_text), values.power_w, "%7.2f"),
+             fmt_float_or_nan(q_text, sizeof(q_text), values.reactive_power_var, "%7.2f"),
+             fmt_float_or_nan(s_text, sizeof(s_text), values.apparent_power_va, "%7.2f"),
+             fmt_float_or_nan(f_text, sizeof(f_text), values.frequency_hz, "%6.2f"),
+             fmt_float_or_nan(e_text, sizeof(e_text), values.energy_total_wh, "%8.1f"),
+             fmt_float_or_nan(e2_text, sizeof(e2_text), values.energy_aux_wh, "%8.1f"),
              (unsigned)reg_or_na(map.voltage),
              (unsigned)reg_or_na(map.current),
              (unsigned)reg_or_na(map.power),
@@ -692,87 +710,25 @@ static esp_err_t init_uart(void)
 static void kws_task(void *pvParameters)
 {
     (void)pvParameters;
-    uint32_t cycle = 0;
-    size_t meter_index = 0;
     static constexpr int32_t kHardcodedMeterAddrs[2] = {
         KWS_HARDCODED_SLAVE_ADDR_A,
         KWS_HARDCODED_SLAVE_ADDR_B,
     };
 
     while (true) {
-        const int32_t slave_addr = kHardcodedMeterAddrs[meter_index];
-        const meter_type_t meter_type = meter_type_for_addr(slave_addr);
-        const meter_register_map_t &map = (meter_type == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
-        const meter_values_t values = read_meter_values_with_retry(slave_addr, map);
+        const int32_t slave_addr_1 = kHardcodedMeterAddrs[0];
+        const meter_type_t meter_type_1 = meter_type_for_addr(slave_addr_1);
+        const meter_register_map_t &map_1 = (meter_type_1 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
+        const meter_values_t values_1 = read_meter_values_with_retry(slave_addr_1, map_1);
+        log_meter_values_fixed(slave_addr_1, map_1, values_1);
 
-        if (!std::isnan(values.voltage_v) && !std::isnan(values.current_a) && !std::isnan(values.power_w)) {
-            log_meter_values_fixed(slave_addr, map, values);
+        const int32_t slave_addr_2 = kHardcodedMeterAddrs[1];
+        const meter_type_t meter_type_2 = meter_type_for_addr(slave_addr_2);
+        const meter_register_map_t &map_2 = (meter_type_2 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
+        const meter_values_t values_2 = read_meter_values_with_retry(slave_addr_2, map_2);
+        log_meter_values_fixed(slave_addr_2, map_2, values_2);
 
-            if (!values_complete(values, map)) {
-                ESP_LOGI(TAG,
-                         "addr=%ld meter=%s doplnkove cteni nedokonceno: E_total=%d E_aux=%d S=%d Q=%d f=%d",
-                         (long)slave_addr,
-                         map.name,
-                         std::isnan(values.energy_total_wh) ? 0 : 1,
-                         binding_enabled(map.energy_aux) ? (std::isnan(values.energy_aux_wh) ? 0 : 1) : 1,
-                         std::isnan(values.apparent_power_va) ? 0 : 1,
-                         std::isnan(values.reactive_power_var) ? 0 : 1,
-                         std::isnan(values.frequency_hz) ? 0 : 1);
-            }
-        } else {
-            ESP_LOGI(TAG,
-                     "addr=%ld meter=%s cilene cteni selhalo: U=%d I=%d P=%d",
-                     (long)slave_addr,
-                     map.name,
-                     std::isnan(values.voltage_v) ? 0 : 1,
-                     std::isnan(values.current_a) ? 0 : 1,
-                     std::isnan(values.power_w) ? 0 : 1);
-        }
-
-        if ((cycle % KWS_ENERGY_SCAN_EVERY_N_CYCLES) == 0U) {
-            if (!KWS_ENABLE_DIAG_SCANS) {
-                ++cycle;
-                vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
-                continue;
-            }
-
-            ESP_LOGI(TAG,
-                     "Energy scan registru %u..%u (nenulove + 32bit dvojice)",
-                     (unsigned)KWS_ENERGY_SCAN_START,
-                     (unsigned)KWS_ENERGY_SCAN_END);
-
-            for (uint16_t reg = KWS_ENERGY_SCAN_START; reg <= KWS_ENERGY_SCAN_END; ++reg) {
-                uint16_t value = 0;
-                if (modbus_read_u16(reg, &value) && value != 0U) {
-                    ESP_LOGI(TAG,
-                             "E-cand reg[%u] = 0x%04X (%u)",
-                             (unsigned)reg,
-                             (unsigned)value,
-                             (unsigned)value);
-                }
-            }
-
-            for (uint16_t reg = KWS_ENERGY_SCAN_START; reg < KWS_ENERGY_SCAN_END; ++reg) {
-                uint16_t hi = 0;
-                uint16_t lo = 0;
-                if (modbus_read_u16(reg, &hi) && modbus_read_u16((uint16_t)(reg + 1), &lo)) {
-                    const uint32_t be32 = ((uint32_t)hi << 16) | lo;
-                    if (be32 != 0U) {
-                        ESP_LOGI(TAG,
-                                 "E32-cand reg[%u:%u] = 0x%08lX (%lu)",
-                                 (unsigned)reg,
-                                 (unsigned)(reg + 1),
-                                 (unsigned long)be32,
-                                 (unsigned long)be32);
-                    }
-                }
-            }
-        }
-
-        ++cycle;
-        meter_index = (meter_index + 1U) % 2U;
-        //vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
     }
 }
 
