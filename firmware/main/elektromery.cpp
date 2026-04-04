@@ -97,6 +97,8 @@ enum meter_type_t {
 enum class reg_read_kind_t : uint8_t {
     NONE = 0,
     HOLDING_U16,
+    HOLDING_U32_BE,
+    HOLDING_U32_LE,
     INPUT_FLOAT,
 };
 
@@ -134,6 +136,7 @@ typedef struct {
 } meter_register_map_t;
 
 static constexpr uint32_t METER_READ_RETRIES = 3;
+static constexpr bool KWS_ENERGY_HIGH_WORD_FIRST = false;
 
 static const meter_register_map_t KWS_METER_MAP = {
     .name = "KWS",
@@ -145,8 +148,12 @@ static const meter_register_map_t KWS_METER_MAP = {
     .frequency = {reg_read_kind_t::HOLDING_U16, KWS_REG_FREQUENCY, 1.0f},
     .power_factor = {reg_read_kind_t::HOLDING_U16, KWS_REG_POWER_FACTOR, 0.001f},
     .phase_angle = {reg_read_kind_t::NONE, 0, 0.0f},
-    .energy_total = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_TOTAL, 1.0f},
-    .energy_aux = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_AUX, 1.0f},
+    .energy_total = {KWS_ENERGY_HIGH_WORD_FIRST ? reg_read_kind_t::HOLDING_U32_BE : reg_read_kind_t::HOLDING_U32_LE,
+                     KWS_REG_ENERGY_TOTAL,
+                     1.0f},
+    .energy_aux = {KWS_ENERGY_HIGH_WORD_FIRST ? reg_read_kind_t::HOLDING_U32_BE : reg_read_kind_t::HOLDING_U32_LE,
+                   KWS_REG_ENERGY_AUX,
+                   1.0f},
 };
 
 static const meter_register_map_t TAC_METER_MAP = {
@@ -179,6 +186,7 @@ static inline bool binding_enabled(const reg_binding_t &binding)
 }
 
 static bool modbus_read_u16(uint16_t reg, uint16_t *value);
+static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value);
 static bool modbus_read_input_float(uint16_t reg, float *value);
 
 static bool read_binding_value(const reg_binding_t &binding, float *value)
@@ -190,6 +198,16 @@ static bool read_binding_value(const reg_binding_t &binding, float *value)
     if (binding.kind == reg_read_kind_t::HOLDING_U16) {
         uint16_t raw = 0;
         if (!modbus_read_u16(binding.reg, &raw)) {
+            return false;
+        }
+        *value = (float)raw * binding.multiplier;
+        return true;
+    }
+
+    if (binding.kind == reg_read_kind_t::HOLDING_U32_BE || binding.kind == reg_read_kind_t::HOLDING_U32_LE) {
+        uint32_t raw = 0;
+        const bool high_word_first = (binding.kind == reg_read_kind_t::HOLDING_U32_BE);
+        if (!modbus_read_u32(binding.reg, high_word_first, &raw)) {
             return false;
         }
         *value = (float)raw * binding.multiplier;
@@ -610,6 +628,29 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
     }
 
     *value = (uint16_t)(((uint16_t)response[3] << 8) | response[4]);
+    return true;
+}
+
+static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
+{
+    if (value == nullptr) {
+        return false;
+    }
+
+    uint16_t first = 0;
+    uint16_t second = 0;
+    if (!modbus_read_u16(reg, &first)) {
+        return false;
+    }
+    if (!modbus_read_u16((uint16_t)(reg + 1U), &second)) {
+        return false;
+    }
+
+    if (high_word_first) {
+        *value = ((uint32_t)first << 16) | (uint32_t)second;
+    } else {
+        *value = ((uint32_t)second << 16) | (uint32_t)first;
+    }
     return true;
 }
 
