@@ -23,7 +23,7 @@ extern "C" {
 #include "app_error_check.h"
 #include "pins.h"
 
-#define TAG "kws_303l"
+#define TAG "elektromer"
 
 namespace {
 
@@ -54,6 +54,11 @@ static constexpr uint16_t TAC_REG_REACTIVE_POWER = 0x0012;
 static constexpr uint16_t TAC_REG_APPARENT_POWER = 0x0018;
 static constexpr uint16_t TAC_REG_FREQUENCY = 0x0030;
 static constexpr uint16_t TAC_REG_TOTAL_ACTIVE_ENERGY_KWH = 0x0504;
+static constexpr uint16_t TAC_REG_TOTAL_REACTIVE_ENERGY_KVARH = 0x0508;
+static constexpr uint16_t KWS_REG_POWER_FACTOR = 48;
+static constexpr uint16_t TAC_REG_POWER_FACTOR = 0x001E;
+static constexpr uint16_t TAC_REG_PHASE_ANGLE = 0x0024;
+static constexpr float KWS_COUNTER_RESET_DROP_MIN = 5.0f;
 
 static constexpr float KWS_VOLTAGE_DIV = 100.0f;
 static constexpr float KWS_CURRENT_DIV = 1000.0f;
@@ -109,6 +114,8 @@ typedef struct {
     float reactive_power_var;
     float apparent_power_va;
     float frequency_hz;
+    float power_factor;
+    float phase_angle_deg;
     float energy_total_wh;
     float energy_aux_wh;
 } meter_values_t;
@@ -121,11 +128,28 @@ typedef struct {
     reg_binding_t reactive_power;
     reg_binding_t apparent_power;
     reg_binding_t frequency;
+    reg_binding_t power_factor;
+    reg_binding_t phase_angle;
     reg_binding_t energy_total;
     reg_binding_t energy_aux;
 } meter_register_map_t;
 
+typedef struct {
+    bool initialized;
+    float carry_total_wh;
+    float carry_aux_varh;
+    float last_total_wh_raw;
+    float last_aux_varh_raw;
+} kws_energy_tracker_t;
+
 static constexpr uint32_t METER_READ_RETRIES = 3;
+static kws_energy_tracker_t s_kws_energy_tracker = {
+    .initialized = false,
+    .carry_total_wh = 0.0f,
+    .carry_aux_varh = 0.0f,
+    .last_total_wh_raw = NAN,
+    .last_aux_varh_raw = NAN,
+};
 
 static const meter_register_map_t KWS_METER_MAP = {
     .name = "KWS",
@@ -135,6 +159,8 @@ static const meter_register_map_t KWS_METER_MAP = {
     .reactive_power = {reg_read_kind_t::HOLDING_U16, KWS_REG_REACTIVE_POWER, 0.1f},
     .apparent_power = {reg_read_kind_t::HOLDING_U16, KWS_REG_APPARENT_POWER, 0.1f},
     .frequency = {reg_read_kind_t::HOLDING_U16, KWS_REG_FREQUENCY, 1.0f},
+    .power_factor = {reg_read_kind_t::HOLDING_U16, KWS_REG_POWER_FACTOR, 0.001f},
+    .phase_angle = {reg_read_kind_t::NONE, 0, 0.0f},
     .energy_total = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_TOTAL, 1.0f},
     .energy_aux = {reg_read_kind_t::HOLDING_U16, KWS_REG_ENERGY_AUX, 1.0f},
 };
@@ -147,8 +173,10 @@ static const meter_register_map_t TAC_METER_MAP = {
     .reactive_power = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_REACTIVE_POWER, 1.0f},
     .apparent_power = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_APPARENT_POWER, 1.0f},
     .frequency = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_FREQUENCY, 1.0f},
+    .power_factor = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_POWER_FACTOR, 1.0f},
+    .phase_angle = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_PHASE_ANGLE, 1.0f},
     .energy_total = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_TOTAL_ACTIVE_ENERGY_KWH, 1000.0f},
-    .energy_aux = {reg_read_kind_t::NONE, 0, 0.0f},
+    .energy_aux = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_TOTAL_REACTIVE_ENERGY_KVARH, 1000.0f},
 };
 
 static meter_type_t meter_type_for_addr(int32_t addr)
@@ -216,6 +244,12 @@ static bool values_complete(const meter_values_t &values, const meter_register_m
     if (binding_enabled(map.frequency) && std::isnan(values.frequency_hz)) {
         return false;
     }
+    if (binding_enabled(map.power_factor) && std::isnan(values.power_factor)) {
+        return false;
+    }
+    if (binding_enabled(map.phase_angle) && std::isnan(values.phase_angle_deg)) {
+        return false;
+    }
     if (binding_enabled(map.energy_total) && std::isnan(values.energy_total_wh)) {
         return false;
     }
@@ -250,6 +284,12 @@ static void read_values_once(const meter_register_map_t &map, meter_values_t *va
     if (std::isnan(values->frequency_hz) && binding_enabled(map.frequency) && read_binding_value(map.frequency, &v)) {
         values->frequency_hz = v;
     }
+    if (std::isnan(values->power_factor) && binding_enabled(map.power_factor) && read_binding_value(map.power_factor, &v)) {
+        values->power_factor = v;
+    }
+    if (std::isnan(values->phase_angle_deg) && binding_enabled(map.phase_angle) && read_binding_value(map.phase_angle, &v)) {
+        values->phase_angle_deg = v;
+    }
     if (std::isnan(values->energy_total_wh) && binding_enabled(map.energy_total) && read_binding_value(map.energy_total, &v)) {
         values->energy_total_wh = v;
     }
@@ -267,6 +307,8 @@ static meter_values_t read_meter_values_with_retry(int32_t slave_addr, const met
         .reactive_power_var = float_nan(),
         .apparent_power_va = float_nan(),
         .frequency_hz = float_nan(),
+        .power_factor = float_nan(),
+        .phase_angle_deg = float_nan(),
         .energy_total_wh = float_nan(),
         .energy_aux_wh = float_nan(),
     };
@@ -289,6 +331,47 @@ static meter_values_t read_meter_values_with_retry(int32_t slave_addr, const met
     return values;
 }
 
+static void normalize_kws_cumulative_energy(meter_values_t *values)
+{
+    if (values == nullptr) {
+        return;
+    }
+
+    if (!s_kws_energy_tracker.initialized) {
+        s_kws_energy_tracker.last_total_wh_raw = values->energy_total_wh;
+        s_kws_energy_tracker.last_aux_varh_raw = values->energy_aux_wh;
+        s_kws_energy_tracker.initialized = true;
+    }
+
+    if (!std::isnan(values->energy_total_wh)) {
+        if (!std::isnan(s_kws_energy_tracker.last_total_wh_raw)
+            && (s_kws_energy_tracker.last_total_wh_raw - values->energy_total_wh) > KWS_COUNTER_RESET_DROP_MIN) {
+            s_kws_energy_tracker.carry_total_wh += s_kws_energy_tracker.last_total_wh_raw;
+            ESP_LOGW(TAG,
+                     "KWS Et reset/wrap detected: last=%.1f new=%.1f carry=%.1f",
+                     (double)s_kws_energy_tracker.last_total_wh_raw,
+                     (double)values->energy_total_wh,
+                     (double)s_kws_energy_tracker.carry_total_wh);
+        }
+        s_kws_energy_tracker.last_total_wh_raw = values->energy_total_wh;
+        values->energy_total_wh += s_kws_energy_tracker.carry_total_wh;
+    }
+
+    if (!std::isnan(values->energy_aux_wh)) {
+        if (!std::isnan(s_kws_energy_tracker.last_aux_varh_raw)
+            && (s_kws_energy_tracker.last_aux_varh_raw - values->energy_aux_wh) > KWS_COUNTER_RESET_DROP_MIN) {
+            s_kws_energy_tracker.carry_aux_varh += s_kws_energy_tracker.last_aux_varh_raw;
+            ESP_LOGW(TAG,
+                     "KWS E2 reset/wrap detected: last=%.1f new=%.1f carry=%.1f",
+                     (double)s_kws_energy_tracker.last_aux_varh_raw,
+                     (double)values->energy_aux_wh,
+                     (double)s_kws_energy_tracker.carry_aux_varh);
+        }
+        s_kws_energy_tracker.last_aux_varh_raw = values->energy_aux_wh;
+        values->energy_aux_wh += s_kws_energy_tracker.carry_aux_varh;
+    }
+}
+
 static uint16_t reg_or_na(const reg_binding_t &binding)
 {
     return binding_enabled(binding) ? binding.reg : 0xFFFF;
@@ -301,7 +384,22 @@ static const char *fmt_float_or_nan(char *dst, size_t dst_len, float value, cons
     }
 
     if (std::isnan(value)) {
-        (void)snprintf(dst, dst_len, "NaN");
+        int width = 0;
+        if (fmt != nullptr && fmt[0] == '%') {
+            size_t i = 1;
+            while (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0') {
+                ++i;
+            }
+            while (fmt[i] >= '0' && fmt[i] <= '9') {
+                width = (width * 10) + (fmt[i] - '0');
+                ++i;
+            }
+        }
+        if (width > 0) {
+            (void)snprintf(dst, dst_len, "%*s", width, "NaN");
+        } else {
+            (void)snprintf(dst, dst_len, "NaN");
+        }
     } else {
         (void)snprintf(dst, dst_len, fmt, (double)value);
     }
@@ -320,11 +418,13 @@ static void log_meter_values_fixed(int32_t slave_addr,
     char q_text[16];
     char s_text[16];
     char f_text[16];
+    char pf_text[16];
+    char phi_text[16];
     char e_text[16];
     char e2_text[16];
 
     ESP_LOGI(TAG,
-             "t=%8llus meter addr=%3ld type=%-7s | inst{U=%sV I=%sA P=%sW Q=%svar S=%sVA f=%sHz} | cum{E=%sWh E2=%sWh} | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X Et=0x%04X Ea=0x%04X",
+             "t=%8llus meter addr=%3ld type=%-7s | inst{U=%sV I=%sA P=%sW Q=%svar S=%sVA f=%sHz PF=%s phi=%sdeg} | cum{E=%sWh E2=%svarh} | regs U=0x%04X I=0x%04X P=0x%04X Q=0x%04X S=0x%04X f=0x%04X PF=0x%04X phi=0x%04X Et=0x%04X E2=0x%04X",
              (unsigned long long)uptime_s,
              (long)slave_addr,
              map.name,
@@ -334,6 +434,8 @@ static void log_meter_values_fixed(int32_t slave_addr,
              fmt_float_or_nan(q_text, sizeof(q_text), values.reactive_power_var, "%7.2f"),
              fmt_float_or_nan(s_text, sizeof(s_text), values.apparent_power_va, "%7.2f"),
              fmt_float_or_nan(f_text, sizeof(f_text), values.frequency_hz, "%6.2f"),
+             fmt_float_or_nan(pf_text, sizeof(pf_text), values.power_factor, "%5.3f"),
+             fmt_float_or_nan(phi_text, sizeof(phi_text), values.phase_angle_deg, "%6.2f"),
              fmt_float_or_nan(e_text, sizeof(e_text), values.energy_total_wh, "%8.1f"),
              fmt_float_or_nan(e2_text, sizeof(e2_text), values.energy_aux_wh, "%8.1f"),
              (unsigned)reg_or_na(map.voltage),
@@ -342,6 +444,8 @@ static void log_meter_values_fixed(int32_t slave_addr,
              (unsigned)reg_or_na(map.reactive_power),
              (unsigned)reg_or_na(map.apparent_power),
              (unsigned)reg_or_na(map.frequency),
+             (unsigned)reg_or_na(map.power_factor),
+             (unsigned)reg_or_na(map.phase_angle),
              (unsigned)reg_or_na(map.energy_total),
              (unsigned)reg_or_na(map.energy_aux));
 }
@@ -719,16 +823,23 @@ static void kws_task(void *pvParameters)
         const int32_t slave_addr_1 = kHardcodedMeterAddrs[0];
         const meter_type_t meter_type_1 = meter_type_for_addr(slave_addr_1);
         const meter_register_map_t &map_1 = (meter_type_1 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
-        const meter_values_t values_1 = read_meter_values_with_retry(slave_addr_1, map_1);
+        meter_values_t values_1 = read_meter_values_with_retry(slave_addr_1, map_1);
+        if (meter_type_1 == METER_TYPE_KWS) {
+            normalize_kws_cumulative_energy(&values_1);
+        }
         log_meter_values_fixed(slave_addr_1, map_1, values_1);
 
         const int32_t slave_addr_2 = kHardcodedMeterAddrs[1];
         const meter_type_t meter_type_2 = meter_type_for_addr(slave_addr_2);
         const meter_register_map_t &map_2 = (meter_type_2 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
-        const meter_values_t values_2 = read_meter_values_with_retry(slave_addr_2, map_2);
+        meter_values_t values_2 = read_meter_values_with_retry(slave_addr_2, map_2);
+        if (meter_type_2 == METER_TYPE_KWS) {
+            normalize_kws_cumulative_energy(&values_2);
+        }
         log_meter_values_fixed(slave_addr_2, map_2, values_2);
 
         vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
+        //vTaskDelay(pdMS_TO_TICKS(100000));
     }
 }
 
