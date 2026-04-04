@@ -637,14 +637,138 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
         return false;
     }
 
-    uint16_t first = 0;
-    uint16_t second = 0;
-    if (!modbus_read_u16(reg, &first)) {
+    uint8_t request[8] = {
+        (uint8_t)s_active_slave_addr,
+        KWS_MODBUS_FUNC_READ_HOLDING,
+        (uint8_t)(reg >> 8),
+        (uint8_t)(reg & 0xFF),
+        0x00,
+        0x02,
+        0,
+        0,
+    };
+
+    const uint16_t req_crc = modbus_crc16(request, 6);
+    request[6] = (uint8_t)(req_crc & 0xFF);
+    request[7] = (uint8_t)(req_crc >> 8);
+
+    rs485_set_tx_mode();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
+    if (tx != (int)sizeof(request)) {
+        ESP_LOGI(TAG, "UART TX selhal (u32 reg=%u tx=%d)", (unsigned)reg, tx);
+        rs485_set_rx_mode();
+        modbus_rx_resync();
         return false;
     }
-    if (!modbus_read_u16((uint16_t)(reg + 1U), &second)) {
+
+    (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    modbus_rx_resync();
+    rs485_set_rx_mode();
+    vTaskDelay(pdMS_TO_TICKS(10));
+    modbus_rx_resync();
+
+    uint8_t response[9] = {0};
+    const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (header_rx == 0) {
+        ESP_LOGI(TAG, "Slave neodpovedel (timeout) (u32 reg=%u)", (unsigned)reg);
+        modbus_rx_resync();
         return false;
     }
+    if (header_rx != 3) {
+        ESP_LOGI(TAG,
+                 "Slave odpovedel necitelnym/neuplnym hlavickovym ramcem (u32 reg=%u rx=%d)",
+                 (unsigned)reg,
+                 header_rx);
+        log_modbus_frame_bytes("u32 neuplna hlavicka", reg, response, header_rx);
+        modbus_rx_resync();
+        return false;
+    }
+
+    if (response[0] != (uint8_t)s_active_slave_addr) {
+        ESP_LOGI(TAG,
+                 "Neplatna Modbus odpoved u32-1 (reg=%u addr=%u func=%u len=%u)",
+                 (unsigned)reg,
+                 (unsigned)response[0],
+                 (unsigned)response[1],
+                 (unsigned)response[2]);
+        log_modbus_frame_bytes("Neplatna Modbus odpoved u32-1 - bajty", reg, response, 3);
+        modbus_rx_resync();
+        return false;
+    }
+
+    if (response[1] == (uint8_t)(KWS_MODBUS_FUNC_READ_HOLDING | 0x80U)) {
+        const int tail_rx = uart_read_exact(response + 3, 2, KWS_MODBUS_RX_TIMEOUT_TICKS);
+        if (tail_rx != 2) {
+            ESP_LOGI(TAG,
+                     "Slave vratil neuplnou exception odpoved (u32 reg=%u code=%u rx=%d)",
+                     (unsigned)reg,
+                     (unsigned)response[2],
+                     tail_rx + 3);
+            log_modbus_frame_bytes("u32 neuplna exception", reg, response, tail_rx + 3);
+            modbus_rx_resync();
+            return false;
+        }
+
+        const uint16_t rx_crc = (uint16_t)response[3] | ((uint16_t)response[4] << 8);
+        const uint16_t calc_crc = modbus_crc16(response, 3);
+        if (rx_crc != calc_crc) {
+            ESP_LOGI(TAG,
+                     "CRC mismatch v exception odpovedi (u32 reg=%u rx=0x%04x calc=0x%04x)",
+                     (unsigned)reg,
+                     (unsigned)rx_crc,
+                     (unsigned)calc_crc);
+            log_modbus_frame_bytes("u32 exception odpoved s chybnym CRC", reg, response, 5);
+            modbus_rx_resync();
+            return false;
+        }
+
+        ESP_LOGI(TAG,
+                 "Slave vratil Modbus exception (u32 reg=%u code=%u)",
+                 (unsigned)reg,
+                 (unsigned)response[2]);
+        return false;
+    }
+
+    if (response[1] != KWS_MODBUS_FUNC_READ_HOLDING || response[2] != 0x04) {
+        ESP_LOGI(TAG,
+                 "Neplatna Modbus odpoved u32-2 (reg=%u addr=%u func=%u len=%u)",
+                 (unsigned)reg,
+                 (unsigned)response[0],
+                 (unsigned)response[1],
+                 (unsigned)response[2]);
+        log_modbus_frame_bytes("Neplatna Modbus odpoved u32-2 - bajty", reg, response, 3);
+        modbus_rx_resync();
+        return false;
+    }
+
+    const int tail_rx = uart_read_exact(response + 3, 6, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (tail_rx != 6) {
+        ESP_LOGI(TAG,
+                 "Slave odpovedel neuplnym datovym ramcem (u32 reg=%u rx=%d)",
+                 (unsigned)reg,
+                 tail_rx + 3);
+        log_modbus_frame_bytes("u32 neuplny datovy ramec", reg, response, tail_rx + 3);
+        modbus_rx_resync();
+        return false;
+    }
+
+    const uint16_t rx_crc = (uint16_t)response[7] | ((uint16_t)response[8] << 8);
+    const uint16_t calc_crc = modbus_crc16(response, 7);
+    if (rx_crc != calc_crc) {
+        ESP_LOGI(TAG,
+                 "CRC mismatch (u32 reg=%u rx=0x%04x calc=0x%04x)",
+                 (unsigned)reg,
+                 (unsigned)rx_crc,
+                 (unsigned)calc_crc);
+        log_modbus_frame_bytes("u32 odpoved s chybnym CRC", reg, response, 9);
+        modbus_rx_resync();
+        return false;
+    }
+
+    const uint16_t first = (uint16_t)(((uint16_t)response[3] << 8) | response[4]);
+    const uint16_t second = (uint16_t)(((uint16_t)response[5] << 8) | response[6]);
 
     if (high_word_first) {
         *value = ((uint32_t)first << 16) | (uint32_t)second;
