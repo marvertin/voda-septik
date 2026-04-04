@@ -29,14 +29,14 @@ namespace {
 
 static constexpr int32_t KWS_DEFAULT_SLAVE_ADDR = 5;
 static constexpr int32_t KWS_DEFAULT_SAMPLE_MS = 1000;
-static constexpr uart_port_t KWS_UART_PORT = UART_NUM_2;
-static constexpr int32_t KWS_UART_BAUD = 9600;
-static constexpr TickType_t KWS_MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
-static constexpr TickType_t KWS_RS485_TURNAROUND_TICKS = pdMS_TO_TICKS(2);
-static constexpr uint8_t KWS_MODBUS_FUNC_READ_HOLDING = 0x03;
-static constexpr uint8_t KWS_MODBUS_FUNC_READ_INPUT = 0x04;
-static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR_A = 165;
-static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR_B = 1;
+static constexpr uart_port_t MODBUS_UART_PORT = UART_NUM_2;
+static constexpr int32_t MODBUS_UART_BAUD = 9600;
+static constexpr TickType_t MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
+static constexpr TickType_t RS485_TURNAROUND_TICKS = pdMS_TO_TICKS(2);
+static constexpr uint8_t MODBUS_FUNC_READ_HOLDING = 0x03;
+static constexpr uint8_t MODBUS_FUNC_READ_INPUT = 0x04;
+static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR = 165;
+static constexpr int32_t TAC_HARDCODED_SLAVE_ADDR = 1;
 
 static constexpr uint16_t KWS_REG_VOLTAGE = 14;
 static constexpr uint16_t KWS_REG_CURRENT = 18;
@@ -87,12 +87,7 @@ static kws_config_t s_cfg = {
     .sample_ms = KWS_DEFAULT_SAMPLE_MS,
 };
 
-static int32_t s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
-
-enum meter_type_t {
-    METER_TYPE_KWS,
-    METER_TYPE_TAC1100,
-};
+static int32_t s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR;
 
 enum class reg_read_kind_t : uint8_t {
     NONE = 0,
@@ -169,11 +164,6 @@ static const meter_register_map_t TAC_METER_MAP = {
     .energy_total = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_TOTAL_ACTIVE_ENERGY_KWH, 1000.0f},
     .energy_aux = {reg_read_kind_t::INPUT_FLOAT, TAC_REG_TOTAL_REACTIVE_ENERGY_KVARH, 1000.0f},
 };
-
-static meter_type_t meter_type_for_addr(int32_t addr)
-{
-    return (addr == KWS_HARDCODED_SLAVE_ADDR_B) ? METER_TYPE_TAC1100 : METER_TYPE_KWS;
-}
 
 static inline float float_nan()
 {
@@ -420,17 +410,17 @@ static inline float u32_to_float(uint32_t raw)
 
 static inline void rs485_set_tx_mode()
 {
-    APP_ERROR_CHECK("E866", gpio_set_level(KWS_RS485_EN_GPIO, 1));
+    APP_ERROR_CHECK("E866", gpio_set_level(RS485_EN_GPIO, 1));
 }
 
 static inline void rs485_set_rx_mode()
 {
-    APP_ERROR_CHECK("E866", gpio_set_level(KWS_RS485_EN_GPIO, 0));
+    APP_ERROR_CHECK("E866", gpio_set_level(RS485_EN_GPIO, 0));
 }
 
 static inline void modbus_rx_resync()
 {
-    (void)uart_flush_input(KWS_UART_PORT);
+    (void)uart_flush_input(MODBUS_UART_PORT);
 }
 
 static void log_modbus_frame_bytes(const char *label, uint16_t reg, const uint8_t *data, int len)
@@ -458,7 +448,7 @@ static int uart_read_exact(uint8_t *buffer, int required_len, TickType_t total_t
         }
 
         TickType_t remaining = total_timeout_ticks - elapsed;
-        int chunk = uart_read_bytes(KWS_UART_PORT,
+        int chunk = uart_read_bytes(MODBUS_UART_PORT,
                                     buffer + total_read,
                                     (uint32_t)(required_len - total_read),
                                     remaining);
@@ -513,7 +503,7 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
     vTaskDelay(pdMS_TO_TICKS(10)); // Kratka prodleva pro jistotu, aby se RS485 modul stihl prepnout do TX modu pred odesilanim dat. Bez toho se obcas stava, ze prvni bajt odesilaneho requestu je ztracen.
 
     //ESP_LOG_BUFFER_HEX(TAG, request, sizeof(request));
-    const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
+    const int tx = uart_write_bytes(MODBUS_UART_PORT, request, (uint32_t)sizeof(request));
     if (tx != (int)sizeof(request)) {
         ESP_LOGI(TAG, "UART TX selhal (reg=%u tx=%d)", (unsigned)reg, tx);
         rs485_set_rx_mode();
@@ -521,16 +511,16 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
         return false;
     }
 
-    (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    (void)uart_wait_tx_done(MODBUS_UART_PORT, pdMS_TO_TICKS(10000));
     modbus_rx_resync();
     rs485_set_rx_mode();
     vTaskDelay(pdMS_TO_TICKS(10)); // Kratka prodleva pro jistotu, protože jinak se stává, že je vložen extra byte před zprávu. 8 je málo, 20 moc, 10 se zdá být akorát. Bez toho se občas stává, že první bajt přijímané odpovědi je ztracen nebo je vložen extra byte před odpověď.
     modbus_rx_resync();
-    //vTaskDelay(KWS_RS485_TURNAROUND_TICKS);
+    //vTaskDelay(RS485_TURNAROUND_TICKS);
     //ESP_LOGI(TAG, "Request odeslan, cekam na odpoved (reg=%u)...", (unsigned)reg);
 
     uint8_t response[7] = {0};
-    const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int header_rx = uart_read_exact(response, 3, MODBUS_RX_TIMEOUT_TICKS);
     if (header_rx == 0) {
         ESP_LOGI(TAG, "Slave neodpovedel (timeout) (reg=%u)", (unsigned)reg);
         modbus_rx_resync();
@@ -558,8 +548,8 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
         return false;
     }
 
-    if (response[1] == (uint8_t)(KWS_MODBUS_FUNC_READ_HOLDING | 0x80U)) {
-        const int tail_rx = uart_read_exact(response + 3, 2, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (response[1] == (uint8_t)(MODBUS_FUNC_READ_HOLDING | 0x80U)) {
+        const int tail_rx = uart_read_exact(response + 3, 2, MODBUS_RX_TIMEOUT_TICKS);
         if (tail_rx != 2) {
             ESP_LOGI(TAG,
                      "Slave vratil neuplnou exception odpoved (reg=%u code=%u rx=%d)",
@@ -591,7 +581,7 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
         return false;
     }
 
-    if (response[1] != KWS_MODBUS_FUNC_READ_HOLDING || response[2] != 0x02) {
+    if (response[1] != MODBUS_FUNC_READ_HOLDING || response[2] != 0x02) {
         ESP_LOGI(TAG,
                  "Neplatna Modbus odpoved 2 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
@@ -603,7 +593,7 @@ static bool modbus_read_u16(uint16_t reg, uint16_t *value)
         return false;
     }
 
-    const int tail_rx = uart_read_exact(response + 3, 4, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int tail_rx = uart_read_exact(response + 3, 4, MODBUS_RX_TIMEOUT_TICKS);
     if (tail_rx != 4) {
         ESP_LOGI(TAG,
                  "Slave odpovedel neuplnym datovym ramcem (reg=%u rx=%d)",
@@ -639,7 +629,7 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
 
     uint8_t request[8] = {
         (uint8_t)s_active_slave_addr,
-        KWS_MODBUS_FUNC_READ_HOLDING,
+        MODBUS_FUNC_READ_HOLDING,
         (uint8_t)(reg >> 8),
         (uint8_t)(reg & 0xFF),
         0x00,
@@ -655,7 +645,7 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
     rs485_set_tx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
+    const int tx = uart_write_bytes(MODBUS_UART_PORT, request, (uint32_t)sizeof(request));
     if (tx != (int)sizeof(request)) {
         ESP_LOGI(TAG, "UART TX selhal (u32 reg=%u tx=%d)", (unsigned)reg, tx);
         rs485_set_rx_mode();
@@ -663,14 +653,14 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
         return false;
     }
 
-    (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    (void)uart_wait_tx_done(MODBUS_UART_PORT, pdMS_TO_TICKS(10000));
     modbus_rx_resync();
     rs485_set_rx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
     modbus_rx_resync();
 
     uint8_t response[9] = {0};
-    const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int header_rx = uart_read_exact(response, 3, MODBUS_RX_TIMEOUT_TICKS);
     if (header_rx == 0) {
         ESP_LOGI(TAG, "Slave neodpovedel (timeout) (u32 reg=%u)", (unsigned)reg);
         modbus_rx_resync();
@@ -698,8 +688,8 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
         return false;
     }
 
-    if (response[1] == (uint8_t)(KWS_MODBUS_FUNC_READ_HOLDING | 0x80U)) {
-        const int tail_rx = uart_read_exact(response + 3, 2, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    if (response[1] == (uint8_t)(MODBUS_FUNC_READ_HOLDING | 0x80U)) {
+        const int tail_rx = uart_read_exact(response + 3, 2, MODBUS_RX_TIMEOUT_TICKS);
         if (tail_rx != 2) {
             ESP_LOGI(TAG,
                      "Slave vratil neuplnou exception odpoved (u32 reg=%u code=%u rx=%d)",
@@ -731,7 +721,7 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
         return false;
     }
 
-    if (response[1] != KWS_MODBUS_FUNC_READ_HOLDING || response[2] != 0x04) {
+    if (response[1] != MODBUS_FUNC_READ_HOLDING || response[2] != 0x04) {
         ESP_LOGI(TAG,
                  "Neplatna Modbus odpoved u32-2 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
@@ -743,7 +733,7 @@ static bool modbus_read_u32(uint16_t reg, bool high_word_first, uint32_t *value)
         return false;
     }
 
-    const int tail_rx = uart_read_exact(response + 3, 6, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int tail_rx = uart_read_exact(response + 3, 6, MODBUS_RX_TIMEOUT_TICKS);
     if (tail_rx != 6) {
         ESP_LOGI(TAG,
                  "Slave odpovedel neuplnym datovym ramcem (u32 reg=%u rx=%d)",
@@ -786,7 +776,7 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
 
     uint8_t request[8] = {
         (uint8_t)s_active_slave_addr,
-        KWS_MODBUS_FUNC_READ_INPUT,
+        MODBUS_FUNC_READ_INPUT,
         (uint8_t)(reg >> 8),
         (uint8_t)(reg & 0xFF),
         0x00,
@@ -804,7 +794,7 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
     rs485_set_tx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    const int tx = uart_write_bytes(KWS_UART_PORT, request, (uint32_t)sizeof(request));
+    const int tx = uart_write_bytes(MODBUS_UART_PORT, request, (uint32_t)sizeof(request));
     if (tx != (int)sizeof(request)) {
         ESP_LOGI(TAG, "UART TX selhal (f04 reg=%u tx=%d)", (unsigned)reg, tx);
         rs485_set_rx_mode();
@@ -812,14 +802,14 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
         return false;
     }
 
-    (void)uart_wait_tx_done(KWS_UART_PORT, pdMS_TO_TICKS(10000));
+    (void)uart_wait_tx_done(MODBUS_UART_PORT, pdMS_TO_TICKS(10000));
     modbus_rx_resync();
     rs485_set_rx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
     modbus_rx_resync();
 
     uint8_t response[9] = {0};
-    const int header_rx = uart_read_exact(response, 3, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int header_rx = uart_read_exact(response, 3, MODBUS_RX_TIMEOUT_TICKS);
     if (header_rx == 0) {
         ESP_LOGI(TAG, "Slave neodpovedel (timeout) (f04 reg=%u)", (unsigned)reg);
         modbus_rx_resync();
@@ -832,7 +822,7 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
         return false;
     }
 
-    if (response[0] != (uint8_t)s_active_slave_addr || response[1] != KWS_MODBUS_FUNC_READ_INPUT || response[2] != 0x04) {
+    if (response[0] != (uint8_t)s_active_slave_addr || response[1] != MODBUS_FUNC_READ_INPUT || response[2] != 0x04) {
         ESP_LOGI(TAG,
                  "Neplatna Modbus odpoved f04 (reg=%u addr=%u func=%u len=%u)",
                  (unsigned)reg,
@@ -844,7 +834,7 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
         return false;
     }
 
-    const int tail_rx = uart_read_exact(response + 3, 6, KWS_MODBUS_RX_TIMEOUT_TICKS);
+    const int tail_rx = uart_read_exact(response + 3, 6, MODBUS_RX_TIMEOUT_TICKS);
     if (tail_rx != 6) {
         ESP_LOGI(TAG, "Slave odpovedel neuplnym datovym ramcem (f04 reg=%u rx=%d)", (unsigned)reg, tail_rx + 3);
         log_modbus_frame_bytes("f04 neuplny datovy ramec", reg, response, tail_rx + 3);
@@ -876,45 +866,45 @@ static void load_config(void)
 {
     s_cfg.sample_ms = config_store_get_i32_item(&KWS_SAMPLE_MS_ITEM);
 
-    s_cfg.slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
-    s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR_A;
+    s_cfg.slave_addr = KWS_HARDCODED_SLAVE_ADDR;
+    s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR;
 
     ESP_LOGI(TAG,
              "cfg addrA=%ld addrB=%ld sm=%ld uart=%d baud=%ld rx=%d tx=%d",
-             (long)KWS_HARDCODED_SLAVE_ADDR_A,
-             (long)KWS_HARDCODED_SLAVE_ADDR_B,
+             (long)KWS_HARDCODED_SLAVE_ADDR,
+             (long)TAC_HARDCODED_SLAVE_ADDR,
              (long)s_cfg.sample_ms,
-             (int)KWS_UART_PORT,
-             (long)KWS_UART_BAUD,
-             (int)KWS_RS485_RX_GPIO,
-             (int)KWS_RS485_TX_GPIO);
+             (int)MODBUS_UART_PORT,
+             (long)MODBUS_UART_BAUD,
+             (int)RS485_RX_GPIO,
+             (int)RS485_TX_GPIO);
 }
 
 static esp_err_t init_uart(void)
 {
     uart_config_t uart_cfg = {};
-    uart_cfg.baud_rate = KWS_UART_BAUD;
+    uart_cfg.baud_rate = MODBUS_UART_BAUD;
     uart_cfg.data_bits = UART_DATA_8_BITS;
     uart_cfg.parity = UART_PARITY_DISABLE;
     uart_cfg.stop_bits = UART_STOP_BITS_1;
     uart_cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
     uart_cfg.source_clk = UART_SCLK_DEFAULT;
 
-    APP_ERROR_CHECK("E841", uart_driver_install(KWS_UART_PORT, 256, 0, 0, nullptr, 0));
-    APP_ERROR_CHECK("E842", uart_param_config(KWS_UART_PORT, &uart_cfg));
+    APP_ERROR_CHECK("E841", uart_driver_install(MODBUS_UART_PORT, 256, 0, 0, nullptr, 0));
+    APP_ERROR_CHECK("E842", uart_param_config(MODBUS_UART_PORT, &uart_cfg));
 
-    gpio_reset_pin(KWS_RS485_EN_GPIO);
-    APP_ERROR_CHECK("E868", gpio_set_direction(KWS_RS485_EN_GPIO, GPIO_MODE_OUTPUT));
+    gpio_reset_pin(RS485_EN_GPIO);
+    APP_ERROR_CHECK("E868", gpio_set_direction(RS485_EN_GPIO, GPIO_MODE_OUTPUT));
     rs485_set_rx_mode();
 
     APP_ERROR_CHECK("E843",
-                    uart_set_pin(KWS_UART_PORT,
-                                 (int)KWS_RS485_TX_GPIO,
-                                 (int)KWS_RS485_RX_GPIO,
+                    uart_set_pin(MODBUS_UART_PORT,
+                                 (int)RS485_TX_GPIO,
+                                 (int)RS485_RX_GPIO,
                                  UART_PIN_NO_CHANGE,
                                  UART_PIN_NO_CHANGE));
 
-    APP_ERROR_CHECK("E845", uart_set_mode(KWS_UART_PORT, UART_MODE_UART));
+    APP_ERROR_CHECK("E845", uart_set_mode(MODBUS_UART_PORT, UART_MODE_UART));
 
     return ESP_OK;
 }
@@ -922,26 +912,18 @@ static esp_err_t init_uart(void)
 static void kws_task(void *pvParameters)
 {
     (void)pvParameters;
-    static constexpr int32_t kHardcodedMeterAddrs[2] = {
-        KWS_HARDCODED_SLAVE_ADDR_A,
-        KWS_HARDCODED_SLAVE_ADDR_B,
-    };
 
     while (true) {
-        const int32_t slave_addr_1 = kHardcodedMeterAddrs[0];
-        const meter_type_t meter_type_1 = meter_type_for_addr(slave_addr_1);
-        const meter_register_map_t &map_1 = (meter_type_1 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
-        meter_values_t values_1 = read_meter_values_with_retry(slave_addr_1, map_1);
-        log_meter_values_fixed(slave_addr_1, map_1, values_1);
-
-        const int32_t slave_addr_2 = kHardcodedMeterAddrs[1];
-        const meter_type_t meter_type_2 = meter_type_for_addr(slave_addr_2);
-        const meter_register_map_t &map_2 = (meter_type_2 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
-        meter_values_t values_2 = read_meter_values_with_retry(slave_addr_2, map_2);
-        log_meter_values_fixed(slave_addr_2, map_2, values_2);
-
+        { 
+            meter_values_t values = read_meter_values_with_retry(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP);
+            log_meter_values_fixed(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP, values);
+        }
+        {   
+             meter_values_t values = read_meter_values_with_retry(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP);
+             log_meter_values_fixed(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP, values);
+        }
         vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
-        // vTaskDelay(pdMS_TO_TICKS(10000));
+    // vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 
