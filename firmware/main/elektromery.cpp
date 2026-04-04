@@ -28,7 +28,6 @@ extern "C" {
 namespace {
 
 static constexpr int32_t KWS_DEFAULT_SLAVE_ADDR = 5;
-static constexpr int32_t KWS_DEFAULT_SAMPLE_MS = 1000;
 static constexpr uart_port_t MODBUS_UART_PORT = UART_NUM_2;
 static constexpr int32_t MODBUS_UART_BAUD = 9600;
 static constexpr TickType_t MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
@@ -71,20 +70,12 @@ static const config_item_t KWS_SLAVE_ADDR_ITEM = {
     .max_string_len = 0, .min_int = 1, .max_int = 247, .min_float = 0.0f, .max_float = 0.0f,
 };
 
-static const config_item_t KWS_SAMPLE_MS_ITEM = {
-    .key = "kws_sample_ms", .label = "KWS-303L perioda [ms]", .description = "Perioda debug dotazu KWS-303L.",
-    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = KWS_DEFAULT_SAMPLE_MS, .default_float = 0.0f, .default_bool = false,
-    .max_string_len = 0, .min_int = 100, .max_int = 5000, .min_float = 0.0f, .max_float = 0.0f,
-};
-
 typedef struct {
     int32_t slave_addr;
-    int32_t sample_ms;
 } kws_config_t;
 
 static kws_config_t s_cfg = {
     .slave_addr = KWS_DEFAULT_SLAVE_ADDR,
-    .sample_ms = KWS_DEFAULT_SAMPLE_MS,
 };
 
 static int32_t s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR;
@@ -132,6 +123,14 @@ typedef struct {
 
 static constexpr uint32_t METER_READ_RETRIES = 3;
 static constexpr bool KWS_ENERGY_HIGH_WORD_FIRST = false;
+
+static constexpr float PUMP_RUNNING_POWER_THRESHOLD_W = 5.0f;
+
+enum class pump_state_t : uint8_t {
+    STOPPED = 0,     // elektroměr odpověděl, výkon je nulový
+    RUNNING = 1,     // elektroměr odpověděl, výkon je nenulový
+    METER_ERROR = 2, // elektroměr neodpověděl
+};
 
 static const meter_register_map_t KWS_METER_MAP = {
     .name = "KWS",
@@ -321,6 +320,26 @@ static meter_values_t read_meter_values_with_retry(int32_t slave_addr, const met
 
     s_active_slave_addr = previous_addr;
     return values;
+}
+
+static pump_state_t check_pump_state(int32_t slave_addr, const meter_register_map_t &map)
+{
+    if (!binding_enabled(map.power)) {
+        return pump_state_t::METER_ERROR;
+    }
+
+    const int32_t previous_addr = s_active_slave_addr;
+    s_active_slave_addr = slave_addr;
+
+    float power_w = float_nan();
+    const bool ok = read_binding_value(map.power, &power_w);
+
+    s_active_slave_addr = previous_addr;
+
+    if (!ok || std::isnan(power_w)) {
+        return pump_state_t::METER_ERROR;
+    }
+    return (power_w >= PUMP_RUNNING_POWER_THRESHOLD_W) ? pump_state_t::RUNNING : pump_state_t::STOPPED;
 }
 
 static uint16_t reg_or_na(const reg_binding_t &binding)
@@ -864,16 +883,13 @@ static bool modbus_read_input_float(uint16_t reg, float *value)
 
 static void load_config(void)
 {
-    s_cfg.sample_ms = config_store_get_i32_item(&KWS_SAMPLE_MS_ITEM);
-
     s_cfg.slave_addr = KWS_HARDCODED_SLAVE_ADDR;
     s_active_slave_addr = KWS_HARDCODED_SLAVE_ADDR;
 
     ESP_LOGI(TAG,
-             "cfg addrA=%ld addrB=%ld sm=%ld uart=%d baud=%ld rx=%d tx=%d",
+             "cfg addrA=%ld addrB=%ld uart=%d baud=%ld rx=%d tx=%d",
              (long)KWS_HARDCODED_SLAVE_ADDR,
              (long)TAC_HARDCODED_SLAVE_ADDR,
-             (long)s_cfg.sample_ms,
              (int)MODBUS_UART_PORT,
              (long)MODBUS_UART_BAUD,
              (int)RS485_RX_GPIO,
@@ -913,17 +929,27 @@ static void kws_task(void *pvParameters)
 {
     (void)pvParameters;
 
+    TickType_t last_full_read_ticks = 0;
+
     while (true) {
-        { 
-            meter_values_t values = read_meter_values_with_retry(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP);
-            log_meter_values_fixed(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP, values);
+        const TickType_t loop_start = xTaskGetTickCount();
+
+
+        const pump_state_t pump = check_pump_state(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP);
+        ESP_LOGI(TAG, "Pump state: %s", (pump == pump_state_t::RUNNING) ? "RUNNING" : ((pump == pump_state_t::STOPPED) ? "STOPPED" : "METER_ERROR"));
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        if (pump == pump_state_t::RUNNING) {
+            {
+                meter_values_t values = read_meter_values_with_retry(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP);
+                log_meter_values_fixed(KWS_HARDCODED_SLAVE_ADDR, KWS_METER_MAP, values);
+            }
+            // {
+            //     meter_values_t values = read_meter_values_with_retry(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP);
+            //     log_meter_values_fixed(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP, values);
+            // }
         }
-        {   
-             meter_values_t values = read_meter_values_with_retry(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP);
-             log_meter_values_fixed(TAC_HARDCODED_SLAVE_ADDR, TAC_METER_MAP, values);
-        }
-        vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
-    // vTaskDelay(pdMS_TO_TICKS(10000));
+
     }
 }
 
@@ -932,7 +958,6 @@ static void kws_task(void *pvParameters)
 void kws_303l_register_config_items(void)
 {
     APP_ERROR_CHECK("E849", config_store_register_item(&KWS_SLAVE_ADDR_ITEM));
-    APP_ERROR_CHECK("E850", config_store_register_item(&KWS_SAMPLE_MS_ITEM));
 }
 
 bool kws_303l_is_enabled(void)
