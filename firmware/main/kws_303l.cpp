@@ -58,7 +58,6 @@ static constexpr uint16_t TAC_REG_TOTAL_REACTIVE_ENERGY_KVARH = 0x0508;
 static constexpr uint16_t KWS_REG_POWER_FACTOR = 48;
 static constexpr uint16_t TAC_REG_POWER_FACTOR = 0x001E;
 static constexpr uint16_t TAC_REG_PHASE_ANGLE = 0x0024;
-static constexpr float KWS_COUNTER_RESET_DROP_MIN = 5.0f;
 
 static constexpr float KWS_VOLTAGE_DIV = 100.0f;
 static constexpr float KWS_CURRENT_DIV = 1000.0f;
@@ -134,22 +133,7 @@ typedef struct {
     reg_binding_t energy_aux;
 } meter_register_map_t;
 
-typedef struct {
-    bool initialized;
-    float carry_total_wh;
-    float carry_aux_varh;
-    float last_total_wh_raw;
-    float last_aux_varh_raw;
-} kws_energy_tracker_t;
-
 static constexpr uint32_t METER_READ_RETRIES = 3;
-static kws_energy_tracker_t s_kws_energy_tracker = {
-    .initialized = false,
-    .carry_total_wh = 0.0f,
-    .carry_aux_varh = 0.0f,
-    .last_total_wh_raw = NAN,
-    .last_aux_varh_raw = NAN,
-};
 
 static const meter_register_map_t KWS_METER_MAP = {
     .name = "KWS",
@@ -329,47 +313,6 @@ static meter_values_t read_meter_values_with_retry(int32_t slave_addr, const met
 
     s_active_slave_addr = previous_addr;
     return values;
-}
-
-static void normalize_kws_cumulative_energy(meter_values_t *values)
-{
-    if (values == nullptr) {
-        return;
-    }
-
-    if (!s_kws_energy_tracker.initialized) {
-        s_kws_energy_tracker.last_total_wh_raw = values->energy_total_wh;
-        s_kws_energy_tracker.last_aux_varh_raw = values->energy_aux_wh;
-        s_kws_energy_tracker.initialized = true;
-    }
-
-    if (!std::isnan(values->energy_total_wh)) {
-        if (!std::isnan(s_kws_energy_tracker.last_total_wh_raw)
-            && (s_kws_energy_tracker.last_total_wh_raw - values->energy_total_wh) > KWS_COUNTER_RESET_DROP_MIN) {
-            s_kws_energy_tracker.carry_total_wh += s_kws_energy_tracker.last_total_wh_raw;
-            ESP_LOGW(TAG,
-                     "KWS Et reset/wrap detected: last=%.1f new=%.1f carry=%.1f",
-                     (double)s_kws_energy_tracker.last_total_wh_raw,
-                     (double)values->energy_total_wh,
-                     (double)s_kws_energy_tracker.carry_total_wh);
-        }
-        s_kws_energy_tracker.last_total_wh_raw = values->energy_total_wh;
-        values->energy_total_wh += s_kws_energy_tracker.carry_total_wh;
-    }
-
-    if (!std::isnan(values->energy_aux_wh)) {
-        if (!std::isnan(s_kws_energy_tracker.last_aux_varh_raw)
-            && (s_kws_energy_tracker.last_aux_varh_raw - values->energy_aux_wh) > KWS_COUNTER_RESET_DROP_MIN) {
-            s_kws_energy_tracker.carry_aux_varh += s_kws_energy_tracker.last_aux_varh_raw;
-            ESP_LOGW(TAG,
-                     "KWS E2 reset/wrap detected: last=%.1f new=%.1f carry=%.1f",
-                     (double)s_kws_energy_tracker.last_aux_varh_raw,
-                     (double)values->energy_aux_wh,
-                     (double)s_kws_energy_tracker.carry_aux_varh);
-        }
-        s_kws_energy_tracker.last_aux_varh_raw = values->energy_aux_wh;
-        values->energy_aux_wh += s_kws_energy_tracker.carry_aux_varh;
-    }
 }
 
 static uint16_t reg_or_na(const reg_binding_t &binding)
@@ -824,22 +767,16 @@ static void kws_task(void *pvParameters)
         const meter_type_t meter_type_1 = meter_type_for_addr(slave_addr_1);
         const meter_register_map_t &map_1 = (meter_type_1 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
         meter_values_t values_1 = read_meter_values_with_retry(slave_addr_1, map_1);
-        if (meter_type_1 == METER_TYPE_KWS) {
-            normalize_kws_cumulative_energy(&values_1);
-        }
         log_meter_values_fixed(slave_addr_1, map_1, values_1);
 
         const int32_t slave_addr_2 = kHardcodedMeterAddrs[1];
         const meter_type_t meter_type_2 = meter_type_for_addr(slave_addr_2);
         const meter_register_map_t &map_2 = (meter_type_2 == METER_TYPE_KWS) ? KWS_METER_MAP : TAC_METER_MAP;
         meter_values_t values_2 = read_meter_values_with_retry(slave_addr_2, map_2);
-        if (meter_type_2 == METER_TYPE_KWS) {
-            normalize_kws_cumulative_energy(&values_2);
-        }
         log_meter_values_fixed(slave_addr_2, map_2, values_2);
 
         vTaskDelay(pdMS_TO_TICKS(s_cfg.sample_ms));
-        //vTaskDelay(pdMS_TO_TICKS(100000));
+        // vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 
