@@ -22,6 +22,31 @@ static bool s_webapp_started = false;
 static TimerHandle_t s_webapp_auto_stop_timer = nullptr;
 static constexpr uint32_t WEBAPP_AUTO_STOP_MS = 2U * 60U * 60U * 1000U;
 static constexpr const char *AP_MODE_SSID = "voda-septik-config";
+static bool s_boot_was_firmware_reset = false;
+static bool s_reset_reason_initialized = false;
+
+static bool should_auto_start_on_level(system_network_level_t level)
+{
+    if (level == SYS_NET_AP_CONFIG) {
+        return true;
+    }
+
+    if (!s_boot_was_firmware_reset) {
+        return false;
+    }
+
+    return (level == SYS_NET_IP_ONLY) || (level == SYS_NET_MQTT_READY);
+}
+
+static void ensure_reset_reason_initialized(void)
+{
+    if (s_reset_reason_initialized) {
+        return;
+    }
+
+    s_reset_reason_initialized = true;
+    s_boot_was_firmware_reset = (esp_reset_reason() == ESP_RST_SW);
+}
 
 static void webapp_auto_stop_timer_cb(TimerHandle_t timer)
 {
@@ -76,13 +101,18 @@ void webapp_startup_on_network_event(const network_event_t *event)
         return;
     }
 
-    if (event->level != SYS_NET_AP_CONFIG) {
+    ensure_reset_reason_initialized();
+
+    if (!should_auto_start_on_level(event->level)) {
         return;
     }
 
     esp_err_t start_result = webapp_startup_start();
     if (start_result != ESP_OK) {
-        ESP_LOGW(TAG, "Automaticky start webapp v AP rezimu selhal: %s", esp_err_to_name(start_result));
+        ESP_LOGW(TAG,
+                 "Automaticky start webapp po network eventu (level=%d) selhal: %s",
+                 static_cast<int>(event->level),
+                 esp_err_to_name(start_result));
     }
 }
 
