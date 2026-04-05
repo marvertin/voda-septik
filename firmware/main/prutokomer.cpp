@@ -16,14 +16,16 @@ extern "C" {
 #include "pins.h"
 #include "sensor_events.h"
 #include "flash_monotonic_counter.h"
+#include "config_store.h"
 #include "app_error_check.h"
 #include "debug_mqtt.h"
 
 #define TAG "prutokomer"
 
-static constexpr uint32_t FLOW_PULSES_PER_LITER = 27; // F = 4.5 * Q, Q v l/min
+static constexpr int32_t FLOW_DEFAULT_PULSES_PER_LITER = 36; // F = 4.5 * Q, Q v l/min
+static constexpr int32_t FLOW_MIN_PULSES_PER_LITER = 1;
+static constexpr int32_t FLOW_MAX_PULSES_PER_LITER = 200;
 static constexpr uint32_t COUNTER_INCREMENT_LITERS = 1; // Kolik litrů odpovídá jednomu kroku v monotonic counteru
-static constexpr uint32_t PULSES_PER_COUNTER_INCREMENT = FLOW_PULSES_PER_LITER * COUNTER_INCREMENT_LITERS;
 static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 static constexpr float FLOW_EMA_ALPHA = 0.25f;
 static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
@@ -36,16 +38,44 @@ static constexpr float FLOW_SIMULATED_LITERS_PER_MIN = 60.0f;
 static constexpr TickType_t FLOW_SIMULATOR_PERIOD = pdMS_TO_TICKS(100);
 static constexpr UBaseType_t FLOW_SIMULATOR_TASK_STACK_SIZE = 2048;
 
+static const config_item_t FLOW_PULSES_PER_LITER_ITEM = {
+    .key = "flow_pulses_l", .label = "Prutokomer pulsy na litr", .description = "Kalibracni konstanta prutokomeru: kolik impulsu odpovida jednomu litru.",
+    .type = CONFIG_VALUE_INT32, .default_string = nullptr, .default_int = FLOW_DEFAULT_PULSES_PER_LITER, .default_float = 0.0f, .default_bool = false,
+    .max_string_len = 0, .min_int = FLOW_MIN_PULSES_PER_LITER, .max_int = FLOW_MAX_PULSES_PER_LITER, .min_float = 0.0f, .max_float = 0.0f,
+};
+
 static const char *FLOW_COUNTER_PARTITION_LABEL = "flow_data0";
 
 // sdílený counter z ISR
 static volatile uint32_t pulse_count = 0;
 static portMUX_TYPE s_pulse_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static FlashMonotonicCounter s_flow_counter;
-static uint64_t s_total_pulses = 0;
 static uint64_t s_persisted_counter_steps = 0;
+static uint64_t s_unpersisted_pulses = 0;
 static float s_prutok_ema = 0.0f;
 static bool s_prutok_inicializovan = false;
+static uint32_t s_flow_pulses_per_liter = static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER);
+static uint32_t s_pulses_per_counter_increment =
+    static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER) * COUNTER_INCREMENT_LITERS;
+
+void prutokomer_register_config_items(void)
+{
+    APP_ERROR_CHECK("E706", config_store_register_item(&FLOW_PULSES_PER_LITER_ITEM));
+}
+
+static void load_flow_config(void)
+{
+    const int32_t configured = config_store_get_i32_item(&FLOW_PULSES_PER_LITER_ITEM);
+    const int32_t clamped =
+        (configured < FLOW_MIN_PULSES_PER_LITER)
+            ? FLOW_MIN_PULSES_PER_LITER
+            : ((configured > FLOW_MAX_PULSES_PER_LITER)
+                   ? FLOW_MAX_PULSES_PER_LITER
+                   : configured);
+
+    s_flow_pulses_per_liter = static_cast<uint32_t>(clamped);
+    s_pulses_per_counter_increment = s_flow_pulses_per_liter * COUNTER_INCREMENT_LITERS;
+}
 
 // ISR handler
 static void IRAM_ATTR flow_isr_handler(void *arg) {
@@ -70,7 +100,7 @@ static void flow_pulse_simulator_task(void *pvParameters)
     (void)pvParameters;
 
     const float pulses_per_period =
-        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(FLOW_PULSES_PER_LITER)
+        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(s_flow_pulses_per_liter)
          * static_cast<float>(pdTICKS_TO_MS(FLOW_SIMULATOR_PERIOD)))
         / 60000.0f;
     float pulse_accumulator = 0.0f;
@@ -110,7 +140,7 @@ static void pocitani_pulsu(void *pvParameters)
 
         const uint64_t max_pulses_by_rate = // Výpočet maximálního počtu pulsů, které by mohly přijít za dobu elapsed_us při maximálním průtoku.
             (static_cast<uint64_t>(FLOW_MAX_LITERS_PER_MIN) *
-             static_cast<uint64_t>(FLOW_PULSES_PER_LITER) *
+             static_cast<uint64_t>(s_flow_pulses_per_liter) *
              static_cast<uint64_t>(elapsed_us) +
              60000000ULL - 1ULL) / 
             60000000ULL;
@@ -129,31 +159,31 @@ static void pocitani_pulsu(void *pvParameters)
                      (long long)elapsed_us);
         }
 
-        s_total_pulses += new_pulses;
-//        ESP_LOGI(TAG, "Nové pulzy: %lu, Celkem pulzů: %llu, Elapsed: %lld us",
-  //               new_pulses,
-    //             (unsigned long long)s_total_pulses,
-      //           (long long)elapsed_us);
+                s_unpersisted_pulses += static_cast<uint64_t>(new_pulses);
+                // ESP_LOGI(TAG, "Nove pulzy: %lu, Celkem pulzu: %llu, Elapsed: %lld us",
+                //          new_pulses,
+                //          (unsigned long long)s_unpersisted_pulses,
+                //          (long long)elapsed_us);
 
-        const uint64_t target_persisted_steps = s_total_pulses / PULSES_PER_COUNTER_INCREMENT;
-        while (s_persisted_counter_steps < target_persisted_steps) {
+                while (s_unpersisted_pulses >= static_cast<uint64_t>(s_pulses_per_counter_increment)) {
             ESP_LOGD(TAG,
-                     "Persistuji krok flow counteru: %llu -> %llu (pulses=%llu)",
+                                         "Persistuji krok flow counteru: %llu -> %llu (batch_pulses=%llu)",
                      (unsigned long long)s_persisted_counter_steps,
                      (unsigned long long)(s_persisted_counter_steps + 1),
-                     (unsigned long long)s_total_pulses);
+                                         (unsigned long long)s_unpersisted_pulses);
             const esp_err_t increment_result = s_flow_counter.increment(1);
             if (increment_result != ESP_OK) {
                 ESP_LOGE(TAG, "Nelze zapsat flow counter: %s", esp_err_to_name(increment_result));
                 break;
             }
             s_persisted_counter_steps += 1;
+                        s_unpersisted_pulses -= static_cast<uint64_t>(s_pulses_per_counter_increment);
         }
 
         float surovy_prutok = 0.0f;
         if (elapsed_us > 0) {
             surovy_prutok = (static_cast<float>(new_pulses) * 60000000.0f)
-                          / (static_cast<float>(elapsed_us) * static_cast<float>(FLOW_PULSES_PER_LITER));
+                          / (static_cast<float>(elapsed_us) * static_cast<float>(s_flow_pulses_per_liter));
         }
 
         if (!s_prutok_inicializovan) {
@@ -165,7 +195,9 @@ static void pocitani_pulsu(void *pvParameters)
         }
 
         const float cerpano_celkem =
-            static_cast<float>(s_total_pulses) / static_cast<float>(FLOW_PULSES_PER_LITER);
+            static_cast<float>(s_persisted_counter_steps * COUNTER_INCREMENT_LITERS)
+            + (static_cast<float>(s_unpersisted_pulses)
+               / static_cast<float>(s_flow_pulses_per_liter));
 
         sample_counter += 1;
         if (sample_counter >= FLOW_LOG_EVERY_N_SAMPLES) {
@@ -218,10 +250,12 @@ static void pocitani_pulsu(void *pvParameters)
 
 void prutokomer_init(void)
 {
+    load_flow_config();
+
     ESP_LOGI(TAG,
              "Init flow: gpio=%d pulses_per_l=%lu sample_period_ms=%lu ema_alpha=%.2f",
              (int)FLOW_SENSOR_GPIO,
-             (unsigned long)FLOW_PULSES_PER_LITER,
+             (unsigned long)s_flow_pulses_per_liter,
              (unsigned long)pdTICKS_TO_MS(FLOW_SAMPLE_PERIOD),
              (double)FLOW_EMA_ALPHA);
 
@@ -229,13 +263,13 @@ void prutokomer_init(void)
     // APP_ERROR_CHECK("E710", s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
-    s_total_pulses = s_persisted_counter_steps * static_cast<uint64_t>(PULSES_PER_COUNTER_INCREMENT);
+    s_unpersisted_pulses = 0;
     
     ESP_LOGI(TAG,
-             "Flow counter inicializovan, kroky=%llu, start_pulsy=%llu, objem=%llu l",
+             "Flow counter inicializovan, kroky=%llu, objem=%llu l, pulses_per_l=%lu",
              (unsigned long long)s_persisted_counter_steps,
-             (unsigned long long)s_total_pulses,
-             (unsigned long long)(s_persisted_counter_steps * COUNTER_INCREMENT_LITERS));
+             (unsigned long long)(s_persisted_counter_steps * COUNTER_INCREMENT_LITERS),
+             (unsigned long)s_flow_pulses_per_liter);
     //TODO Někam to nastavit ..
 
     // --- Nastavení GPIO pro flow senzor ---

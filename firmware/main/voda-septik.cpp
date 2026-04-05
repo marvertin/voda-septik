@@ -220,6 +220,9 @@ void cpp_app_main(void)
     APP_ERROR_CHECK("E109", config_store_begin_section("Tlak"));
     tlak_register_config_items(); 
 
+    APP_ERROR_CHECK("E119", config_store_begin_section("Prutokomer"));
+    prutokomer_register_config_items();
+
     APP_ERROR_CHECK("E110", config_webapp_prepare("app_cfg"));
 
     char wifi_ssid[32] = {0};
