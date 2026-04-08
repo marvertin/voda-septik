@@ -23,6 +23,7 @@ static QueueHandle_t lcd_queue = NULL;
 static i2c_dev_t pcf8574;
 static hd44780_t lcd;
 static bool s_lcd_available = false;
+static constexpr i2c_port_t DISPLAY_I2C_PORT = I2C_NUM_1;
 
 static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
 {
@@ -52,7 +53,11 @@ void lcd_init(void)
     }
 
     memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    result = pcf8574_init_desc(&pcf8574, 0x27, I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO);
+    result = pcf8574_init_desc(&pcf8574,
+                               0x27,
+                               DISPLAY_I2C_PORT,
+                               DISPLAY_I2C_SDA_GPIO,
+                               DISPLAY_I2C_SCL_GPIO);
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "LCD disabled: pcf8574_init_desc failed: %s", esp_err_to_name(result));
         return;

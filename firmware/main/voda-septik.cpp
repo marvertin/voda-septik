@@ -27,6 +27,7 @@
 #include "mqtt_publisher_task.h"
 #include "mqtt_commands.h"
 #include "mqtt_topics.h"
+#include "ads1115_logger.h"
 
 #include "lcd.h"
 #include "network_init.h"
@@ -175,107 +176,8 @@ void print_partitions(void)
 
 void cpp_app_main(void)
 {
-    boot_button_start(BOOT_BUTTON_GPIO, on_boot_button_pressed, nullptr);
-    indicate_error_reset_if_needed();
-    status_display_init();
-    print_partitions();
-    esp_err_t nvs_result = nvs_flash_init();
-    if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        APP_ERROR_CHECK("E101", nvs_flash_erase());
-        nvs_result = nvs_flash_init();
-    }
-    APP_ERROR_CHECK("E102", nvs_result);
 
-    ESP_LOGI(TAG, "System bezi v normalnim rezimu");
-
-    const esp_task_wdt_config_t task_wdt_cfg = {
-        .timeout_ms = TASK_WDT_TIMEOUT_MS,
-        .idle_core_mask = (1U << 0) | (1U << 1),
-        .trigger_panic = false,
-    };
-
-  APP_ERROR_CHECK("E103", task_wdt_init_or_reconfigure(&task_wdt_cfg));
-  ESP_LOGI(TAG,
-            "Task watchdog inicializovan: timeout_ms=%lu idle_core_mask=0x%lx panic=1",
-             (unsigned long)TASK_WDT_TIMEOUT_MS,
-             (unsigned long)task_wdt_cfg.idle_core_mask);
-
-    sensor_events_init(32);
-    network_event_bridge_init();
-
-    APP_ERROR_CHECK("E104", config_store_prepare("app_cfg"));
-
-    APP_ERROR_CHECK("E105", config_store_begin_section("Sit"));
-    network_config_register_config_items();
-
-    APP_ERROR_CHECK("E106", config_store_begin_section("System"));
-    system_config_register_config_items();
-
-    APP_ERROR_CHECK("E107", config_store_begin_section("Teplota"));
-    teplota_register_config_items();
-
-    APP_ERROR_CHECK("E108", config_store_begin_section("Zasoba"));
-    zasoba_register_config_items();
-
-    APP_ERROR_CHECK("E109", config_store_begin_section("Tlak"));
-    tlak_register_config_items(); 
-
-    APP_ERROR_CHECK("E119", config_store_begin_section("Prutokomer"));
-    prutokomer_register_config_items();
-
-    APP_ERROR_CHECK("E110", config_webapp_prepare("app_cfg"));
-
-    char wifi_ssid[32] = {0};
-    char wifi_password[64] = {0};
-    char mqtt_uri[128] = {0};
-    char mqtt_username[64] = {0};
-    char mqtt_password[128] = {0};
-    APP_ERROR_CHECK("E111", network_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
-    APP_ERROR_CHECK("E112", network_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
-    APP_ERROR_CHECK("E113", network_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
-    
-    const mqtt_topic_descriptor_t *status_topic_desc = mqtt_topic_descriptor(mqtt_topic_id_t::TOPIC_SYSTEM_STATUS);
-    APP_ERROR_CHECK("E114", status_topic_desc != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);
-
-    network_mqtt_lwt_config_t lwt_cfg = {
-        .enabled = true,
-        .status_topic = status_topic_desc->full_topic,
-        .qos = 1,
-        .retain = true,
-    };
-
-
-    ESP_LOGI(TAG,
-             "MQTT cfg pred pripojenim: uri=%s, user=%s, password_set=%s, status_topic=%s",
-             mqtt_uri,
-             (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
-             (mqtt_password[0] != '\0') ? "yes" : "no",
-             status_topic_desc->full_topic);
-    APP_ERROR_CHECK("E116", network_init_with_mqtt_ex(wifi_ssid,
-                                                        wifi_password,
-                                                        mqtt_uri,
-                                                        mqtt_username,
-                                                        mqtt_password,
-                                                        &lwt_cfg));
-
-    APP_ERROR_CHECK("E117", mqtt_publisher_task_start(32, 4, configMINIMAL_STACK_SIZE * 6));
-    APP_ERROR_CHECK("E118", mqtt_commands_start());
-
-
-    
-    lcd_init(); // Inicializace LCD před spuštěním ostatních úloh, aby mohly ihned zobrazovat informace
-
-    state_manager_start();
-
-    adc_shared_init();
-    
-    // initialize sensor producer tasks
-    prutokomer_init();
-
-    // vytvoření paralelních tasků
-    teplota_init();
-    zasoba_init();
-    tlak_init();
+    ads1115_logger_init();
 
 
 }

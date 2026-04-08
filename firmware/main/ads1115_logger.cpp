@@ -6,8 +6,10 @@ extern "C" {
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_err.h>
+#include <esp_timer.h>
 #include <driver/gpio.h>
 
+#include <math.h>
 #include <string.h>
 
 #include <ads111x.h>
@@ -40,12 +42,11 @@ static constexpr TickType_t ADS1115_CONVERSION_WAIT_TICKS = pdMS_TO_TICKS(10);
 static constexpr float FLOW_MAX_LITERS_PER_MIN = 120.0f;
 static constexpr float FLOW_PULSES_PER_LITER = 36.0f;
 static constexpr float FLOW_MAX_FREQ_HZ = (FLOW_MAX_LITERS_PER_MIN * FLOW_PULSES_PER_LITER) / 60.0f;
-static constexpr TickType_t FLOW_SIM_TASK_PERIOD_TICKS = (pdMS_TO_TICKS(1) > 0) ? pdMS_TO_TICKS(1) : 1;
 static constexpr TickType_t FLOW_SIM_SETPOINT_REFRESH_TICKS = (pdMS_TO_TICKS(50) > 0) ? pdMS_TO_TICKS(50) : 1;
-static constexpr float FLOW_SIM_TASK_PERIOD_S =
-    static_cast<float>(FLOW_SIM_TASK_PERIOD_TICKS) / static_cast<float>(configTICK_RATE_HZ);
 
 static i2c_dev_t s_ads1115;
+static esp_timer_handle_t s_flow_sim_pulse_timer = nullptr;
+static volatile bool s_flow_sim_pin_high = false;
 
 static float clamp01(float value)
 {
@@ -65,10 +66,50 @@ static constexpr ads111x_mux_t ADS1115_CHANNEL_MUXES[] = {
     ADS111X_MUX_3_GND,
 };
 
+static void flow_sim_pulse_timer_callback(void *arg)
+{
+    (void)arg;
+    s_flow_sim_pin_high = !s_flow_sim_pin_high;
+    gpio_set_level(FLOW_SIMULATOR_OUTPUT_GPIO, s_flow_sim_pin_high ? 1 : 0);
+}
+
+static void flow_sim_stop_pulses(void)
+{
+    if (s_flow_sim_pulse_timer != nullptr) {
+        const esp_err_t stop_result = esp_timer_stop(s_flow_sim_pulse_timer);
+        if (stop_result != ESP_OK && stop_result != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "Flow sim timer stop selhalo: %s", esp_err_to_name(stop_result));
+        }
+    }
+
+    s_flow_sim_pin_high = false;
+    gpio_set_level(FLOW_SIMULATOR_OUTPUT_GPIO, 0);
+}
+
+static esp_err_t flow_sim_apply_frequency(float freq_hz)
+{
+    flow_sim_stop_pulses();
+
+    if (freq_hz <= 0.0f) {
+        return ESP_OK;
+    }
+
+    const uint64_t half_period_us = static_cast<uint64_t>(500000.0f / freq_hz);
+    if (half_period_us == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return esp_timer_start_periodic(s_flow_sim_pulse_timer, half_period_us);
+}
+
 static esp_err_t ads1115_init_device(void)
 {
     memset(&s_ads1115, 0, sizeof(s_ads1115));
-    esp_err_t err = ads111x_init_desc(&s_ads1115, ADS1115_I2C_ADDR, ADS1115_I2C_PORT, I2C_SDA_GPIO, I2C_SCL_GPIO);
+    esp_err_t err = ads111x_init_desc(&s_ads1115,
+                                      ADS1115_I2C_ADDR,
+                                      ADS1115_I2C_PORT,
+                                      ADS1115_I2C_SDA_GPIO,
+                                      ADS1115_I2C_SCL_GPIO);
     if (err != ESP_OK) {
         return err;
     }
@@ -177,60 +218,60 @@ static void flow_pulse_simulator_task(void *pv_parameters)
 
     gpio_set_level(FLOW_SIMULATOR_OUTPUT_GPIO, 0);
 
-    TickType_t last_wake = xTaskGetTickCount();
-    TickType_t last_setpoint_refresh = 0;
+    if (s_flow_sim_pulse_timer == nullptr) {
+        const esp_timer_create_args_t pulse_timer_cfg = {
+            .callback = flow_sim_pulse_timer_callback,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "flow_sim_pulse",
+            .skip_unhandled_events = true,
+        };
+        const esp_err_t timer_create_result = esp_timer_create(&pulse_timer_cfg, &s_flow_sim_pulse_timer);
+        if (timer_create_result != ESP_OK) {
+            ESP_LOGE(TAG, "Flow simulator timer create selhal: %s", esp_err_to_name(timer_create_result));
+            vTaskDelete(nullptr);
+            return;
+        }
+    }
+
+    float active_freq_hz = -1.0f;
     float freq_hz = 0.0f;
-    float pulse_accumulator = 0.0f;
-    bool pulse_high = false;
     int16_t last_logged_raw_ch0 = INT16_MIN;
     bool last_logged_read_ok = false;
 
     while (true) {
-        vTaskDelayUntil(&last_wake, FLOW_SIM_TASK_PERIOD_TICKS);
+        vTaskDelay(FLOW_SIM_SETPOINT_REFRESH_TICKS);
 
-        const TickType_t now_ticks = xTaskGetTickCount();
-        if ((now_ticks - last_setpoint_refresh) >= FLOW_SIM_SETPOINT_REFRESH_TICKS) {
-            last_setpoint_refresh = now_ticks;
+        const int16_t raw_ch0 = ads1115_get_channel_value(0);
+        const bool read_ok = ads1115_last_read_ok();
 
-            const int16_t raw_ch0 = ads1115_get_channel_value(0);
-            const bool read_ok = ads1115_last_read_ok();
+        if (!read_ok || raw_ch0 <= 0) {
+            freq_hz = 0.0f;
+        } else {
+            const float normalized = clamp01(static_cast<float>(raw_ch0)
+                / static_cast<float>(ADS111X_MAX_VALUE));
+            freq_hz = normalized * FLOW_MAX_FREQ_HZ;
+        }
 
-            if (!read_ok || raw_ch0 <= 0) {
-                freq_hz = 0.0f;
+        if (fabsf(freq_hz - active_freq_hz) > 0.01f) {
+            const esp_err_t apply_result = flow_sim_apply_frequency(freq_hz);
+            if (apply_result != ESP_OK) {
+                ESP_LOGW(TAG, "Flow sim freq apply selhalo: %s", esp_err_to_name(apply_result));
             } else {
-                const float normalized = clamp01(static_cast<float>(raw_ch0)
-                    / static_cast<float>(ADS111X_MAX_VALUE));
-                freq_hz = normalized * FLOW_MAX_FREQ_HZ;
-            }
-
-            if (raw_ch0 != last_logged_raw_ch0 || read_ok != last_logged_read_ok) {
-                const float simulated_l_min = (freq_hz * 60.0f) / FLOW_PULSES_PER_LITER;
-                ESP_LOGI(TAG,
-                         "Flow sim changed: raw_ch0=%d read_ok=%d flow=%.2f l/min freq=%.2f Hz",
-                         (int)raw_ch0,
-                         read_ok ? 1 : 0,
-                         (double)simulated_l_min,
-                         (double)freq_hz);
-                last_logged_raw_ch0 = raw_ch0;
-                last_logged_read_ok = read_ok;
+                active_freq_hz = freq_hz;
             }
         }
 
-        // Pulse width is one scheduler tick, rising edges encode frequency.
-        if (pulse_high) {
-            gpio_set_level(FLOW_SIMULATOR_OUTPUT_GPIO, 0);
-            pulse_high = false;
-        }
-
-        if (freq_hz <= 0.0f) {
-            continue;
-        }
-
-        pulse_accumulator += freq_hz * FLOW_SIM_TASK_PERIOD_S;
-        if (pulse_accumulator >= 1.0f) {
-            pulse_accumulator -= 1.0f;
-            gpio_set_level(FLOW_SIMULATOR_OUTPUT_GPIO, 1);
-            pulse_high = true;
+        if (raw_ch0 != last_logged_raw_ch0 || read_ok != last_logged_read_ok) {
+            const float simulated_l_min = (freq_hz * 60.0f) / FLOW_PULSES_PER_LITER;
+            ESP_LOGI(TAG,
+                     "Flow sim changed: raw_ch0=%d read_ok=%d flow=%.2f l/min freq=%.2f Hz",
+                     (int)raw_ch0,
+                     read_ok ? 1 : 0,
+                     (double)simulated_l_min,
+                     (double)freq_hz);
+            last_logged_raw_ch0 = raw_ch0;
+            last_logged_read_ok = read_ok;
         }
     }
 }
