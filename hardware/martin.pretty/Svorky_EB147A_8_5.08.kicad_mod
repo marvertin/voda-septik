@@ -53,16 +53,6 @@
 		)
 	)
 	(attr through_hole)
-	(fp_line
-		(start 31.98 -2.54)
-		(end 31.98 -2.5)
-		(stroke
-			(width 0.2)
-			(type default)
-		)
-		(layer "F.Cu")
-		(uuid "8b2ca246-2863-4903-9b78-0f044c15622e")
-	)
 	(fp_rect
 		(start -3.29 -6.3)
 		(end 38.85 4.4)
