@@ -23,7 +23,7 @@ static QueueHandle_t lcd_queue = NULL;
 static i2c_dev_t pcf8574;
 static hd44780_t lcd;
 static bool s_lcd_available = false;
-static constexpr i2c_port_t DISPLAY_I2C_PORT = I2C_NUM_0;
+static constexpr i2c_port_t DISPLAY_I2C_PORT = I2C_NUM_1;
 
 static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
 {
