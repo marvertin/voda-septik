@@ -31,11 +31,11 @@ static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
 static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
 static constexpr uint32_t FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE = 128;
-static constexpr int64_t FLOW_TARGET_WINDOW_US = 3000000; // cílové okno historie pro odhad průtoku
+static constexpr int64_t FLOW_TARGET_WINDOW_US = 1500000; // cílové okno historie pro odhad průtoku
 static constexpr uint32_t FLOW_MIN_INTERVALS_FOR_ESTIMATE = 4;
 static constexpr uint32_t FLOW_ZERO_TIMEOUT_US = 3000000; // pokud bez impulsu, průtok = 0
 
-static constexpr bool FLOW_SIMULATOR_ENABLED = true;
+static constexpr bool FLOW_SIMULATOR_ENABLED = false;
 static constexpr uint32_t FLOW_SIMULATED_PULSE_WIDTH_US = 1000;
 static constexpr const char *FLOW_SIMULATOR_PERIODIC_TIMER_NAME = "flow_sim_period";
 static constexpr const char *FLOW_SIMULATOR_PULSE_OFF_TIMER_NAME = "flow_sim_off";

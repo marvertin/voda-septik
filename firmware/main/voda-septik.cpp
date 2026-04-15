@@ -45,6 +45,10 @@ extern "C" {
 
 static const char *TAG = "voda_septik";
 static constexpr uint32_t TASK_WDT_TIMEOUT_MS = 5000;
+static constexpr bool MQTT_BENCH_MODE = false;
+static constexpr const char *MQTT_BENCH_URI = "mqtt://amur.veve:1884";
+static constexpr const char *MQTT_BENCH_USERNAME = "";
+static constexpr const char *MQTT_BENCH_PASSWORD = "";
 
 static esp_err_t task_wdt_init_or_reconfigure(const esp_task_wdt_config_t *cfg)
 {
@@ -233,6 +237,17 @@ void cpp_app_main(void)
     APP_ERROR_CHECK("E111", network_config_load_wifi_credentials(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password)));
     APP_ERROR_CHECK("E112", network_config_load_mqtt_uri(mqtt_uri, sizeof(mqtt_uri)));
     APP_ERROR_CHECK("E113", network_config_load_mqtt_credentials(mqtt_username, sizeof(mqtt_username), mqtt_password, sizeof(mqtt_password)));
+
+    if (MQTT_BENCH_MODE) {
+        snprintf(mqtt_uri, sizeof(mqtt_uri), "%s", MQTT_BENCH_URI);
+        snprintf(mqtt_username, sizeof(mqtt_username), "%s", MQTT_BENCH_USERNAME);
+        snprintf(mqtt_password, sizeof(mqtt_password), "%s", MQTT_BENCH_PASSWORD);
+        ESP_LOGW(TAG,
+                 "MQTT_BENCH_MODE je aktivni, prepisuji MQTT cfg: uri=%s user=%s password_set=%s",
+                 mqtt_uri,
+                 (mqtt_username[0] != '\0') ? mqtt_username : "(none)",
+                 (mqtt_password[0] != '\0') ? "yes" : "no");
+    }
     
     const mqtt_topic_descriptor_t *status_topic_desc = mqtt_topic_descriptor(mqtt_topic_id_t::TOPIC_SYSTEM_STATUS);
     APP_ERROR_CHECK("E114", status_topic_desc != nullptr ? ESP_OK : ESP_ERR_INVALID_STATE);

@@ -16,6 +16,8 @@ from typing import Iterable, List, Optional, Set
 DEFAULT_TOPIC_ROOT = os.environ.get("TOPIC_ROOT", "voda/septik")
 DEFAULT_HOST = os.environ.get("MQTT_HOST", "mqtt.veve")
 DEFAULT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+DEFAULT_BENCH_HOST = os.environ.get("MQTT_BENCH_HOST", "amur.veve")
+DEFAULT_BENCH_PORT = int(os.environ.get("MQTT_BENCH_PORT", "1884"))
 DEFAULT_USER = os.environ.get("MQTT_USER", "ha")
 DEFAULT_QOS = int(os.environ.get("MQTT_QOS", "1"))
 DEFAULT_PASS_FILE = Path(os.environ.get("MQTT_PASS_FILE", str(Path.home() / ".voda-septik" / "mqtt_password")))
@@ -527,6 +529,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"MQTT host (default: {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"MQTT port (default: {DEFAULT_PORT})")
+    parser.add_argument("--bench", action="store_true",
+                        help=f"Pouzije bench MQTT broker {DEFAULT_BENCH_HOST}:{DEFAULT_BENCH_PORT}")
     parser.add_argument("--user", default=DEFAULT_USER, help=f"MQTT user (default: {DEFAULT_USER})")
     parser.add_argument("--qos", type=int, default=DEFAULT_QOS, help=f"MQTT qos (default: {DEFAULT_QOS})")
     parser.add_argument("--topic-root", default=DEFAULT_TOPIC_ROOT, help=f"Topic root (default: {DEFAULT_TOPIC_ROOT})")
@@ -559,6 +563,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.bench:
+        args.host = DEFAULT_BENCH_HOST
+        args.port = DEFAULT_BENCH_PORT
 
     try:
         require_cmd("mosquitto_pub")
