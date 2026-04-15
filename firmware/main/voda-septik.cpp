@@ -27,7 +27,7 @@
 #include "mqtt_publisher_task.h"
 #include "mqtt_commands.h"
 #include "mqtt_topics.h"
-
+#include "ads1115_logger.h"
 #include "lcd.h"
 #include "network_init.h"
 #include "app_error_check.h"
@@ -38,6 +38,7 @@
 #include "esp_ota_ops.h"
 #include "esp_netif.h"
 #include "esp_task_wdt.h"
+
 
 extern "C" {
     void cpp_app_main(void);
@@ -292,5 +293,5 @@ void cpp_app_main(void)
     zasoba_init();
     tlak_init();
 
-
+    ads1115_logger_init();
 }
