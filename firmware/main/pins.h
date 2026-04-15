@@ -13,6 +13,9 @@ static const gpio_num_t TM1637_DIO_GPIO = GPIO_NUM_19;          // GPIO19
 static const gpio_num_t DISPLAY_I2C_SDA_GPIO = GPIO_NUM_22;             // GPIO22
 static const gpio_num_t DISPLAY_I2C_SCL_GPIO = GPIO_NUM_21;             // GPIO21
 
+static const gpio_num_t ADS1115_I2C_SDA_GPIO = GPIO_NUM_23;     // Jen nastřeleno, aby tam něco bylo, není fyzicky připojeno. GPIO23 je sdíleno s LED, ale pokud se ADS1115 vůbec nepoužije, nemělo by to vadit. Pokud se ADS1115 použije, bude potřeba přepojit SDA na jiný GPIO pin a aktualizovat tento define. --- IGNORE ---
+static const gpio_num_t ADS1115_I2C_SCL_GPIO = GPIO_NUM_25;     // Jen nastřeleno, aby tam něco bylo, není fyzicky připojeno. GPIO25 je sdíleno s RS485 EN, ale pokud se ADS1115 vůbec nepoužije, nemělo by to vadit. Pokud se ADS1115 použije, bude potřeba přepojit SCL na jiný GPIO pin a aktualizovat tento define. --- IGNORE ---
+
 static const gpio_num_t FLOW_SENSOR_GPIO = GPIO_NUM_26;         // GPIO26
 static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_25;      // GPIO25
 static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;          // GPIO0
