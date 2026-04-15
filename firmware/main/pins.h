@@ -14,6 +14,7 @@ static const gpio_num_t DISPLAY_I2C_SDA_GPIO = GPIO_NUM_22;             // GPIO2
 static const gpio_num_t DISPLAY_I2C_SCL_GPIO = GPIO_NUM_21;             // GPIO21
 
 static const gpio_num_t FLOW_SENSOR_GPIO = GPIO_NUM_26;         // GPIO26
+static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_25;      // GPIO25
 static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;          // GPIO0
 static const gpio_num_t TEMPERATURE_SENSOR_GPIO = GPIO_NUM_27;  // GPIO27
 static const gpio_num_t RS485_RX_GPIO = GPIO_NUM_17;        // GPIO17 (MAX3485 TXD)
@@ -24,4 +25,3 @@ static const adc_channel_t LEVEL_SENSOR_ADC_CHANNEL = ADC_CHANNEL_0;          //
 
 static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_6; // ADC1_CH4 (GPIO32)
 static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_7;  // ADC1_CH5 (GPIO33)
-

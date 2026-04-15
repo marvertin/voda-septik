@@ -32,12 +32,13 @@ static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
 static constexpr uint32_t FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE = 128;
 static constexpr int64_t FLOW_TARGET_WINDOW_US = 3000000; // cílové okno historie pro odhad průtoku
 static constexpr uint32_t FLOW_MIN_INTERVALS_FOR_ESTIMATE = 4;
-static constexpr uint32_t FLOW_ZERO_TIMEOUT_US = 30000000; // pokud bez impulsu, průtok = 0
+static constexpr uint32_t FLOW_ZERO_TIMEOUT_US = 3000000; // pokud bez impulsu, průtok = 0
 
-static constexpr bool FLOW_SIMULATOR_ENABLED = false;
+static constexpr bool FLOW_SIMULATOR_ENABLED = true;
 static constexpr float FLOW_SIMULATED_LITERS_PER_MIN = 60.0f;
-static constexpr TickType_t FLOW_SIMULATOR_PERIOD = pdMS_TO_TICKS(100);
-static constexpr UBaseType_t FLOW_SIMULATOR_TASK_STACK_SIZE = 2048;
+static constexpr uint32_t FLOW_SIMULATED_PULSE_WIDTH_US = 1000;
+static constexpr const char *FLOW_SIMULATOR_PERIODIC_TIMER_NAME = "flow_sim_period";
+static constexpr const char *FLOW_SIMULATOR_PULSE_OFF_TIMER_NAME = "flow_sim_off";
 
 static const config_item_t FLOW_PULSES_PER_LITER_ITEM = {
     .key = "flow_pulses_l", .label = "Prutokomer pulsy na litr", .description = "Kalibracni konstanta prutokomeru: kolik impulsu odpovida jednomu litru.",
@@ -60,6 +61,9 @@ static uint64_t s_unpersisted_pulses = 0;
 static uint32_t s_flow_pulses_per_liter = static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER);
 static uint32_t s_pulses_per_counter_increment =
     static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER) * COUNTER_INCREMENT_LITERS;
+static esp_timer_handle_t s_flow_simulator_periodic_timer = nullptr;
+static esp_timer_handle_t s_flow_simulator_pulse_off_timer = nullptr;
+static uint32_t s_flow_simulator_pulse_width_us = FLOW_SIMULATED_PULSE_WIDTH_US;
 
 void prutokomer_register_config_items(void)
 {
@@ -104,39 +108,73 @@ static uint32_t get_and_clear_pulse_count(void)
     return count;
 }
 
-static void flow_pulse_simulator_task(void *pvParameters)
+static void flow_pulse_simulator_off_callback(void *arg)
 {
-    (void)pvParameters;
+    (void)arg;
+    gpio_set_level(FLOW_SIMULATOR_GPIO, 0);
+}
 
-    const float pulses_per_period =
-        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(s_flow_pulses_per_liter)
-         * static_cast<float>(pdTICKS_TO_MS(FLOW_SIMULATOR_PERIOD)))
-        / 60000.0f;
-    float pulse_accumulator = 0.0f;
+static void flow_pulse_simulator_periodic_callback(void *arg)
+{
+    (void)arg;
 
-    while (1) {
-        vTaskDelay(FLOW_SIMULATOR_PERIOD);
-
-        pulse_accumulator += pulses_per_period;
-        const uint32_t pulses_to_add = static_cast<uint32_t>(pulse_accumulator);
-        if (pulses_to_add == 0) {
-            continue;
-        }
-        pulse_accumulator -= static_cast<float>(pulses_to_add);
-
-         int64_t timestamp = esp_timer_get_time();
-         
-         // Přidat do počítadla pulsů
-         portENTER_CRITICAL(&s_pulse_count_mux);
-         pulse_count = pulse_count + pulses_to_add;
-         portEXIT_CRITICAL(&s_pulse_count_mux);
-
-         for (uint32_t i = 0; i < pulses_to_add; i++) {
-             s_pulse_timestamps[s_pulse_write_idx] = timestamp;
-             s_pulse_write_idx = (s_pulse_write_idx + 1) % FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE;
-             timestamp = timestamp + 1000; // Rozestup mezi simulovanými pulsy
-         }
+    gpio_set_level(FLOW_SIMULATOR_GPIO, 1);
+    esp_err_t pulse_off_result = esp_timer_start_once(s_flow_simulator_pulse_off_timer,
+                                                      s_flow_simulator_pulse_width_us);
+    if (pulse_off_result != ESP_OK) {
+        gpio_set_level(FLOW_SIMULATOR_GPIO, 0);
     }
+}
+
+static esp_err_t start_flow_pulse_simulator(void)
+{
+    if (FLOW_SIMULATED_LITERS_PER_MIN <= 0.0f || s_flow_pulses_per_liter == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const float pulses_per_second =
+        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(s_flow_pulses_per_liter)) / 60.0f;
+    if (pulses_per_second <= 0.0f) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const int64_t period_us = static_cast<int64_t>(1000000.0f / pulses_per_second);
+    const int64_t pulse_width_us =
+        (period_us > static_cast<int64_t>(FLOW_SIMULATED_PULSE_WIDTH_US))
+            ? static_cast<int64_t>(FLOW_SIMULATED_PULSE_WIDTH_US)
+            : (period_us / 2);
+    if (period_us <= 0 || pulse_width_us <= 0 || pulse_width_us >= period_us) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    s_flow_simulator_pulse_width_us = static_cast<uint32_t>(pulse_width_us);
+
+    const esp_timer_create_args_t pulse_off_timer_args = {
+        .callback = &flow_pulse_simulator_off_callback,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = FLOW_SIMULATOR_PULSE_OFF_TIMER_NAME,
+        .skip_unhandled_events = true,
+    };
+    const esp_timer_create_args_t periodic_timer_args = {
+        .callback = &flow_pulse_simulator_periodic_callback,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = FLOW_SIMULATOR_PERIODIC_TIMER_NAME,
+        .skip_unhandled_events = true,
+    };
+
+    esp_err_t create_result = esp_timer_create(&pulse_off_timer_args, &s_flow_simulator_pulse_off_timer);
+    if (create_result != ESP_OK) {
+        return create_result;
+    }
+
+    create_result = esp_timer_create(&periodic_timer_args, &s_flow_simulator_periodic_timer);
+    if (create_result != ESP_OK) {
+        return create_result;
+    }
+
+    gpio_set_level(FLOW_SIMULATOR_GPIO, 0);
+    return esp_timer_start_periodic(s_flow_simulator_periodic_timer, period_us);
 }
 
 static float vypocitej_surovy_prutok(int64_t now_us)
@@ -313,19 +351,22 @@ void prutokomer_init(void)
              (int)FLOW_SENSOR_GPIO);
 
     if (FLOW_SIMULATOR_ENABLED) {
+        gpio_config_t sim_io_conf = {
+            .pin_bit_mask = 1ULL << FLOW_SIMULATOR_GPIO,
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        APP_ERROR_CHECK("E716", gpio_config(&sim_io_conf));
+        APP_ERROR_CHECK("E717", gpio_set_level(FLOW_SIMULATOR_GPIO, 0));
+
         ESP_LOGW(TAG,
-                 "Flow simulator ENABLED: %.2f l/min, period=%lu ms",
+                 "Flow simulator ENABLED: %.2f l/min, out_pin=%d, pulse_width_us=%lu",
                  (double)FLOW_SIMULATED_LITERS_PER_MIN,
-                 (unsigned long)pdTICKS_TO_MS(FLOW_SIMULATOR_PERIOD));
-        APP_ERROR_CHECK("E715",
-                        xTaskCreate(flow_pulse_simulator_task,
-                                    "flow_sim",
-                                    FLOW_SIMULATOR_TASK_STACK_SIZE,
-                                    NULL,
-                                    1,
-                                    NULL) == pdPASS
-                            ? ESP_OK
-                            : ESP_FAIL);
+                 (int)FLOW_SIMULATOR_GPIO,
+                 (unsigned long)FLOW_SIMULATED_PULSE_WIDTH_US);
+        APP_ERROR_CHECK("E715", start_flow_pulse_simulator());
     }
 
     ESP_LOGI(TAG, "Startuji mereni pulzu...");
