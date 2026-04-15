@@ -27,12 +27,11 @@ static constexpr int32_t FLOW_MIN_PULSES_PER_LITER = 1;
 static constexpr int32_t FLOW_MAX_PULSES_PER_LITER = 200;
 static constexpr uint32_t COUNTER_INCREMENT_LITERS = 1; // Kolik litrů odpovídá jednomu kroku v monotonic counteru
 static constexpr TickType_t FLOW_SAMPLE_PERIOD = pdMS_TO_TICKS(200);
-static constexpr float FLOW_EMA_ALPHA = 0.25f;
 static constexpr UBaseType_t FLOW_TASK_STACK_SIZE = 4096;
 static constexpr uint8_t FLOW_LOG_EVERY_N_SAMPLES = 5;
-static constexpr uint32_t FLOW_MAX_LITERS_PER_MIN = 120;
-static constexpr uint32_t FLOW_PULSE_SPIKE_MARGIN = 8;
 static constexpr uint32_t FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE = 128;
+static constexpr int64_t FLOW_TARGET_WINDOW_US = 3000000; // cílové okno historie pro odhad průtoku
+static constexpr uint32_t FLOW_MIN_INTERVALS_FOR_ESTIMATE = 4;
 static constexpr uint32_t FLOW_ZERO_TIMEOUT_US = 30000000; // pokud bez impulsu, průtok = 0
 
 static constexpr bool FLOW_SIMULATOR_ENABLED = false;
@@ -51,7 +50,6 @@ static const char *FLOW_COUNTER_PARTITION_LABEL = "flow_data0";
 // Kruhový buffer posledních N časů impulsů pro výpočet průtoku
 static int64_t s_pulse_timestamps[FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE];
 static volatile uint32_t s_pulse_write_idx = 0;
-static portMUX_TYPE s_pulse_buffer_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // sdílený counter z ISR
 static volatile uint32_t pulse_count = 0;
@@ -59,8 +57,6 @@ static portMUX_TYPE s_pulse_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static FlashMonotonicCounter s_flow_counter;
 static uint64_t s_persisted_counter_steps = 0;
 static uint64_t s_unpersisted_pulses = 0;
-static float s_prutok_ema = 0.0f;
-static bool s_prutok_inicializovan = false;
 static uint32_t s_flow_pulses_per_liter = static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER);
 static uint32_t s_pulses_per_counter_increment =
     static_cast<uint32_t>(FLOW_DEFAULT_PULSES_PER_LITER) * COUNTER_INCREMENT_LITERS;
@@ -93,12 +89,9 @@ static void IRAM_ATTR flow_isr_handler(void *arg) {
     portENTER_CRITICAL_ISR(&s_pulse_count_mux);
     pulse_count += 1;
     portEXIT_CRITICAL_ISR(&s_pulse_count_mux);
-    
-    // Ukládat časy do kruhového bufferu pro výpočet průtoku
-    portENTER_CRITICAL_ISR(&s_pulse_buffer_mux);
+
     s_pulse_timestamps[s_pulse_write_idx] = timestamp;
     s_pulse_write_idx = (s_pulse_write_idx + 1) % FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE;
-    portEXIT_CRITICAL_ISR(&s_pulse_buffer_mux);
 }
 
 static uint32_t get_and_clear_pulse_count(void)
@@ -137,42 +130,60 @@ static void flow_pulse_simulator_task(void *pvParameters)
          portENTER_CRITICAL(&s_pulse_count_mux);
          pulse_count = pulse_count + pulses_to_add;
          portEXIT_CRITICAL(&s_pulse_count_mux);
-         
-         // Přidat časy do bufferu
-         portENTER_CRITICAL(&s_pulse_buffer_mux);
+
          for (uint32_t i = 0; i < pulses_to_add; i++) {
              s_pulse_timestamps[s_pulse_write_idx] = timestamp;
              s_pulse_write_idx = (s_pulse_write_idx + 1) % FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE;
              timestamp = timestamp + 1000; // Rozestup mezi simulovanými pulsy
          }
-         portEXIT_CRITICAL(&s_pulse_buffer_mux);
     }
 }
 
 static float vypocitej_surovy_prutok(int64_t now_us)
 {
-    int64_t first_pulse_time = 0;
-    int64_t last_pulse_time = 0;
-
-    portENTER_CRITICAL(&s_pulse_buffer_mux);
     const uint32_t write_idx = s_pulse_write_idx;
-    first_pulse_time = s_pulse_timestamps[write_idx];
+    int64_t last_pulse_time = 0;
+    int64_t first_pulse_time = 0;
+    uint32_t intervals = 0;
+
     const uint32_t last_idx =
         (write_idx + FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE - 1U) % FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE;
     last_pulse_time = s_pulse_timestamps[last_idx];
-    portEXIT_CRITICAL(&s_pulse_buffer_mux);
+
+    if (last_pulse_time <= 0) {
+        return 0.0f;
+    }
 
     const int64_t time_since_last_pulse = now_us - last_pulse_time;
     if (time_since_last_pulse > FLOW_ZERO_TIMEOUT_US) {
         return 0.0f;
     }
 
+    first_pulse_time = last_pulse_time;
+
+    for (uint32_t step = 1; step < FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE; ++step) {
+        const uint32_t idx =
+            (last_idx + FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE - step) % FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE;
+        const int64_t candidate_time = s_pulse_timestamps[idx];
+
+        if (candidate_time <= 0 || candidate_time > first_pulse_time) {
+            break;
+        }
+
+        first_pulse_time = candidate_time;
+        intervals = step;
+
+        const int64_t time_span_us = last_pulse_time - first_pulse_time;
+        if (time_span_us >= FLOW_TARGET_WINDOW_US && intervals >= FLOW_MIN_INTERVALS_FOR_ESTIMATE) {
+            break;
+        }
+    }
+
     const int64_t time_span_us = last_pulse_time - first_pulse_time;
-    if (time_span_us <= 0) {
+    if (time_span_us <= 0 || intervals == 0) {
         return 0.0f;
     }
 
-    const uint32_t intervals = FLOW_PULSE_TIMESTAMPS_BUFFER_SIZE - 1U;
     return (static_cast<float>(intervals) * 60000000.0f)
          / (static_cast<float>(time_span_us) * static_cast<float>(s_flow_pulses_per_liter));
 }
@@ -214,17 +225,9 @@ static void pocitani_pulsu(void *pvParameters)
 
         const int64_t now_us = esp_timer_get_time();
 
-        // Počet pulsů od poslední vzorky
         const float surovy_prutok = vypocitej_surovy_prutok(now_us);
 
-        if (!s_prutok_inicializovan) {
-            s_prutok_ema = surovy_prutok;
-            s_prutok_inicializovan = true;
-        } else {
-            s_prutok_ema = FLOW_EMA_ALPHA * surovy_prutok
-                         + (1.0f - FLOW_EMA_ALPHA) * s_prutok_ema;
-        }
-
+        // Počet pulsů od poslední vzorky
         const uint32_t sampled_pulses = get_and_clear_pulse_count();
         const float cerpano_celkem = zpracuj_cerpano_celkem(sampled_pulses);
 
@@ -232,9 +235,8 @@ static void pocitani_pulsu(void *pvParameters)
         if (sample_counter >= FLOW_LOG_EVERY_N_SAMPLES) {
             sample_counter = 0;
             ESP_LOGD(TAG,
-                     "Prutok raw=%.2f l/min, ema=%.2f l/min, celkem=%.2f l",
+                     "Prutok=%.2f l/min, celkem=%.2f l",
                      surovy_prutok,
-                     s_prutok_ema,
                      cerpano_celkem);
         }
 
@@ -246,7 +248,7 @@ static void pocitani_pulsu(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_FLOW,
                     .data = {
                         .flow = {
-                            .prutok = s_prutok_ema,
+                            .prutok = surovy_prutok,
                             .cerpano_celkem = cerpano_celkem,
                         },
                     },
@@ -257,12 +259,11 @@ static void pocitani_pulsu(void *pvParameters)
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
         DEBUG_PUBLISH("prutok",
-                      "queued=%d ts=%lld sampled_pulses=%lu raw_l_min=%.4f ema_l_min=%.4f total_l=%.4f persisted_steps=%llu",
+                      "queued=%d ts=%lld sampled_pulses=%lu flow_l_min=%.4f total_l=%.4f persisted_steps=%llu",
                       queued ? 1 : 0,
                       (long long)now_us,
                       (unsigned long)sampled_pulses,
                       (double)surovy_prutok,
-                      (double)s_prutok_ema,
                       (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
 
@@ -275,11 +276,11 @@ void prutokomer_init(void)
     load_flow_config();
 
     ESP_LOGI(TAG,
-             "Init flow: gpio=%d pulses_per_l=%lu sample_period_ms=%lu ema_alpha=%.2f",
+             "Init flow: gpio=%d pulses_per_l=%lu sample_period_ms=%lu target_window_ms=%lld",
              (int)FLOW_SENSOR_GPIO,
              (unsigned long)s_flow_pulses_per_liter,
              (unsigned long)pdTICKS_TO_MS(FLOW_SAMPLE_PERIOD),
-             (double)FLOW_EMA_ALPHA);
+             (long long)(FLOW_TARGET_WINDOW_US / 1000));
 
     APP_ERROR_CHECK("E709", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
     // APP_ERROR_CHECK("E710", s_flow_counter.reset());
