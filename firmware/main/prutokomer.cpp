@@ -19,6 +19,7 @@ extern "C" {
 #include "config_store.h"
 #include "app_error_check.h"
 #include "debug_mqtt.h"
+#include <math.h>
 
 #define TAG "prutokomer"
 
@@ -35,10 +36,11 @@ static constexpr uint32_t FLOW_MIN_INTERVALS_FOR_ESTIMATE = 4;
 static constexpr uint32_t FLOW_ZERO_TIMEOUT_US = 3000000; // pokud bez impulsu, průtok = 0
 
 static constexpr bool FLOW_SIMULATOR_ENABLED = true;
-static constexpr float FLOW_SIMULATED_LITERS_PER_MIN = 60.0f;
 static constexpr uint32_t FLOW_SIMULATED_PULSE_WIDTH_US = 1000;
 static constexpr const char *FLOW_SIMULATOR_PERIODIC_TIMER_NAME = "flow_sim_period";
 static constexpr const char *FLOW_SIMULATOR_PULSE_OFF_TIMER_NAME = "flow_sim_off";
+static constexpr TickType_t FLOW_SIMULATOR_PROFILE_UPDATE_PERIOD = pdMS_TO_TICKS(200);
+static constexpr UBaseType_t FLOW_SIMULATOR_TASK_STACK_SIZE = 3072;
 
 static const config_item_t FLOW_PULSES_PER_LITER_ITEM = {
     .key = "flow_pulses_l", .label = "Prutokomer pulsy na litr", .description = "Kalibracni konstanta prutokomeru: kolik impulsu odpovida jednomu litru.",
@@ -64,6 +66,30 @@ static uint32_t s_pulses_per_counter_increment =
 static esp_timer_handle_t s_flow_simulator_periodic_timer = nullptr;
 static esp_timer_handle_t s_flow_simulator_pulse_off_timer = nullptr;
 static uint32_t s_flow_simulator_pulse_width_us = FLOW_SIMULATED_PULSE_WIDTH_US;
+static float s_flow_simulator_current_l_min = 0.0f;
+static bool s_prutok_zaokrouhleny_valid = false;
+static float s_prutok_zaokrouhleny = 0.0f;
+
+typedef struct {
+    const char *name;
+    float start_l_min;
+    float end_l_min;
+    TickType_t duration_ticks;
+} flow_simulator_profile_step_t;
+
+static const flow_simulator_profile_step_t FLOW_SIMULATOR_PROFILE[] = {
+    {.name = "stopped",        .start_l_min = 0.0f,  .end_l_min = 0.0f,  .duration_ticks = pdMS_TO_TICKS(3000)},
+    {.name = "slow_rise",      .start_l_min = 0.0f,  .end_l_min = 8.0f,  .duration_ticks = pdMS_TO_TICKS(12000)},
+    {.name = "fast_rise",      .start_l_min = 8.0f,  .end_l_min = 55.0f, .duration_ticks = pdMS_TO_TICKS(5000)},
+    {.name = "hold_high",      .start_l_min = 55.0f, .end_l_min = 55.0f, .duration_ticks = pdMS_TO_TICKS(5000)},
+    {.name = "slow_fall",      .start_l_min = 55.0f, .end_l_min = 18.0f, .duration_ticks = pdMS_TO_TICKS(10000)},
+    {.name = "fast_stop",      .start_l_min = 18.0f, .end_l_min = 0.0f,  .duration_ticks = pdMS_TO_TICKS(4000)},
+    {.name = "stopped_again",  .start_l_min = 0.0f,  .end_l_min = 0.0f,  .duration_ticks = pdMS_TO_TICKS(4000)},
+    {.name = "quick_restart",  .start_l_min = 0.0f,  .end_l_min = 42.0f, .duration_ticks = pdMS_TO_TICKS(3000)},
+    {.name = "hold_medium",    .start_l_min = 42.0f, .end_l_min = 42.0f, .duration_ticks = pdMS_TO_TICKS(5000)},
+    {.name = "slow_taper",     .start_l_min = 42.0f, .end_l_min = 6.0f,  .duration_ticks = pdMS_TO_TICKS(8000)},
+    {.name = "hold_low",       .start_l_min = 6.0f,  .end_l_min = 6.0f,  .duration_ticks = pdMS_TO_TICKS(5000)},
+};
 
 void prutokomer_register_config_items(void)
 {
@@ -126,16 +152,35 @@ static void flow_pulse_simulator_periodic_callback(void *arg)
     }
 }
 
-static esp_err_t start_flow_pulse_simulator(void)
+static esp_err_t stop_flow_simulator_timer(esp_timer_handle_t timer)
 {
-    if (FLOW_SIMULATED_LITERS_PER_MIN <= 0.0f || s_flow_pulses_per_liter == 0) {
-        return ESP_ERR_INVALID_ARG;
+    if (timer == nullptr) {
+        return ESP_OK;
+    }
+
+    const esp_err_t stop_result = esp_timer_stop(timer);
+    if (stop_result == ESP_OK || stop_result == ESP_ERR_INVALID_STATE) {
+        return ESP_OK;
+    }
+    return stop_result;
+}
+
+static esp_err_t nastav_flow_simulator_prutok(float flow_l_min)
+{
+    APP_ERROR_CHECK("E718", stop_flow_simulator_timer(s_flow_simulator_periodic_timer));
+    APP_ERROR_CHECK("E719", stop_flow_simulator_timer(s_flow_simulator_pulse_off_timer));
+    APP_ERROR_CHECK("E720", gpio_set_level(FLOW_SIMULATOR_GPIO, 0));
+
+    s_flow_simulator_current_l_min = flow_l_min;
+
+    if (flow_l_min <= 0.0f || s_flow_pulses_per_liter == 0) {
+        return ESP_OK;
     }
 
     const float pulses_per_second =
-        (FLOW_SIMULATED_LITERS_PER_MIN * static_cast<float>(s_flow_pulses_per_liter)) / 60.0f;
+        (flow_l_min * static_cast<float>(s_flow_pulses_per_liter)) / 60.0f;
     if (pulses_per_second <= 0.0f) {
-        return ESP_ERR_INVALID_ARG;
+        return ESP_OK;
     }
 
     const int64_t period_us = static_cast<int64_t>(1000000.0f / pulses_per_second);
@@ -147,6 +192,14 @@ static esp_err_t start_flow_pulse_simulator(void)
         return ESP_ERR_INVALID_ARG;
     }
     s_flow_simulator_pulse_width_us = static_cast<uint32_t>(pulse_width_us);
+    return esp_timer_start_periodic(s_flow_simulator_periodic_timer, period_us);
+}
+
+static esp_err_t start_flow_pulse_simulator(void)
+{
+    if (s_flow_pulses_per_liter == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     const esp_timer_create_args_t pulse_off_timer_args = {
         .callback = &flow_pulse_simulator_off_callback,
@@ -174,7 +227,36 @@ static esp_err_t start_flow_pulse_simulator(void)
     }
 
     gpio_set_level(FLOW_SIMULATOR_GPIO, 0);
-    return esp_timer_start_periodic(s_flow_simulator_periodic_timer, period_us);
+    return nastav_flow_simulator_prutok(0.0f);
+}
+
+static void flow_pulse_simulator_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    while (1) {
+        for (size_t step_index = 0; step_index < (sizeof(FLOW_SIMULATOR_PROFILE) / sizeof(FLOW_SIMULATOR_PROFILE[0])); ++step_index) {
+            const flow_simulator_profile_step_t &step = FLOW_SIMULATOR_PROFILE[step_index];
+            const TickType_t update_ticks =
+                (FLOW_SIMULATOR_PROFILE_UPDATE_PERIOD > 0) ? FLOW_SIMULATOR_PROFILE_UPDATE_PERIOD : 1;
+            const TickType_t duration_ticks = (step.duration_ticks > 0) ? step.duration_ticks : update_ticks;
+            const uint32_t updates = (uint32_t)((duration_ticks + update_ticks - 1) / update_ticks);
+
+            for (uint32_t update_index = 0; update_index < updates; ++update_index) {
+                const float progress =
+                    (updates <= 1) ? 1.0f : (float)update_index / (float)(updates - 1U);
+                const float flow_l_min =
+                    step.start_l_min + ((step.end_l_min - step.start_l_min) * progress);
+
+                APP_ERROR_CHECK("E721", nastav_flow_simulator_prutok(flow_l_min));
+                ESP_LOGI(TAG,
+                         "Flow simulator step=%s setpoint=%.2f l/min",
+                         step.name,
+                         (double)flow_l_min);
+                vTaskDelay(update_ticks);
+            }
+        }
+    }
 }
 
 static float vypocitej_surovy_prutok(int64_t now_us)
@@ -226,6 +308,43 @@ static float vypocitej_surovy_prutok(int64_t now_us)
          / (static_cast<float>(time_span_us) * static_cast<float>(s_flow_pulses_per_liter));
 }
 
+static float zaokrouhli_prutok_s_hysterezi(float prutok)
+{
+    if (!(prutok >= 0.0f)) {
+        s_prutok_zaokrouhleny_valid = false;
+        s_prutok_zaokrouhleny = 0.0f;
+        return 0.0f;
+    }
+
+    const float krok = (prutok >= 10.0f) ? 1.0f : 0.1f;
+    const float scaled = prutok / krok;
+    const float lower = floorf(scaled);
+    const float upper = lower + 1.0f;
+    const float discarded_digit = (scaled - lower) * 10.0f;
+
+    float rounded_scaled = lower;
+    if (discarded_digit >= 7.0f) {
+        rounded_scaled = upper;
+    } else if (discarded_digit < 3.0f) {
+        rounded_scaled = lower;
+    } else if (s_prutok_zaokrouhleny_valid) {
+        const float previous_scaled = s_prutok_zaokrouhleny / krok;
+        if (fabsf(previous_scaled - upper) < 0.25f) {
+            rounded_scaled = upper;
+        } else if (fabsf(previous_scaled - lower) < 0.25f) {
+            rounded_scaled = lower;
+        } else {
+            rounded_scaled = (scaled >= (lower + 0.5f)) ? upper : lower;
+        }
+    } else {
+        rounded_scaled = (scaled >= (lower + 0.5f)) ? upper : lower;
+    }
+
+    s_prutok_zaokrouhleny = rounded_scaled * krok;
+    s_prutok_zaokrouhleny_valid = true;
+    return s_prutok_zaokrouhleny;
+}
+
 static float zpracuj_cerpano_celkem(uint32_t sampled_pulses)
 {
     if (sampled_pulses > 0) {
@@ -264,6 +383,7 @@ static void pocitani_pulsu(void *pvParameters)
         const int64_t now_us = esp_timer_get_time();
 
         const float surovy_prutok = vypocitej_surovy_prutok(now_us);
+        const float publikovany_prutok = zaokrouhli_prutok_s_hysterezi(surovy_prutok);
 
         // Počet pulsů od poslední vzorky
         const uint32_t sampled_pulses = get_and_clear_pulse_count();
@@ -273,8 +393,9 @@ static void pocitani_pulsu(void *pvParameters)
         if (sample_counter >= FLOW_LOG_EVERY_N_SAMPLES) {
             sample_counter = 0;
             ESP_LOGD(TAG,
-                     "Prutok=%.2f l/min, celkem=%.2f l",
+                     "Prutok raw=%.3f rounded=%.3f l/min, celkem=%.2f l",
                      surovy_prutok,
+                     publikovany_prutok,
                      cerpano_celkem);
         }
 
@@ -286,7 +407,7 @@ static void pocitani_pulsu(void *pvParameters)
                     .sensor_type = SENSOR_EVENT_FLOW,
                     .data = {
                         .flow = {
-                            .prutok = surovy_prutok,
+                            .prutok = publikovany_prutok,
                             .cerpano_celkem = cerpano_celkem,
                         },
                     },
@@ -297,11 +418,12 @@ static void pocitani_pulsu(void *pvParameters)
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
         DEBUG_PUBLISH("prutok",
-                      "queued=%d ts=%lld sampled_pulses=%lu flow_l_min=%.4f total_l=%.4f persisted_steps=%llu",
+                      "queued=%d ts=%lld sampled_pulses=%lu raw_l_min=%.4f rounded_l_min=%.4f total_l=%.4f persisted_steps=%llu",
                       queued ? 1 : 0,
                       (long long)now_us,
                       (unsigned long)sampled_pulses,
                       (double)surovy_prutok,
+                      (double)publikovany_prutok,
                       (double)cerpano_celkem,
                       (unsigned long long)s_persisted_counter_steps);
 
@@ -362,11 +484,20 @@ void prutokomer_init(void)
         APP_ERROR_CHECK("E717", gpio_set_level(FLOW_SIMULATOR_GPIO, 0));
 
         ESP_LOGW(TAG,
-                 "Flow simulator ENABLED: %.2f l/min, out_pin=%d, pulse_width_us=%lu",
-                 (double)FLOW_SIMULATED_LITERS_PER_MIN,
+                 "Flow simulator ENABLED: profile_mode=1, out_pin=%d, pulse_width_us=%lu, update_period_ms=%lu",
                  (int)FLOW_SIMULATOR_GPIO,
-                 (unsigned long)FLOW_SIMULATED_PULSE_WIDTH_US);
+                 (unsigned long)FLOW_SIMULATED_PULSE_WIDTH_US,
+                 (unsigned long)pdTICKS_TO_MS(FLOW_SIMULATOR_PROFILE_UPDATE_PERIOD));
         APP_ERROR_CHECK("E715", start_flow_pulse_simulator());
+        APP_ERROR_CHECK("E722",
+                        xTaskCreate(flow_pulse_simulator_task,
+                                    "flow_sim",
+                                    FLOW_SIMULATOR_TASK_STACK_SIZE,
+                                    NULL,
+                                    1,
+                                    NULL) == pdPASS
+                            ? ESP_OK
+                            : ESP_FAIL);
     }
 
     ESP_LOGI(TAG, "Startuji mereni pulzu...");
