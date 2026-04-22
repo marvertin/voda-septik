@@ -3136,6 +3136,24 @@
 					)
 				)
 				(pin bidirectional line
+					(at -33.02 10.16 0)
+					(length 2.54)
+					(name "ADC2_CH0/GPIO4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "26"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
 					(at -33.02 5.08 0)
 					(length 2.54)
 					(name "MTCK/GPIO13/ADC2_CH4"
@@ -3344,24 +3362,6 @@
 						)
 					)
 					(number "34"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 33.02 25.4 180)
-					(length 2.54)
-					(name "ADC2_CH0/GPIO4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "26"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -6421,10 +6421,6 @@
 		(uuid "187b9e65-e571-4129-9c53-16e1db6c9640")
 	)
 	(no_connect
-		(at 179.07 50.8)
-		(uuid "3bb1688d-38dc-41c8-be2b-9cb215ed5d04")
-	)
-	(no_connect
 		(at 252.73 33.02)
 		(uuid "3cd74846-f93a-4c62-9300-93f739e2a7dc")
 	)
@@ -6533,6 +6529,16 @@
 			(type default)
 		)
 		(uuid "04e1b6bc-c24d-424c-9443-9ac8dece5649")
+	)
+	(wire
+		(pts
+			(xy 179.07 50.8) (xy 186.69 50.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "062917e9-00fa-4317-a4cd-d67e1a7d32fb")
 	)
 	(wire
 		(pts
