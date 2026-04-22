@@ -34,7 +34,7 @@ static constexpr TickType_t MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
 static constexpr TickType_t RS485_TURNAROUND_TICKS = pdMS_TO_TICKS(2);
 static constexpr uint8_t MODBUS_FUNC_READ_HOLDING = 0x03;
 static constexpr uint8_t MODBUS_FUNC_READ_INPUT = 0x04;
-static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR = 165;
+static constexpr int32_t KWS_HARDCODED_SLAVE_ADDR = 1;
 static constexpr int32_t TAC_HARDCODED_SLAVE_ADDR = 1;
 
 static constexpr uint16_t KWS_REG_VOLTAGE = 14;
