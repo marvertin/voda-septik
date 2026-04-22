@@ -14,6 +14,7 @@ static const gpio_num_t DISPLAY_I2C_SCL_GPIO = GPIO_NUM_23;     // J3 SCL
 
 static const gpio_num_t ADS1115_I2C_SDA_GPIO = GPIO_NUM_14;     // U3 SDA
 static const gpio_num_t ADS1115_I2C_SCL_GPIO = GPIO_NUM_13;     // U3 SCL
+static const gpio_num_t ADS1115_ALERT_RDY_GPIO = GPIO_NUM_4;    // U3 ALERT/RDY
 
 static const gpio_num_t FLOW_SENSOR_GPIO = GPIO_NUM_33;         // /prutok
 static const gpio_num_t TEMPERATURE_SENSOR_GPIO = GPIO_NUM_32;  // /teplomery
@@ -30,5 +31,5 @@ static const adc_channel_t LEVEL_SENSOR_ADC_CHANNEL = ADC_CHANNEL_0;            
 static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_3;       // GPIO39
 static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_6;         // GPIO34
 
-static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_4;       // Nepouzito ve schematu, ponechano na volnem GPIO
+static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_5;       // Nepouzito ve schematu, ponechano na volnem GPIO
 static const gpio_num_t FLOW_SIMULATOR_OUTPUT_GPIO = FLOW_SIMULATOR_GPIO; // Zpetna kompatibilita pro starsi kod
