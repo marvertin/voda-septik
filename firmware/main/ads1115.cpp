@@ -423,39 +423,6 @@ static void ads1115_task(void *pv_parameters)
     }
 }
 
-static void ads1115_pressure_test_task(void *pv_parameters)
-{
-    (void)pv_parameters;
-
-    // Docasny konzument pro overeni ADS1115; pozdeji ho nahradi zpracovani tlaku.
-    ads1115_pressure_sample_t sample = {};
-    while (true) {
-        if (xQueueReceive(s_pressure_queue, &sample, portMAX_DELAY) != pdTRUE) {
-            continue;
-        }
-
-        ESP_LOGI(TAG,
-                 "RAW tlak: za_filtrem_CH1=%d pred_filtrem_CH2=%d",
-                 (int)sample.pressure_after_filter_raw,
-                 (int)sample.pressure_before_filter_raw);
-    }
-}
-
-static void ads1115_level_test_task(void *pv_parameters)
-{
-    (void)pv_parameters;
-
-    // Docasny konzument pro overeni ADS1115; pozdeji ho nahradi zpracovani hladiny.
-    ads1115_level_sample_t sample = {};
-    while (true) {
-        if (xQueueReceive(s_level_queue, &sample, portMAX_DELAY) != pdTRUE) {
-            continue;
-        }
-
-        ESP_LOGI(TAG, "RAW hladina_CH3=%d", (int)sample.level_raw);
-    }
-}
-
 } // namespace
 
 void ads1115_start(void)
@@ -520,26 +487,6 @@ void ads1115_start(void)
                                 nullptr,
                                 5,
                                 &s_ads1115_task_handle) == pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
-
-    APP_ERROR_CHECK("E744",
-                    xTaskCreate(ads1115_pressure_test_task,
-                                "ads1115_tlak_log",
-                                3072,
-                                nullptr,
-                                4,
-                                nullptr) == pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
-
-    APP_ERROR_CHECK("E745",
-                    xTaskCreate(ads1115_level_test_task,
-                                "ads1115_hlad_log",
-                                3072,
-                                nullptr,
-                                4,
-                                nullptr) == pdPASS
                         ? ESP_OK
                         : ESP_ERR_NO_MEM);
 

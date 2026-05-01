@@ -2,7 +2,6 @@
 #pragma once
 
 #include "driver/gpio.h"
-#include <esp_adc/adc_oneshot.h>
 
 static const gpio_num_t STATUS_LED_GPIO = GPIO_NUM_16;          // D9 LED
 
@@ -24,12 +23,6 @@ static const gpio_num_t RS485_TX_GPIO = GPIO_NUM_26;            // MAX3485 RXD
 static const gpio_num_t RS485_EN_GPIO = GPIO_NUM_25;            // MAX3485 EN
 
 static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;          // GPIO0
-
-// Interi ADC uz nejsou ve schematu pouzite, ale ponechavame je zatim na volnych kanalech bez kolizi.
-static const adc_channel_t LEVEL_SENSOR_ADC_CHANNEL = ADC_CHANNEL_0;                 // GPIO36
-
-static const adc_channel_t PRESSURE_SENSOR_BEFORE_ADC_CHANNEL = ADC_CHANNEL_3;       // GPIO39
-static const adc_channel_t PRESSURE_SENSOR_AFTER_ADC_CHANNEL = ADC_CHANNEL_6;         // GPIO34
 
 static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_5;       // Nepouzito ve schematu, ponechano na volnem GPIO
 static const gpio_num_t FLOW_SIMULATOR_OUTPUT_GPIO = FLOW_SIMULATOR_GPIO; // Zpetna kompatibilita pro starsi kod
