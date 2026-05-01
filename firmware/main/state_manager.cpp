@@ -33,6 +33,7 @@ extern "C" {
 static const char *TAG = "state_manager";
 static constexpr TickType_t STATE_MANAGER_EVENT_WAIT_TICKS = pdMS_TO_TICKS(1000);
 static constexpr uint8_t LCD_PRESSURE_X = 9;
+static constexpr float PUMP_RUNNING_POWER_THRESHOLD_W = 5.0f;
 
 static uint32_t s_nvs_errors = 0;
 static uint32_t s_mqtt_reconnects = 0;
@@ -70,6 +71,11 @@ static constexpr SensorFaultDisplay SENSOR_FAULT_PRESSURE_AFTER {
 // Toto prakticky asi nenastane, ale pro jistotu indikovat chybu senzoru i v případě, že naměřená hodnota není číslo (NaN) nebo nekonečno.
 static constexpr SensorFaultDisplay SENSOR_FAULT_FLOW{
     2,
+    static_cast<uint8_t>(TM1637_SEG_G)
+};
+
+static constexpr SensorFaultDisplay SENSOR_FAULT_ELECTRIC_METER{
+    1,
     static_cast<uint8_t>(TM1637_SEG_G)
 };
 
@@ -368,6 +374,65 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
     }
 }
 
+static void enqueue_meter_value(mqtt_topic_id_t topic_id, float value, const char *name)
+{
+    esp_err_t result;
+    if (std::isfinite(value)) {
+        result = mqtt_publisher_enqueue_double(topic_id, (double)value);
+    } else {
+        result = mqtt_publisher_enqueue_empty(topic_id);
+    }
+
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue elektromer %s selhalo: %s", name, esp_err_to_name(result));
+    }
+}
+
+static void publish_electric_meter_to_outputs(const sensor_event_t &event)
+{
+    const sensor_electric_meter_data_t &meter = event.data.electric_meter;
+    const bool meter_fault = !std::isfinite(meter.active_power_w);
+    set_sensor_fault_indicator(SENSOR_FAULT_ELECTRIC_METER, meter_fault);
+
+    const char *pump_state = "chyba";
+    if (!meter_fault) {
+        pump_state = (meter.active_power_w >= PUMP_RUNNING_POWER_THRESHOLD_W) ? "bezi" : "stoji";
+    }
+
+    esp_err_t state_result = mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_STAV, pump_state);
+    if (state_result != ESP_OK) {
+        ESP_LOGW(TAG, "Enqueue stavu pumpy selhalo: %s", esp_err_to_name(state_result));
+    }
+
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_NAPETI_V,
+                        meter.voltage_v,
+                        "napeti");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_PROUD_A,
+                        meter.current_a,
+                        "proud");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_CINNY_W,
+                        meter.active_power_w,
+                        "vykon_cinny");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_JALOVY_VAR,
+                        meter.reactive_power_var,
+                        "vykon_jalovy");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_ZDANLIVY_VA,
+                        meter.apparent_power_va,
+                        "vykon_zdanlivy");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_FREKVENCE_HZ,
+                        meter.frequency_hz,
+                        "frekvence");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_COSFI,
+                        meter.power_factor,
+                        "cosfi");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_ENERGIE_CINNA_KWH,
+                        std::isfinite(meter.active_energy_wh) ? meter.active_energy_wh / 1000.0f : NAN,
+                        "energie_cinna");
+    enqueue_meter_value(mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_ENERGIE_JALOVA_KVARH,
+                        std::isfinite(meter.reactive_energy_varh) ? meter.reactive_energy_varh / 1000.0f : NAN,
+                        "energie_jalova");
+}
+
 static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -407,6 +472,10 @@ static void state_manager_task(void *pvParameters)
                     }
                     case SENSOR_EVENT_PRESSURE:
                         publish_pressure_to_outputs(event.data.sensor);
+                        APP_ERROR_CHECK("E604", esp_task_wdt_reset());
+                        break;
+                    case SENSOR_EVENT_ELECTRIC_METER:
+                        publish_electric_meter_to_outputs(event.data.sensor);
                         APP_ERROR_CHECK("E604", esp_task_wdt_reset());
                         break;
                     default:

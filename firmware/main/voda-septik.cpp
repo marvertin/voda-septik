@@ -11,11 +11,11 @@
 #include "pcf8574.h"
 
 #include "pins.h"
-#include "adc_shared.h"
 #include "prutokomer.h"
 #include "teplota.h"
 #include "zasoba.h"
 #include "tlak.h"
+#include "elektromer.h"
 #include "network_config.h"
 #include "system_config.h"
 #include "config_store.h"
@@ -46,7 +46,7 @@ extern "C" {
 
 static const char *TAG = "voda_septik";
 static constexpr uint32_t TASK_WDT_TIMEOUT_MS = 5000;
-static constexpr bool MQTT_BENCH_MODE = false;
+static constexpr bool MQTT_BENCH_MODE = true;
 static constexpr const char *MQTT_BENCH_URI = "mqtt://amur.veve:1884";
 static constexpr const char *MQTT_BENCH_USERNAME = "";
 static constexpr const char *MQTT_BENCH_PASSWORD = "";
@@ -225,6 +225,9 @@ void cpp_app_main(void)
     APP_ERROR_CHECK("E109", config_store_begin_section("Tlak"));
     tlak_register_config_items(); 
 
+    APP_ERROR_CHECK("E120", config_store_begin_section("Elektromer"));
+    elektromer_register_config_items();
+
     APP_ERROR_CHECK("E119", config_store_begin_section("Prutokomer"));
     prutokomer_register_config_items();
 
@@ -283,15 +286,14 @@ void cpp_app_main(void)
 
     state_manager_start();
 
-    adc_shared_init();
-    
     // initialize sensor producer tasks
     prutokomer_init();
 
-    // vytvoření paralelních tasků
-    teplota_init();
+    ads1115_start();
     zasoba_init();
     tlak_init();
+    elektromer_init();
 
-    ads1115_start();
+    // vytvoření paralelních tasků
+    teplota_init();
 }

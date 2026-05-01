@@ -22,6 +22,7 @@ typedef enum {
     SENSOR_EVENT_ZASOBA,
     SENSOR_EVENT_FLOW,
     SENSOR_EVENT_PRESSURE,
+    SENSOR_EVENT_ELECTRIC_METER,
 } sensor_event_type_t;
 
 typedef enum {
@@ -52,12 +53,25 @@ typedef struct {
 } sensor_pressure_data_t;
 
 typedef struct {
+    float voltage_v;
+    float current_a;
+    float active_power_w;
+    float reactive_power_var;
+    float apparent_power_va;
+    float frequency_hz;
+    float power_factor;
+    float active_energy_wh;
+    float reactive_energy_varh;
+} sensor_electric_meter_data_t;
+
+typedef struct {
     sensor_event_type_t sensor_type;
     union {
         sensor_temperature_data_t temperature;
         sensor_zasoba_data_t zasoba;
         sensor_flow_data_t flow;
         sensor_pressure_data_t pressure;
+        sensor_electric_meter_data_t electric_meter;
     } data;
 } sensor_event_t;
 

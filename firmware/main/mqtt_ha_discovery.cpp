@@ -53,14 +53,16 @@ static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] =
     {mqtt_topic_id_t::TOPIC_STAV_TLAK_ZA_FILTREM, "Tlak za filtrem", {0}, false},
     {mqtt_topic_id_t::TOPIC_STAV_ROZDIL_TLAKU_FILTRU, "Rozdil tlaku filtru", {0}, false},
     {mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT, "Zanesenost filtru", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_BEZI, "Pumpa bezi", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_VYKON_CINNY_W, "Cerpani vykon cinny", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_JALOVY_VYKON_VAR, "Cerpani jalovy vykon", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_COSFI, "Cerpani cosfi", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_PROUD_A, "Cerpani proud", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_NAPETI_V, "Cerpani napeti", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_ENERGIE_CINNA_KWH, "Cerpani energie cinna", {0}, false},
-    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_ENERGIE_JALOVA_KVARH, "Cerpani energie jalova", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_STAV, "Pumpa stav", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_NAPETI_V, "Elektro cerpadlo napeti", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_PROUD_A, "Elektro cerpadlo proud", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_CINNY_W, "Elektro cerpadlo vykon cinny", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_JALOVY_VAR, "Elektro cerpadlo vykon jalovy", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_VYKON_ZDANLIVY_VA, "Elektro cerpadlo vykon zdanlivy", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_FREKVENCE_HZ, "Elektro cerpadlo frekvence", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_COSFI, "Elektro cerpadlo cosfi", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_ENERGIE_CINNA_KWH, "Elektro cerpadlo energie cinna", {0}, false},
+    {mqtt_topic_id_t::TOPIC_ELEKTRO_CERPADLO_ENERGIE_JALOVA_KVARH, "Elektro cerpadlo energie jalova", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_STATUS, "Stav zarizeni", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_BOOT_MODE, "Boot mode", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_OTA_EVENT, "OTA event", {0}, false},
@@ -254,9 +256,6 @@ static ha_entity_meta_t infer_meta(const mqtt_topic_descriptor_t &topic)
         meta.component = "binary_sensor";
         meta.payload_on = "1";
         meta.payload_off = "0";
-        if (topic.id == mqtt_topic_id_t::TOPIC_STAV_CERPANI_PUMPA_BEZI) {
-            meta.device_class = "running";
-        }
         return meta;
     }
 
@@ -309,8 +308,16 @@ static ha_entity_meta_t infer_meta(const mqtt_topic_descriptor_t &topic)
         meta.device_class = "power";
         meta.unit = "W";
         meta.state_class = "measurement";
+    } else if (topic_ends_with(full, "_va")) {
+        meta.device_class = "apparent_power";
+        meta.unit = "VA";
+        meta.state_class = "measurement";
     } else if (topic_ends_with(full, "_var")) {
         meta.unit = "var";
+        meta.state_class = "measurement";
+    } else if (topic_ends_with(full, "_hz")) {
+        meta.device_class = "frequency";
+        meta.unit = "Hz";
         meta.state_class = "measurement";
     } else if (topic_ends_with(full, "_a")) {
         meta.device_class = "current";

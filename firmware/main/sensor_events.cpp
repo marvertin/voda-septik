@@ -156,6 +156,23 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                              event->data.sensor.data.pressure.zanesenost_filtru);
                     break;
 
+                case SENSOR_EVENT_ELECTRIC_METER:
+                    snprintf(buffer,
+                             buffer_len,
+                             "event=%s type=electric_meter ts=%lld U=%.2fV I=%.3fA P=%.2fW Q=%.2fvar S=%.2fVA f=%.2fHz pf=%.3f E=%.1fWh EQ=%.1fvarh",
+                             event_type_to_string(event->event_type),
+                             (long long)event->timestamp_us,
+                             event->data.sensor.data.electric_meter.voltage_v,
+                             event->data.sensor.data.electric_meter.current_a,
+                             event->data.sensor.data.electric_meter.active_power_w,
+                             event->data.sensor.data.electric_meter.reactive_power_var,
+                             event->data.sensor.data.electric_meter.apparent_power_va,
+                             event->data.sensor.data.electric_meter.frequency_hz,
+                             event->data.sensor.data.electric_meter.power_factor,
+                             event->data.sensor.data.electric_meter.active_energy_wh,
+                             event->data.sensor.data.electric_meter.reactive_energy_varh);
+                    break;
+
                 default:
                     snprintf(buffer,
                              buffer_len,
