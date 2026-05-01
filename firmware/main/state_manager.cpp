@@ -98,6 +98,14 @@ static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
                                            (int64_t)network_snapshot->reconnect_attempts);
         (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS,
                                            (int64_t)network_snapshot->reconnect_successes);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_CONNECTS,
+                                           (int64_t)network_snapshot->wifi_connects);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_WIFI_DISCONNECTS,
+                                           (int64_t)network_snapshot->wifi_disconnects);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MQTT_CONNECTS,
+                                           (int64_t)network_snapshot->mqtt_connects);
+        (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MQTT_DISCONNECTS,
+                                           (int64_t)network_snapshot->mqtt_disconnects);
     }
 
     (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS,

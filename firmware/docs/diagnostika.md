@@ -37,6 +37,7 @@ DIAG nesmí zahlcovat broker ani log, ani když je část hardware odpojená. Pr
 Příklady vhodných DIAG údajů:
 
 - `diag/ads1115/status`, `diag/ads1115/read_errors`, `diag/ads1115/last_ok_age_s`,
+- `diag/wifi/connects`, `diag/wifi/disconnects`, `diag/mqtt/connects`, `diag/mqtt/disconnects`,
 - `diag/modbus/kws/status`, `diag/modbus/kws/timeouts`, `diag/modbus/kws/crc_errors`, `diag/modbus/kws/read_errors`, `diag/modbus/kws/last_ok_age_s`,
 - `diag/teplota/status`, `diag/teplota/bus_errors`, `diag/teplota/crc_errors`, `diag/teplota/read_errors`, `diag/teplota/last_ok_age_s`,
 - `diag/events/sensor_queue_drops`, `diag/mqtt/publish_queue_drops`.

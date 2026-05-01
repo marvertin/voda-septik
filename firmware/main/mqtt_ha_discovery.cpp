@@ -77,6 +77,10 @@ static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] =
     {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RSSI_DBM, "WiFi RSSI", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_TRY, "WiFi reconnect pokusy", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS, "WiFi reconnect uspechy", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_WIFI_CONNECTS, "WiFi pripojeni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_WIFI_DISCONNECTS, "WiFi odpojeni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MQTT_CONNECTS, "MQTT pripojeni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MQTT_DISCONNECTS, "MQTT odpojeni", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS, "MQTT reconnecty", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_LAST_MQTT_RC, "Posledni MQTT RC", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_HEAP_FREE_B, "Heap free", {0}, false},
@@ -375,6 +379,8 @@ static ha_entity_meta_t infer_meta(const mqtt_topic_descriptor_t &topic)
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS ||
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS ||
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS ||
+        strstr(full, "connects") != nullptr ||
+        strstr(full, "disconnects") != nullptr ||
         strstr(full, "_errors") != nullptr ||
         strstr(full, "_drops") != nullptr ||
         strstr(full, "timeouts") != nullptr) {

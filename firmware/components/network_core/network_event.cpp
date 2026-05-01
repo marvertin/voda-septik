@@ -24,7 +24,11 @@ network_event_t network_event_make(bool ap_mode,
                                    int8_t last_rssi,
                                    uint32_t ip_addr,
                                    uint32_t reconnect_attempts,
-                                   uint32_t reconnect_successes)
+                                   uint32_t reconnect_successes,
+                                   uint32_t wifi_connects,
+                                   uint32_t wifi_disconnects,
+                                   uint32_t mqtt_connects,
+                                   uint32_t mqtt_disconnects)
 {
     network_event_t event = {
         .level = network_event_level(ap_mode, wifi_up, ip_ready, mqtt_ready),
@@ -32,6 +36,10 @@ network_event_t network_event_make(bool ap_mode,
         .ip_addr = ip_addr,
         .reconnect_attempts = reconnect_attempts,
         .reconnect_successes = reconnect_successes,
+        .wifi_connects = wifi_connects,
+        .wifi_disconnects = wifi_disconnects,
+        .mqtt_connects = mqtt_connects,
+        .mqtt_disconnects = mqtt_disconnects,
     };
     return event;
 }

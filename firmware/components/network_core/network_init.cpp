@@ -34,6 +34,8 @@ static esp_timer_handle_t s_wifi_reconnect_timer = nullptr;
 static uint32_t s_wifi_reconnect_delay_ms = WIFI_RECONNECT_DELAY_MIN_MS;
 static uint32_t s_wifi_reconnect_attempts = 0;
 static uint32_t s_wifi_reconnect_successes = 0;
+static uint32_t s_wifi_connects = 0;
+static uint32_t s_wifi_disconnects = 0;
 static bool s_wifi_reconnect_pending = false;
 static bool s_wifi_up = false;
 static bool s_ip_ready = false;
@@ -41,6 +43,8 @@ static uint32_t s_ip_addr = 0;
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static bool s_mqtt_connected = false;
+static uint32_t s_mqtt_connects = 0;
+static uint32_t s_mqtt_disconnects = 0;
 static bool s_mqtt_start_requested = false;
 static bool s_lwt_enabled = false;
 static int s_lwt_qos = 1;
@@ -243,7 +247,11 @@ static void publish_network_event(void)
                                                s_last_rssi,
                                                s_ip_addr,
                                                s_wifi_reconnect_attempts,
-                                               s_wifi_reconnect_successes);
+                                               s_wifi_reconnect_successes,
+                                               s_wifi_connects,
+                                               s_wifi_disconnects,
+                                               s_mqtt_connects,
+                                               s_mqtt_disconnects);
 
     log_network_level_transition(event);
 
@@ -386,6 +394,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         publish_network_event();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "WiFi pripojeno na AP, cekam na IP");
+        s_wifi_connects++;
         s_wifi_up = true;
         s_ip_ready = false;
         s_ip_addr = 0;
@@ -397,6 +406,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         schedule_retry_publish();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
+        s_wifi_disconnects++;
         ESP_LOGW(TAG,
                  "WiFi odpojeno: reason=%d rssi=%d",
                  (disc != nullptr) ? (int)disc->reason : -1,
@@ -448,6 +458,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 break;
             }
             ESP_LOGI(TAG, "MQTT pripojeno");
+            s_mqtt_connects++;
             s_mqtt_connected = true;
             publish_network_event();
             break;
@@ -459,6 +470,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 break;
             }
             ESP_LOGW(TAG, "MQTT odpojeno");
+            s_mqtt_disconnects++;
             s_mqtt_connected = false;
             publish_network_event();
             break;

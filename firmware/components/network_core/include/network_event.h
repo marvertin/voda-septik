@@ -22,6 +22,10 @@ typedef struct {
     uint32_t ip_addr;
     uint32_t reconnect_attempts;
     uint32_t reconnect_successes;
+    uint32_t wifi_connects;
+    uint32_t wifi_disconnects;
+    uint32_t mqtt_connects;
+    uint32_t mqtt_disconnects;
 } network_event_t;
 
 system_network_level_t network_event_level(bool ap_mode, bool wifi_up, bool ip_ready, bool mqtt_ready);
@@ -32,7 +36,11 @@ network_event_t network_event_make(bool ap_mode,
                                    int8_t last_rssi,
                                    uint32_t ip_addr,
                                    uint32_t reconnect_attempts,
-                                   uint32_t reconnect_successes);
+                                   uint32_t reconnect_successes,
+                                   uint32_t wifi_connects,
+                                   uint32_t wifi_disconnects,
+                                   uint32_t mqtt_connects,
+                                   uint32_t mqtt_disconnects);
 
 #ifdef __cplusplus
 }
