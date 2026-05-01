@@ -26,6 +26,8 @@ Hlavní topicy (`stav/*`, `elektro/*`, `system/*`) nesou údaje, které mají sm
 
 Pokud údaj není k dispozici, publikuje se nedostupnost přes dostupnost dané entity, ne náhradní hodnota s diagnostickým významem. Poslední platná hodnota se nemá používat jako maskování poruchy.
 
+`system/reboot_counter` je historický název topicu; obsahuje počet startů firmware podle NVS počítadla. Počítadlo se zvyšuje právě jednou při startu `state_manager`, ne při MQTT reconnectu ani při opakované publikaci boot diagnostiky.
+
 ## DIAG topicy
 
 `diag/*` je určeno pro řešení problémů s částmi systému: WiFi/MQTT, pamětí, NVS, I2C, ADS1115, 1-Wire teplotami, Modbus elektroměrem a podobně.

@@ -4,13 +4,20 @@
 
 #include "esp_log.h"
 #include "nvs.h"
-#include "app_error_check.h"
 
 static const char *TAG = "restart_info";
 static const char *SYS_NAMESPACE = "sys_meta";
-static const char *SYS_BOOT_COUNT_KEY = "boot_count";
+static const char *SYS_BOOT_COUNT_KEY = "boot_count_v2";
 static const char *SYS_LAST_REASON_KEY = "last_reason";
 static const char *SYS_LAST_TIME_KEY = "last_time";
+
+static esp_err_t set_and_check(esp_err_t result, nvs_handle_t nvs_handle)
+{
+    if (result != ESP_OK) {
+        nvs_close(nvs_handle);
+    }
+    return result;
+}
 
 esp_err_t app_restart_info_load(app_restart_info_t *out_info)
 {
@@ -86,10 +93,22 @@ esp_err_t app_restart_info_update_and_load(app_restart_info_t *out_info)
         now = 0;
     }
 
-    APP_ERROR_CHECK("E401", nvs_set_u32(nvs_handle, SYS_BOOT_COUNT_KEY, boot_count));
-    APP_ERROR_CHECK("E402", nvs_set_i32(nvs_handle, SYS_LAST_REASON_KEY, static_cast<int32_t>(reason)));
-    APP_ERROR_CHECK("E403", nvs_set_i64(nvs_handle, SYS_LAST_TIME_KEY, now));
-    APP_ERROR_CHECK("E404", nvs_commit(nvs_handle));
+    result = set_and_check(nvs_set_u32(nvs_handle, SYS_BOOT_COUNT_KEY, boot_count), nvs_handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = set_and_check(nvs_set_i32(nvs_handle, SYS_LAST_REASON_KEY, static_cast<int32_t>(reason)), nvs_handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = set_and_check(nvs_set_i64(nvs_handle, SYS_LAST_TIME_KEY, now), nvs_handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = set_and_check(nvs_commit(nvs_handle), nvs_handle);
+    if (result != ESP_OK) {
+        return result;
+    }
     nvs_close(nvs_handle);
 
     out_info->boot_count = boot_count;

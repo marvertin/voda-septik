@@ -68,7 +68,7 @@ static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] =
     {mqtt_topic_id_t::TOPIC_SYSTEM_OTA_EVENT, "OTA event", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_OTA_PROGRESS, "OTA prubeh", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_REASON, "Duvod rebootu", {0}, false},
-    {mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_COUNTER, "Pocet rebootu", {0}, false},
+    {mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_COUNTER, "Pocet startu", {0}, false},
     {mqtt_topic_id_t::TOPIC_SYSTEM_LAST_DISCONNECT_DURATION_S, "Posledni odpojeni", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_FW_VERSION, "FW verze", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_BUILD_TIMESTAMP, "Build timestamp", {0}, false},

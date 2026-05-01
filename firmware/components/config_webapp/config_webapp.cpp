@@ -347,7 +347,7 @@ static std::string build_root_page_html()
 
     if (s_has_restart_info) {
         html += "<div class='card'><h2>Restarty</h2><ul>";
-        html += "<li>Počet restartů: <strong>" + std::to_string(s_restart_info.boot_count) + "</strong></li>";
+        html += "<li>Počet startů: <strong>" + std::to_string(s_restart_info.boot_count) + "</strong></li>";
         html += "<li>Důvod posledního restartu: <strong>" + std::string(reset_reason_to_str(static_cast<esp_reset_reason_t>(s_restart_info.last_reason))) + "</strong></li>";
         html += "<li>Čas posledního restartu: <strong>" + format_unix_time(s_restart_info.last_restart_unix) + "</strong></li>";
         html += "</ul></div>";

@@ -44,6 +44,8 @@ static int32_t s_last_mqtt_rc = 0;
 static bool s_mqtt_ready_seen_once = false;
 static bool s_disconnect_timer_active = false;
 static int64_t s_disconnect_started_us = 0;
+static app_restart_info_t s_boot_restart_info = {};
+static bool s_boot_restart_info_valid = false;
 
 static constexpr SensorFaultDisplay SENSOR_FAULT_TEMP_WATER{
     2,
@@ -203,11 +205,18 @@ static void publish_boot_diagnostics_once(void)
         (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_GIT_HASH, git_hash);
     }
 
-    app_restart_info_t restart_info = {};
-    esp_err_t restart_result = app_restart_info_update_and_load(&restart_info);
-    if (restart_result != ESP_OK) {
+    app_restart_info_t restart_info = s_boot_restart_info;
+    if (!s_boot_restart_info_valid) {
+        esp_err_t load_result = app_restart_info_load(&restart_info);
+        if (load_result == ESP_OK) {
+            s_boot_restart_info = restart_info;
+            s_boot_restart_info_valid = true;
+        }
+    }
+
+    if (!s_boot_restart_info_valid) {
         s_nvs_errors++;
-        ESP_LOGW(TAG, "Publikace restart info selhala: %s", esp_err_to_name(restart_result));
+        ESP_LOGW(TAG, "Publikace restart info selhala: metadata nejsou dostupna");
     } else {
         char reason_text[16] = {0};
         snprintf(reason_text, sizeof(reason_text), "%d", (int)restart_info.last_reason);
@@ -215,6 +224,20 @@ static void publish_boot_diagnostics_once(void)
         (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_SYSTEM_REBOOT_COUNTER,
                                            (int64_t)restart_info.boot_count);
     }
+}
+
+static void update_restart_info_once_per_boot(void)
+{
+    app_restart_info_t restart_info = {};
+    const esp_err_t restart_result = app_restart_info_update_and_load(&restart_info);
+    if (restart_result != ESP_OK) {
+        s_nvs_errors++;
+        ESP_LOGW(TAG, "Aktualizace restart info selhala: %s", esp_err_to_name(restart_result));
+        return;
+    }
+
+    s_boot_restart_info = restart_info;
+    s_boot_restart_info_valid = true;
 }
 
 
@@ -480,6 +503,7 @@ static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
     APP_ERROR_CHECK("E601", esp_task_wdt_add(nullptr));
+    update_restart_info_once_per_boot();
 
     app_event_t event = {};
     char debug_line[128];
