@@ -430,8 +430,8 @@ void ads1115_start(void)
     // Konfiguracni a alokacni chyby jsou fatalni. Nepritomnost nebo chyba
     // samotneho ADS1115 fatalni neni: task dal bezi a publikuje INT16_MIN, aby
     // zbytek aplikace mohl signalizovat chybu cidla bez padu firmware.
-    APP_ERROR_CHECK("E740", (ADS1115_I2C_SDA_GPIO == ADS1115_I2C_SCL_GPIO) ? ESP_ERR_INVALID_ARG : ESP_OK);
-    APP_ERROR_CHECK("E741", (s_pressure_queue == nullptr && s_level_queue == nullptr) ? ESP_OK : ESP_ERR_INVALID_STATE);
+    APP_ERROR_CHECK("E780", (ADS1115_I2C_SDA_GPIO == ADS1115_I2C_SCL_GPIO) ? ESP_ERR_INVALID_ARG : ESP_OK);
+    APP_ERROR_CHECK("E781", (s_pressure_queue == nullptr && s_level_queue == nullptr) ? ESP_OK : ESP_ERR_INVALID_STATE);
 
     s_pressure_queue = xQueueCreateStatic(1,
                                           sizeof(ads1115_pressure_sample_t),
@@ -441,8 +441,8 @@ void ads1115_start(void)
                                        sizeof(ads1115_level_sample_t),
                                        s_level_queue_buffer,
                                        &s_level_queue_storage);
-    APP_ERROR_CHECK("E741", s_pressure_queue != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
-    APP_ERROR_CHECK("E742", s_level_queue != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
+    APP_ERROR_CHECK("E782", s_pressure_queue != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
+    APP_ERROR_CHECK("E783", s_level_queue != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
 
     ads1115_enable_internal_pullups();
     ESP_LOGW(TAG,
@@ -480,7 +480,7 @@ void ads1115_start(void)
         }
     }
 
-    APP_ERROR_CHECK("E743",
+    APP_ERROR_CHECK("E784",
                     xTaskCreate(ads1115_task,
                                 "ads1115",
                                 4096,

@@ -335,7 +335,7 @@ static void warmup_filters(QueueHandle_t level_queue)
         if (xQueueReceive(level_queue, &ads_sample, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        APP_ERROR_CHECK("E766", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E763", esp_task_wdt_reset());
         if (!ads1115_level_sample_to_raw(ads_sample, &raw_value)) {
             continue;
         }

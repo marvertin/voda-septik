@@ -16,6 +16,6 @@ static const config_item_t AUTO_MODE_ITEM = {
 
 void system_config_register_config_items(void)
 {
-    APP_ERROR_CHECK("E806", config_store_register_item(&INTERVAL_S_ITEM));
-    APP_ERROR_CHECK("E807", config_store_register_item(&AUTO_MODE_ITEM));
+    APP_ERROR_CHECK("E324", config_store_register_item(&INTERVAL_S_ITEM));
+    APP_ERROR_CHECK("E325", config_store_register_item(&AUTO_MODE_ITEM));
 }

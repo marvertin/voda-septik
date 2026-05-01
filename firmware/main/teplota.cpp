@@ -84,9 +84,9 @@ static const config_item_t TEMP_ADDR_AIR_ITEM = {
 
 void teplota_register_config_items(void)
 {
-    APP_ERROR_CHECK("E715", config_store_register_item(&TEMP_MAX_ITEM));
-    APP_ERROR_CHECK("E716", config_store_register_item(&TEMP_ADDR_WATER_ITEM));
-    APP_ERROR_CHECK("E717", config_store_register_item(&TEMP_ADDR_AIR_ITEM));
+    APP_ERROR_CHECK("E771", config_store_register_item(&TEMP_MAX_ITEM));
+    APP_ERROR_CHECK("E772", config_store_register_item(&TEMP_ADDR_WATER_ITEM));
+    APP_ERROR_CHECK("E773", config_store_register_item(&TEMP_ADDR_AIR_ITEM));
 }
 
 static bool ds18b20_addr_is_valid(onewire_addr_t addr);
@@ -517,7 +517,7 @@ static void publish_temperature_event(sensor_temperature_probe_t probe, bool rea
 static void temperature_task(void *pvParameters)
 {
     (void)pvParameters;
-    APP_ERROR_CHECK("E718", esp_task_wdt_add(nullptr));
+    APP_ERROR_CHECK("E774", esp_task_wdt_add(nullptr));
 
     ESP_LOGI(TAG,
              "Init teplota: onewire_gpio=%d pullup=1 conversion_ms=%d read_period_ms=%d discovery_period_s=%d",
@@ -592,7 +592,7 @@ static void temperature_task(void *pvParameters)
         const bool conversion_started = ds18b20_start_conversion_all(TEMPERATURE_SENSOR_GPIO);
         if (conversion_started) {
             vTaskDelay(pdMS_TO_TICKS(TEMPERATURE_CONVERSION_MS));
-            APP_ERROR_CHECK("E719", esp_task_wdt_reset());
+            APP_ERROR_CHECK("E775", esp_task_wdt_reset());
         }
 
         for (size_t index = 0; index < sizeof(probes) / sizeof(probes[0]); ++index) {
@@ -621,7 +621,7 @@ static void temperature_task(void *pvParameters)
         }
         
         // Čtení každou sekundu
-        APP_ERROR_CHECK("E720", esp_task_wdt_reset());
+        APP_ERROR_CHECK("E776", esp_task_wdt_reset());
         vTaskDelay(pdMS_TO_TICKS(READ_PERIOD_MS));
     }
 }
@@ -632,11 +632,10 @@ void teplota_init(void)
              "Spoustim teplota task: stack=%lu prio=%d",
              (unsigned long)(configMINIMAL_STACK_SIZE * 4),
              5);
-    APP_ERROR_CHECK("E721",
+    APP_ERROR_CHECK("E777",
                     xTaskCreate(temperature_task, TAG, configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL) == pdPASS
                         ? ESP_OK
                         : ESP_FAIL);
-    // APP_ERROR_CHECK("E722", ESP_FAIL);
 }
 
 esp_err_t teplota_set_scan_enabled(bool enabled)

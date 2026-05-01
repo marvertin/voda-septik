@@ -31,11 +31,11 @@ static const config_item_t MQTT_PASS_ITEM = {
 
 void network_config_register_config_items(void)
 {
-    APP_ERROR_CHECK("E801", config_store_register_item(&WIFI_SSID_ITEM));
-    APP_ERROR_CHECK("E802", config_store_register_item(&WIFI_PASS_ITEM));
-    APP_ERROR_CHECK("E803", config_store_register_item(&MQTT_URI_ITEM));
-    APP_ERROR_CHECK("E804", config_store_register_item(&MQTT_USER_ITEM));
-    APP_ERROR_CHECK("E805", config_store_register_item(&MQTT_PASS_ITEM));
+    APP_ERROR_CHECK("E319", config_store_register_item(&WIFI_SSID_ITEM));
+    APP_ERROR_CHECK("E320", config_store_register_item(&WIFI_PASS_ITEM));
+    APP_ERROR_CHECK("E321", config_store_register_item(&MQTT_URI_ITEM));
+    APP_ERROR_CHECK("E322", config_store_register_item(&MQTT_USER_ITEM));
+    APP_ERROR_CHECK("E323", config_store_register_item(&MQTT_PASS_ITEM));
 }
 
 esp_err_t network_config_load_wifi_credentials(char *ssid, size_t ssid_len, char *password, size_t password_len)

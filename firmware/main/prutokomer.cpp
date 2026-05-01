@@ -443,7 +443,6 @@ void prutokomer_init(void)
              (long long)(FLOW_TARGET_WINDOW_US / 1000));
 
     APP_ERROR_CHECK("E709", s_flow_counter.init(FLOW_COUNTER_PARTITION_LABEL));
-    // APP_ERROR_CHECK("E710", s_flow_counter.reset());
 
     s_persisted_counter_steps = s_flow_counter.value();
     s_unpersisted_pulses = 0;
