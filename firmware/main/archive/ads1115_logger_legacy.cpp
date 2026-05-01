@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 #include "pins.h"
-#include "ads1115_logger.h"
+#include "ads1115_logger_legacy.h"
 
 #define TAG "ads1115"
 

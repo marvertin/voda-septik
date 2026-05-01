@@ -23,6 +23,3 @@ static const gpio_num_t RS485_TX_GPIO = GPIO_NUM_26;            // MAX3485 RXD
 static const gpio_num_t RS485_EN_GPIO = GPIO_NUM_25;            // MAX3485 EN
 
 static const gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;          // GPIO0
-
-static const gpio_num_t FLOW_SIMULATOR_GPIO = GPIO_NUM_5;       // Nepouzito ve schematu, ponechano na volnem GPIO
-static const gpio_num_t FLOW_SIMULATOR_OUTPUT_GPIO = FLOW_SIMULATOR_GPIO; // Zpetna kompatibilita pro starsi kod
