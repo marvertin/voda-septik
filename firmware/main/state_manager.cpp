@@ -20,7 +20,10 @@ extern "C" {
 #include <stdio.h>
 
 #include "state_manager.h"
+#include "ads1115.h"
+#include "elektromer.h"
 #include "sensor_events.h"
+#include "teplota.h"
 #include "lcd.h"
 #include "mqtt_publisher_task.h"
 #include "mqtt_ha_discovery.h"
@@ -106,6 +109,46 @@ static void publish_runtime_diagnostics(const network_event_t *network_snapshot)
                                        (int64_t)esp_get_minimum_free_heap_size());
     (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS,
                                        (int64_t)s_nvs_errors);
+
+    const ads1115_diag_t ads_diag = ads1115_diag_snapshot();
+    (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_ADS1115_STATUS,
+                                      ads_diag.ready ? "ok" : "chyba");
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_ADS1115_READ_ERRORS,
+                                       (int64_t)ads_diag.read_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_ADS1115_LAST_OK_AGE_S,
+                                       ads_diag.last_ok_age_s);
+
+    const elektromer_diag_t elektromer_diag = elektromer_diag_snapshot();
+    (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_STATUS,
+                                      elektromer_diag.ok ? "ok" : "chyba");
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_TIMEOUTS,
+                                       (int64_t)elektromer_diag.timeouts);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_CRC_ERRORS,
+                                       (int64_t)elektromer_diag.crc_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_READ_ERRORS,
+                                       (int64_t)elektromer_diag.read_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_LAST_OK_AGE_S,
+                                       elektromer_diag.last_ok_age_s);
+
+    const teplota_diag_t teplota_diag = teplota_diag_snapshot();
+    (void)mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_STATUS,
+                                      teplota_diag.ok ? "ok" : "chyba");
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_BUS_ERRORS,
+                                       (int64_t)teplota_diag.bus_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_CRC_ERRORS,
+                                       (int64_t)teplota_diag.crc_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_READ_ERRORS,
+                                       (int64_t)teplota_diag.read_errors);
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_LAST_OK_AGE_S,
+                                       teplota_diag.last_ok_age_s);
+
+    const sensor_events_diag_t sensor_queue_diag = sensor_events_diag_snapshot();
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_SENSOR_QUEUE_DROPS,
+                                       (int64_t)sensor_queue_diag.publish_drops);
+
+    const mqtt_publisher_diag_t mqtt_queue_diag = mqtt_publisher_diag_snapshot();
+    (void)mqtt_publisher_enqueue_int64(mqtt_topic_id_t::TOPIC_DIAG_MQTT_PUBLISH_QUEUE_DROPS,
+                                       (int64_t)mqtt_queue_diag.enqueue_drops);
 }
 
 

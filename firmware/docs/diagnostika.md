@@ -35,8 +35,8 @@ DIAG nesmí zahlcovat broker ani log, ani když je část hardware odpojená. Pr
 Příklady vhodných DIAG údajů:
 
 - `diag/ads1115/status`, `diag/ads1115/read_errors`, `diag/ads1115/last_ok_age_s`,
-- `diag/modbus/kws/status`, `diag/modbus/kws/timeouts`, `diag/modbus/kws/crc_errors`, `diag/modbus/kws/last_ok_age_s`,
-- `diag/teplota/status`, `diag/teplota/read_errors`, `diag/teplota/last_ok_age_s`,
+- `diag/modbus/kws/status`, `diag/modbus/kws/timeouts`, `diag/modbus/kws/crc_errors`, `diag/modbus/kws/read_errors`, `diag/modbus/kws/last_ok_age_s`,
+- `diag/teplota/status`, `diag/teplota/bus_errors`, `diag/teplota/crc_errors`, `diag/teplota/read_errors`, `diag/teplota/last_ok_age_s`,
 - `diag/events/sensor_queue_drops`, `diag/mqtt/publish_queue_drops`.
 
 ## DEBUG režim
@@ -51,10 +51,12 @@ Současný návrh hlavních topiců odpovídá pravidlům: běžné hodnoty jdou
 
 Tvrdé chyby jsou většinou použité správně: WiFi inicializace je fatalní, výpadek připojení nikoliv; ADS1115 se při chybě zařízení chová jako nedostupný zdroj dat; displeje neukončují firmware.
 
-Místa vhodná k úpravě:
+Aktuální stav doplnění:
 
-- `restart_info.cpp`: chyba zápisu restart metadat do NVS by neměla shodit firmware; stačí zvýšit `diag/nvs_errors`.
-- `elektromer.cpp`: při odpojeném Modbus elektroměru se dnes může logovat více varování v každém cyklu. Lepší je agregovat chyby do čítačů a logovat jen změnu stavu nebo periodický souhrn.
-- `teplota.cpp`: opakované chyby čtení teploty by měly být rate-limitované a viditelné přes DIAG čítač.
-- `ads1115.cpp`, `zasoba.cpp`, `tlak.cpp`: RAW/filtrační detaily patří do DEBUG; do DIAG patří stav ADC a počty chyb čtení.
-- `diag/esp_vcc_mv`: topic je definovaný, ale není plněný; buď doplnit měření, nebo topic odstranit z HA discovery.
+- `elektromer.cpp`: chyby Modbus elektroměru jsou agregované do `diag/modbus/kws/*` a logované rate-limitovaně.
+- `teplota.cpp`: chyby DS18B20 jsou agregované do `diag/teplota/*` a logované rate-limitovaně.
+- `ads1115.cpp`: stav ADC a chyby čtení jsou dostupné v `diag/ads1115/*`; RAW/filtrační detaily zůstávají v DEBUG.
+- Fronty mají základní počítadla zahozených zpráv v `diag/events/sensor_queue_drops` a `diag/mqtt/publish_queue_drops`.
+- `diag/esp_vcc_mv` byl odstraněn, protože firmware neměl spolehlivý zdroj této hodnoty.
+
+Zbývající známá drobnost mimo senzorickou diagnostiku: v `restart_info.cpp` by chyba zápisu restart metadat do NVS nemusela shodit firmware; stačilo by zvýšit `diag/nvs_errors`.

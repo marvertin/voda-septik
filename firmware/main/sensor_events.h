@@ -95,10 +95,15 @@ typedef struct {
     } data;
 } app_event_t;
 
+typedef struct {
+    uint32_t publish_drops;
+} sensor_events_diag_t;
+
 void sensor_events_init(size_t queue_length);
 bool sensor_events_publish(const app_event_t *event, TickType_t timeout);
 bool sensor_events_receive(app_event_t *event, TickType_t timeout);
 void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffer_len);
+sensor_events_diag_t sensor_events_diag_snapshot(void);
 
 #ifdef __cplusplus
 }

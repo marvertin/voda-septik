@@ -32,6 +32,10 @@ struct mqtt_publish_event_t {
     mqtt_publish_value_t value;
 };
 
+struct mqtt_publisher_diag_t {
+    uint32_t enqueue_drops;
+};
+
 esp_err_t mqtt_publisher_task_start(uint32_t queue_length,
                                     UBaseType_t task_priority,
                                     uint32_t stack_size_words);
@@ -43,3 +47,4 @@ esp_err_t mqtt_publisher_enqueue_text(mqtt_topic_id_t topic_id, const char *valu
 esp_err_t mqtt_publisher_enqueue_empty(mqtt_topic_id_t topic_id);
 esp_err_t mqtt_publisher_set_mqtt_connected(bool connected);
 bool mqtt_publisher_is_running(void);
+mqtt_publisher_diag_t mqtt_publisher_diag_snapshot(void);

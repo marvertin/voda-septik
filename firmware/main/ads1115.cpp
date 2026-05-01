@@ -8,6 +8,7 @@ extern "C" {
 #include <driver/gpio.h>
 #include <esp_err.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include <ads111x.h>
 #include <i2cdev.h>
@@ -85,6 +86,7 @@ static constexpr TickType_t PRESSURE_PERIOD_TICKS = pdMS_TO_TICKS(250);
 static constexpr TickType_t LEVEL_PERIOD_TICKS = pdMS_TO_TICKS(2000);
 static constexpr TickType_t PRESSURE_READY_TIMEOUT_TICKS = pdMS_TO_TICKS(80);
 static constexpr TickType_t LEVEL_READY_TIMEOUT_TICKS = pdMS_TO_TICKS(250);
+static constexpr int64_t ADS1115_WARN_MIN_INTERVAL_US = 60LL * 1000LL * 1000LL;
 
 static_assert(PRESSURE_PERIOD_TICKS > 0, "Pressure period must be at least one tick");
 static_assert(LEVEL_PERIOD_TICKS > 0, "Level period must be at least one tick");
@@ -92,6 +94,10 @@ static_assert(LEVEL_PERIOD_TICKS > 0, "Level period must be at least one tick");
 static i2c_dev_t s_ads1115;
 static bool s_ads1115_ready = false;
 static TaskHandle_t s_ads1115_task_handle = nullptr;
+static uint32_t s_read_errors = 0;
+static uint32_t s_suppressed_read_warnings = 0;
+static int64_t s_last_read_warning_us = 0;
+static int64_t s_last_ok_us = 0;
 
 // Jednoprvkove fronty slouzi jako "posledni znama hodnota". Producent pouziva
 // xQueueOverwrite(), takze pomaly konzument nikdy nezahlti system starymi vzorky
@@ -283,11 +289,27 @@ static esp_err_t ads1115_wait_for_conversion_ready(TickType_t timeout_ticks)
         return ESP_OK;
     }
 
-    ESP_LOGW(TAG,
-             "Timeout cekani na ADS1115 ALERT/RDY pin=%d level=%d",
-             (int)ADS1115_ALERT_RDY_GPIO,
-             gpio_get_level(ADS1115_ALERT_RDY_GPIO));
     return ESP_ERR_TIMEOUT;
+}
+
+static void log_read_warning_rate_limited(const char *name, esp_err_t err)
+{
+    const int64_t now_us = esp_timer_get_time();
+    if (s_last_read_warning_us != 0 && (now_us - s_last_read_warning_us) < ADS1115_WARN_MIN_INTERVAL_US) {
+        ++s_suppressed_read_warnings;
+        return;
+    }
+
+    const uint32_t suppressed = s_suppressed_read_warnings;
+    s_suppressed_read_warnings = 0;
+    s_last_read_warning_us = now_us;
+
+    ESP_LOGW(TAG,
+             "Cteni %s selhalo: %s, ALERT/RDY level=%d, potlaceno=%lu",
+             name,
+             esp_err_to_name(err),
+             gpio_get_level(ADS1115_ALERT_RDY_GPIO),
+             (unsigned long)suppressed);
 }
 
 static esp_err_t ads1115_read_single_channel(ads111x_mux_t mux,
@@ -339,10 +361,12 @@ static int16_t ads1115_read_raw_or_invalid(ads111x_mux_t mux,
     int16_t raw_value = ADS1115_INVALID_RAW_VALUE;
     const esp_err_t err = ads1115_read_single_channel(mux, data_rate, ready_timeout_ticks, &raw_value);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Cteni %s selhalo: %s", name, esp_err_to_name(err));
+        ++s_read_errors;
+        log_read_warning_rate_limited(name, err);
         return ADS1115_INVALID_RAW_VALUE;
     }
 
+    s_last_ok_us = esp_timer_get_time();
     return raw_value;
 }
 
@@ -505,4 +529,19 @@ QueueHandle_t ads1115_pressure_queue(void)
 QueueHandle_t ads1115_level_queue(void)
 {
     return s_level_queue;
+}
+
+ads1115_diag_t ads1115_diag_snapshot(void)
+{
+    int64_t last_ok_age_s = -1;
+    if (s_last_ok_us > 0) {
+        const int64_t age_us = esp_timer_get_time() - s_last_ok_us;
+        last_ok_age_s = (age_us > 0) ? (age_us / 1000000LL) : 0;
+    }
+
+    return {
+        .ready = s_ads1115_ready,
+        .read_errors = s_read_errors,
+        .last_ok_age_s = last_ok_age_s,
+    };
 }

@@ -81,8 +81,22 @@ static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] =
     {mqtt_topic_id_t::TOPIC_DIAG_LAST_MQTT_RC, "Posledni MQTT RC", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_HEAP_FREE_B, "Heap free", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_HEAP_MIN_FREE_B, "Heap min free", {0}, false},
-    {mqtt_topic_id_t::TOPIC_DIAG_ESP_VCC_MV, "ESP VCC", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS, "NVS chyby", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_ADS1115_STATUS, "ADS1115 stav", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_ADS1115_READ_ERRORS, "ADS1115 chyby cteni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_ADS1115_LAST_OK_AGE_S, "ADS1115 stari posledniho OK", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_STATUS, "KWS Modbus stav", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_TIMEOUTS, "KWS Modbus timeouty", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_CRC_ERRORS, "KWS Modbus CRC chyby", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_READ_ERRORS, "KWS Modbus chyby cteni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MODBUS_KWS_LAST_OK_AGE_S, "KWS Modbus stari posledniho OK", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_STATUS, "Teplota stav", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_BUS_ERRORS, "Teplota chyby sbernice", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_CRC_ERRORS, "Teplota CRC chyby", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_READ_ERRORS, "Teplota chyby cteni", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_LAST_OK_AGE_S, "Teplota stari posledniho OK", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_SENSOR_QUEUE_DROPS, "Sensor event zahozene", {0}, false},
+    {mqtt_topic_id_t::TOPIC_DIAG_MQTT_PUBLISH_QUEUE_DROPS, "MQTT publish zahozene", {0}, false},
     {mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_SCAN, "DS18B20 scan", {0}, false},
     {mqtt_topic_id_t::TOPIC_CMD_REBOOT, "CMD reboot", {0}, false},
     {mqtt_topic_id_t::TOPIC_CMD_WEBAPP, "CMD webapp", {0}, false},
@@ -360,7 +374,10 @@ static ha_entity_meta_t infer_meta(const mqtt_topic_descriptor_t &topic)
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_TRY ||
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_WIFI_RECONNECT_SUCCESS ||
         topic.id == mqtt_topic_id_t::TOPIC_DIAG_MQTT_RECONNECTS ||
-        topic.id == mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS) {
+        topic.id == mqtt_topic_id_t::TOPIC_DIAG_NVS_ERRORS ||
+        strstr(full, "_errors") != nullptr ||
+        strstr(full, "_drops") != nullptr ||
+        strstr(full, "timeouts") != nullptr) {
         meta.state_class = "total_increasing";
     }
 

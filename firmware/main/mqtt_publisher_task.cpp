@@ -17,6 +17,7 @@ static const TickType_t MQTT_PUBLISH_DEQUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(1000)
 static QueueHandle_t s_publish_queue = nullptr;
 static TaskHandle_t s_publish_task = nullptr;
 static volatile bool s_mqtt_connected = false;
+static uint32_t s_enqueue_drops = 0;
 
 enum class queue_item_type_t : uint8_t {
     PUBLISH_EVENT = 0,
@@ -377,7 +378,12 @@ esp_err_t mqtt_publisher_enqueue(const mqtt_publish_event_t *event, TickType_t t
             return ESP_ERR_INVALID_ARG;
     }
 
-    return (xQueueSend(s_publish_queue, &item, timeout_ticks) == pdPASS) ? ESP_OK : ESP_ERR_TIMEOUT;
+    if (xQueueSend(s_publish_queue, &item, timeout_ticks) == pdPASS) {
+        return ESP_OK;
+    }
+
+    ++s_enqueue_drops;
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t mqtt_publisher_enqueue_bool(mqtt_topic_id_t topic_id, bool value)
@@ -456,4 +462,11 @@ esp_err_t mqtt_publisher_set_mqtt_connected(bool connected)
 bool mqtt_publisher_is_running(void)
 {
     return s_publish_task != nullptr;
+}
+
+mqtt_publisher_diag_t mqtt_publisher_diag_snapshot(void)
+{
+    return {
+        .enqueue_drops = s_enqueue_drops,
+    };
 }

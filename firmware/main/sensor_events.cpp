@@ -10,6 +10,7 @@ static const char *TAG = "sensor_events";
 static QueueHandle_t s_sensor_events_queue = nullptr;
 static int64_t s_last_publish_warn_us = 0;
 static uint32_t s_suppressed_publish_warn_count = 0;
+static uint32_t s_publish_drops = 0;
 static const int64_t PUBLISH_WARN_MIN_INTERVAL_US = 5LL * 1000LL * 1000LL;
 
 static const char *event_type_to_string(event_type_t event_type)
@@ -61,6 +62,7 @@ bool sensor_events_publish(const app_event_t *event, TickType_t timeout)
 
     const bool queued = (xQueueSend(s_sensor_events_queue, event, timeout) == pdTRUE);
     if (!queued) {
+        ++s_publish_drops;
         const int64_t now_us = esp_timer_get_time();
         const bool should_log = (s_last_publish_warn_us == 0)
                              || ((now_us - s_last_publish_warn_us) >= PUBLISH_WARN_MIN_INTERVAL_US);
@@ -98,6 +100,13 @@ bool sensor_events_receive(app_event_t *event, TickType_t timeout)
     }
 
     return xQueueReceive(s_sensor_events_queue, event, timeout) == pdTRUE;
+}
+
+sensor_events_diag_t sensor_events_diag_snapshot(void)
+{
+    return {
+        .publish_drops = s_publish_drops,
+    };
 }
 
 void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffer_len)

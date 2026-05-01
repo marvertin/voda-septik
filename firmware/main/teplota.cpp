@@ -29,6 +29,7 @@ extern "C" {
 #include "sensor_events.h"
 #include "mqtt_topics.h"
 #include "mqtt_publish.h"
+#include "teplota.h"
 #include <app_error_check.h>
 #include "debug_mqtt.h"
 
@@ -45,6 +46,7 @@ static constexpr int TEMPERATURE_CONVERSION_MS = 800;
 static constexpr int READ_PERIOD_MS = 1000;
 static constexpr int SENSOR_DISCOVERY_PERIOD_S = 30;
 static constexpr int ADDRESS_SCAN_PUBLISH_PERIOD_S = 5;
+static constexpr int64_t TEMPERATURE_WARN_MIN_INTERVAL_US = 60LL * 1000LL * 1000LL;
 
 typedef struct {
     std::array<uint8_t, 9> bytes;
@@ -65,6 +67,19 @@ typedef struct {
 
 static portMUX_TYPE s_scan_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_scan_enabled = false;
+static bool s_temperature_ok = false;
+static uint32_t s_temperature_bus_errors = 0;
+static uint32_t s_temperature_crc_errors = 0;
+static uint32_t s_temperature_read_errors = 0;
+static uint32_t s_temperature_suppressed_warnings = 0;
+static int64_t s_temperature_last_warning_us = 0;
+static int64_t s_temperature_last_ok_us = 0;
+
+enum class temperature_error_kind_t {
+    BUS,
+    CRC,
+    READ,
+};
 
 static const config_item_t TEMP_MAX_ITEM = {
     .key = "tepl_max", .label = "Max. teplota [°C]", .description = "Prahová teplota pro alarm nebo ochranu.",
@@ -221,38 +236,87 @@ static bool ds18b20_addr_is_valid(onewire_addr_t addr)
     return onewire_crc8(rom, 7) == rom[7];
 }
 
+static void record_temperature_error(temperature_error_kind_t kind, const char *detail, onewire_addr_t address = ONEWIRE_NONE)
+{
+    ++s_temperature_read_errors;
+    if (kind == temperature_error_kind_t::BUS) {
+        ++s_temperature_bus_errors;
+    } else if (kind == temperature_error_kind_t::CRC) {
+        ++s_temperature_crc_errors;
+    }
+
+    const int64_t now_us = esp_timer_get_time();
+    if (s_temperature_last_warning_us != 0 && (now_us - s_temperature_last_warning_us) < TEMPERATURE_WARN_MIN_INTERVAL_US) {
+        ++s_temperature_suppressed_warnings;
+        return;
+    }
+
+    const char *kind_text = "cteni";
+    switch (kind) {
+        case temperature_error_kind_t::BUS:
+            kind_text = "sbernice";
+            break;
+        case temperature_error_kind_t::CRC:
+            kind_text = "crc";
+            break;
+        case temperature_error_kind_t::READ:
+            kind_text = "cteni";
+            break;
+    }
+
+    const uint32_t suppressed = s_temperature_suppressed_warnings;
+    s_temperature_suppressed_warnings = 0;
+    s_temperature_last_warning_us = now_us;
+
+    if (address != ONEWIRE_NONE) {
+        ESP_LOGW(TAG,
+                 "DS18B20 chyba %s: %s addr=0x%016" PRIx64 ", potlaceno=%lu",
+                 kind_text,
+                 (detail != nullptr) ? detail : "",
+                 (uint64_t)address,
+                 (unsigned long)suppressed);
+    } else {
+        ESP_LOGW(TAG,
+                 "DS18B20 chyba %s: %s, potlaceno=%lu",
+                 kind_text,
+                 (detail != nullptr) ? detail : "",
+                 (unsigned long)suppressed);
+    }
+}
+
 static bool ds18b20_read_temperature_by_address(gpio_num_t gpio,
                                                 onewire_addr_t address,
                                                 float *temp,
                                                 int16_t *raw_temp_out)
 {
     if (temp == nullptr || !ds18b20_addr_is_valid(address)) {
+        record_temperature_error(temperature_error_kind_t::READ, "neplatna ROM adresa", address);
         return false;
     }
 
     if (!onewire_reset(gpio)) {
-        ESP_LOGE(TAG, "Chyba: reset busu pred ctenim senzoru 0x%016" PRIx64 " selhal", (uint64_t)address);
+        record_temperature_error(temperature_error_kind_t::BUS, "reset pred ctenim selhal", address);
         return false;
     }
 
     if (!onewire_select(gpio, address)) {
-        ESP_LOGE(TAG, "Chyba: select ROM senzoru 0x%016" PRIx64 " selhal", (uint64_t)address);
+        record_temperature_error(temperature_error_kind_t::BUS, "select ROM selhal", address);
         return false;
     }
 
     if (!onewire_write(gpio, DS18B20_CMD_READ_SCRATCH)) {
-        ESP_LOGE(TAG, "Chyba: Read Scratchpad pro 0x%016" PRIx64 " selhal", (uint64_t)address);
+        record_temperature_error(temperature_error_kind_t::BUS, "Read Scratchpad prikaz selhal", address);
         return false;
     }
 
     ds18b20_scratchpad_t scratch = {};
     if (!onewire_read_bytes(gpio, scratch.bytes.data(), scratch.bytes.size())) {
-        ESP_LOGE(TAG, "Chyba: cteni scratchpadu pro 0x%016" PRIx64 " selhalo", (uint64_t)address);
+        record_temperature_error(temperature_error_kind_t::READ, "cteni scratchpadu selhalo", address);
         return false;
     }
 
     if (onewire_crc8(scratch.bytes.data(), 8) != scratch.bytes[8]) {
-        ESP_LOGE(TAG, "Chyba: CRC scratchpadu pro 0x%016" PRIx64 " nesouhlasi", (uint64_t)address);
+        record_temperature_error(temperature_error_kind_t::CRC, "CRC scratchpadu nesouhlasi", address);
         return false;
     }
 
@@ -268,17 +332,17 @@ static bool ds18b20_read_temperature_by_address(gpio_num_t gpio,
 static bool ds18b20_start_conversion_all(gpio_num_t gpio)
 {
     if (!onewire_reset(gpio)) {
-        ESP_LOGE(TAG, "Chyba: senzor neodpovedel na reset pred konverzi");
+        record_temperature_error(temperature_error_kind_t::BUS, "reset pred konverzi selhal");
         return false;
     }
 
     if (!onewire_skip_rom(gpio)) {
-        ESP_LOGE(TAG, "Chyba: Skip ROM pred konverzi selhal");
+        record_temperature_error(temperature_error_kind_t::BUS, "Skip ROM pred konverzi selhal");
         return false;
     }
 
     if (!onewire_write(gpio, DS18B20_CMD_CONVERT_TEMP)) {
-        ESP_LOGE(TAG, "Chyba: poslat Convert T prikaz selhalo");
+        record_temperature_error(temperature_error_kind_t::BUS, "Convert T prikaz selhal");
         return false;
     }
 
@@ -595,6 +659,7 @@ static void temperature_task(void *pvParameters)
             APP_ERROR_CHECK("E775", esp_task_wdt_reset());
         }
 
+        bool any_read_ok = false;
         for (size_t index = 0; index < sizeof(probes) / sizeof(probes[0]); ++index) {
             ds18b20_probe_t &probe = probes[index];
 
@@ -612,13 +677,14 @@ static void temperature_task(void *pvParameters)
                 &raw_temp);
 
             if (read_ok) {
+                any_read_ok = true;
+                s_temperature_last_ok_us = esp_timer_get_time();
                 ESP_LOGD(TAG, "Teplota (%s): %.2f °C", probe.name, temperature);
-            } else {
-                ESP_LOGE(TAG, "Nebylo mozne precist teplotu (%s)", probe.name);
             }
 
             publish_temperature_event(probe.probe, read_ok, temperature, raw_temp);
         }
+        s_temperature_ok = any_read_ok;
         
         // Čtení každou sekundu
         APP_ERROR_CHECK("E776", esp_task_wdt_reset());
@@ -655,4 +721,21 @@ bool teplota_scan_enabled(void)
     enabled = s_scan_enabled;
     taskEXIT_CRITICAL(&s_scan_mux);
     return enabled;
+}
+
+teplota_diag_t teplota_diag_snapshot(void)
+{
+    int64_t last_ok_age_s = -1;
+    if (s_temperature_last_ok_us > 0) {
+        const int64_t age_us = esp_timer_get_time() - s_temperature_last_ok_us;
+        last_ok_age_s = (age_us > 0) ? (age_us / 1000000LL) : 0;
+    }
+
+    return {
+        .ok = s_temperature_ok,
+        .bus_errors = s_temperature_bus_errors,
+        .crc_errors = s_temperature_crc_errors,
+        .read_errors = s_temperature_read_errors,
+        .last_ok_age_s = last_ok_age_s,
+    };
 }

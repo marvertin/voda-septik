@@ -15,6 +15,7 @@ extern "C" {
 #endif
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <limits>
 
@@ -35,6 +36,8 @@ static constexpr TickType_t MODBUS_RX_TIMEOUT_TICKS = pdMS_TO_TICKS(200);
 static constexpr TickType_t METER_TASK_PERIOD_TICKS = pdMS_TO_TICKS(5000);
 static constexpr uint8_t MODBUS_FUNC_READ_HOLDING = 0x03;
 static constexpr uint32_t METER_READ_RETRIES = 3;
+static constexpr uint32_t METER_FAST_PROBE_RETRIES = 1;
+static constexpr int64_t MODBUS_WARN_MIN_INTERVAL_US = 60LL * 1000LL * 1000LL;
 
 static constexpr uint16_t KWS_REG_VOLTAGE = 14;
 static constexpr uint16_t KWS_REG_CURRENT = 18;
@@ -65,6 +68,20 @@ struct meter_values_t {
 };
 
 static int32_t s_slave_addr = KWS_DEFAULT_SLAVE_ADDR;
+static bool s_meter_ok = false;
+static uint32_t s_modbus_timeouts = 0;
+static uint32_t s_modbus_crc_errors = 0;
+static uint32_t s_modbus_read_errors = 0;
+static uint32_t s_modbus_suppressed_warnings = 0;
+static int64_t s_modbus_last_warning_us = 0;
+static int64_t s_modbus_last_ok_us = 0;
+
+enum class modbus_error_kind_t {
+    TX,
+    TIMEOUT,
+    INVALID_RESPONSE,
+    CRC,
+};
 
 static float nanf_value()
 {
@@ -101,6 +118,54 @@ static void rs485_set_rx_mode()
 static void modbus_rx_resync()
 {
     (void)uart_flush_input(MODBUS_UART_PORT);
+}
+
+static void reset_task_wdt_soft()
+{
+    (void)esp_task_wdt_reset();
+}
+
+static void record_modbus_error(modbus_error_kind_t kind, uint16_t reg, const char *detail)
+{
+    ++s_modbus_read_errors;
+    if (kind == modbus_error_kind_t::TIMEOUT) {
+        ++s_modbus_timeouts;
+    } else if (kind == modbus_error_kind_t::CRC) {
+        ++s_modbus_crc_errors;
+    }
+
+    const int64_t now_us = esp_timer_get_time();
+    if (s_modbus_last_warning_us != 0 && (now_us - s_modbus_last_warning_us) < MODBUS_WARN_MIN_INTERVAL_US) {
+        ++s_modbus_suppressed_warnings;
+        return;
+    }
+
+    const char *kind_text = "chyba";
+    switch (kind) {
+        case modbus_error_kind_t::TX:
+            kind_text = "tx";
+            break;
+        case modbus_error_kind_t::TIMEOUT:
+            kind_text = "timeout";
+            break;
+        case modbus_error_kind_t::INVALID_RESPONSE:
+            kind_text = "neplatna odpoved";
+            break;
+        case modbus_error_kind_t::CRC:
+            kind_text = "crc";
+            break;
+    }
+
+    const uint32_t suppressed = s_modbus_suppressed_warnings;
+    s_modbus_suppressed_warnings = 0;
+    s_modbus_last_warning_us = now_us;
+    ESP_LOGW(TAG,
+             "Modbus KWS %s (reg=%u%s%s), potlaceno=%lu",
+             kind_text,
+             (unsigned)reg,
+             (detail != nullptr && detail[0] != '\0') ? " " : "",
+             (detail != nullptr) ? detail : "",
+             (unsigned long)suppressed);
 }
 
 static int uart_read_exact(uint8_t *buffer, int required_len, TickType_t total_timeout_ticks)
@@ -152,20 +217,24 @@ static bool modbus_read_holding(uint16_t reg, uint16_t count, uint8_t *payload, 
 
     rs485_set_tx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
+    reset_task_wdt_soft();
 
     const int tx = uart_write_bytes(MODBUS_UART_PORT, request, sizeof(request));
     if (tx != (int)sizeof(request)) {
-        ESP_LOGW(TAG, "UART TX selhal (reg=%u tx=%d)", (unsigned)reg, tx);
+        char detail[32];
+        snprintf(detail, sizeof(detail), "tx=%d", tx);
+        record_modbus_error(modbus_error_kind_t::TX, reg, detail);
         rs485_set_rx_mode();
         modbus_rx_resync();
         return false;
     }
 
-    (void)uart_wait_tx_done(MODBUS_UART_PORT, pdMS_TO_TICKS(1000));
+    (void)uart_wait_tx_done(MODBUS_UART_PORT, pdMS_TO_TICKS(100));
     modbus_rx_resync();
     rs485_set_rx_mode();
     vTaskDelay(pdMS_TO_TICKS(10));
     modbus_rx_resync();
+    reset_task_wdt_soft();
 
     uint8_t response[9] = {0};
     const int expected_len = 5 + (int)count * 2;
@@ -174,8 +243,11 @@ static bool modbus_read_holding(uint16_t reg, uint16_t count, uint8_t *payload, 
     }
 
     const int rx = uart_read_exact(response, expected_len, MODBUS_RX_TIMEOUT_TICKS);
+    reset_task_wdt_soft();
     if (rx != expected_len) {
-        ESP_LOGW(TAG, "Modbus timeout/neuplna odpoved (reg=%u rx=%d exp=%d)", (unsigned)reg, rx, expected_len);
+        char detail[40];
+        snprintf(detail, sizeof(detail), "rx=%d exp=%d", rx, expected_len);
+        record_modbus_error(modbus_error_kind_t::TIMEOUT, reg, detail);
         modbus_rx_resync();
         return false;
     }
@@ -183,12 +255,14 @@ static bool modbus_read_holding(uint16_t reg, uint16_t count, uint8_t *payload, 
     if (response[0] != (uint8_t)s_slave_addr ||
         response[1] != MODBUS_FUNC_READ_HOLDING ||
         response[2] != (uint8_t)(count * 2U)) {
-        ESP_LOGW(TAG,
-                 "Neplatna Modbus odpoved (reg=%u addr=%u func=%u len=%u)",
-                 (unsigned)reg,
+        char detail[48];
+        snprintf(detail,
+                 sizeof(detail),
+                 "addr=%u func=%u len=%u",
                  (unsigned)response[0],
                  (unsigned)response[1],
                  (unsigned)response[2]);
+        record_modbus_error(modbus_error_kind_t::INVALID_RESPONSE, reg, detail);
         modbus_rx_resync();
         return false;
     }
@@ -196,7 +270,9 @@ static bool modbus_read_holding(uint16_t reg, uint16_t count, uint8_t *payload, 
     const uint16_t rx_crc = (uint16_t)response[expected_len - 2] | ((uint16_t)response[expected_len - 1] << 8);
     const uint16_t calc_crc = modbus_crc16(response, (size_t)expected_len - 2);
     if (rx_crc != calc_crc) {
-        ESP_LOGW(TAG, "CRC mismatch (reg=%u rx=0x%04x calc=0x%04x)", (unsigned)reg, (unsigned)rx_crc, (unsigned)calc_crc);
+        char detail[48];
+        snprintf(detail, sizeof(detail), "rx=0x%04x calc=0x%04x", (unsigned)rx_crc, (unsigned)calc_crc);
+        record_modbus_error(modbus_error_kind_t::CRC, reg, detail);
         modbus_rx_resync();
         return false;
     }
@@ -269,16 +345,20 @@ static bool values_complete(const meter_values_t &values)
         && std::isfinite(values.reactive_energy_varh);
 }
 
-static void read_values_once(meter_values_t *values)
+static bool read_values_once(meter_values_t *values)
 {
     if (values == nullptr) {
-        return;
+        return false;
     }
 
     float value = 0.0f;
     if (!std::isfinite(values->voltage_v) && read_u16_scaled(KWS_REG_VOLTAGE, 0.01f, &value)) {
         values->voltage_v = value;
     }
+    if (!std::isfinite(values->voltage_v)) {
+        return false;
+    }
+
     if (!std::isfinite(values->current_a) && read_u16_scaled(KWS_REG_CURRENT, 0.001f, &value)) {
         values->current_a = value;
     }
@@ -303,16 +383,28 @@ static void read_values_once(meter_values_t *values)
     if (!std::isfinite(values->reactive_energy_varh) && read_u32_le_scaled(KWS_REG_ENERGY_AUX, 1.0f, &value)) {
         values->reactive_energy_varh = value;
     }
+
+    return true;
 }
 
 static meter_values_t read_meter_values()
 {
     meter_values_t values = empty_values();
+    bool meter_responded = false;
+
     for (uint32_t attempt = 0; attempt < METER_READ_RETRIES; ++attempt) {
-        read_values_once(&values);
+        reset_task_wdt_soft();
+        meter_responded = read_values_once(&values) || meter_responded;
+        if (!meter_responded && attempt >= METER_FAST_PROBE_RETRIES) {
+            break;
+        }
         if (values_complete(values)) {
             break;
         }
+    }
+    s_meter_ok = values_complete(values);
+    if (s_meter_ok) {
+        s_modbus_last_ok_us = esp_timer_get_time();
     }
     return values;
 }
@@ -395,17 +487,21 @@ static void elektromer_task(void *pv_parameters)
 
     while (true) {
         const meter_values_t values = read_meter_values();
-        ESP_LOGI(TAG,
-                 "KWS: U=%.2f V I=%.3f A P=%.2f W Q=%.2f var S=%.2f VA f=%.2f Hz PF=%.3f E=%.1f Wh EQ=%.1f varh",
-                 (double)values.voltage_v,
-                 (double)values.current_a,
-                 (double)values.active_power_w,
-                 (double)values.reactive_power_var,
-                 (double)values.apparent_power_va,
-                 (double)values.frequency_hz,
-                 (double)values.power_factor,
-                 (double)values.active_energy_wh,
-                 (double)values.reactive_energy_varh);
+        if (values_complete(values)) {
+            ESP_LOGI(TAG,
+                     "KWS: U=%.2f V I=%.3f A P=%.2f W Q=%.2f var S=%.2f VA f=%.2f Hz PF=%.3f E=%.1f Wh EQ=%.1f varh",
+                     (double)values.voltage_v,
+                     (double)values.current_a,
+                     (double)values.active_power_w,
+                     (double)values.reactive_power_var,
+                     (double)values.apparent_power_va,
+                     (double)values.frequency_hz,
+                     (double)values.power_factor,
+                     (double)values.active_energy_wh,
+                     (double)values.reactive_energy_varh);
+        } else {
+            ESP_LOGD(TAG, "KWS elektromer nema kompletni vzorek");
+        }
         publish_meter_event(values);
 
         APP_ERROR_CHECK("E847", esp_task_wdt_reset());
@@ -429,4 +525,21 @@ void elektromer_init(void)
                         ? ESP_OK
                         : ESP_FAIL);
     ESP_LOGI(TAG, "KWS-303L elektromer task spusten");
+}
+
+elektromer_diag_t elektromer_diag_snapshot(void)
+{
+    int64_t last_ok_age_s = -1;
+    if (s_modbus_last_ok_us > 0) {
+        const int64_t age_us = esp_timer_get_time() - s_modbus_last_ok_us;
+        last_ok_age_s = (age_us > 0) ? (age_us / 1000000LL) : 0;
+    }
+
+    return {
+        .ok = s_meter_ok,
+        .timeouts = s_modbus_timeouts,
+        .crc_errors = s_modbus_crc_errors,
+        .read_errors = s_modbus_read_errors,
+        .last_ok_age_s = last_ok_age_s,
+    };
 }
