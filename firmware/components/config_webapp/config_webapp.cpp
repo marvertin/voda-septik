@@ -17,11 +17,14 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "config_store.h"
 
 static const char *TAG = "config_webapp";
+static constexpr const char *RESTART_MARKER_KEY = "web_restart";
+static char s_nvs_namespace[16] = {0};
 static bool s_has_restart_info = false;
 static config_webapp_restart_info_t s_restart_info = {
     .boot_count = 0,
@@ -491,6 +494,26 @@ static esp_err_t save_form_to_nvs(const std::map<std::string, std::string> &para
     return ESP_OK;
 }
 
+static esp_err_t set_saved_restart_marker(void)
+{
+    if (s_nvs_namespace[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t result = nvs_open(s_nvs_namespace, NVS_READWRITE, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    result = nvs_set_u8(handle, RESTART_MARKER_KEY, 1);
+    if (result == ESP_OK) {
+        result = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return result;
+}
+
 static esp_err_t config_save_handler(httpd_req_t *req)
 {
     UBaseType_t stack_words = uxTaskGetStackHighWaterMark(nullptr);
@@ -518,6 +541,12 @@ static esp_err_t config_save_handler(httpd_req_t *req)
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Ulozeni konfigurace selhalo: %s", esp_err_to_name(result));
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Ulozeni konfigurace selhalo");
+    }
+
+    result = set_saved_restart_marker();
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Ulozeni priznaku restartu po konfiguraci selhalo: %s", esp_err_to_name(result));
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Ulozeni priznaku restartu selhalo");
     }
 
     auto restart_task = [](void *arg) {
@@ -765,12 +794,54 @@ esp_err_t config_webapp_prepare(const char *nvs_namespace)
     if (nvs_namespace == nullptr || nvs_namespace[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+    if (strlen(nvs_namespace) >= sizeof(s_nvs_namespace)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     if (!config_store_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    strncpy(s_nvs_namespace, nvs_namespace, sizeof(s_nvs_namespace) - 1);
+    s_nvs_namespace[sizeof(s_nvs_namespace) - 1] = '\0';
     return ESP_OK;
+}
+
+esp_err_t config_webapp_consume_saved_restart_marker(bool *was_set)
+{
+    if (was_set == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *was_set = false;
+
+    if (s_nvs_namespace[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t result = nvs_open(s_nvs_namespace, NVS_READWRITE, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    uint8_t marker = 0;
+    result = nvs_get_u8(handle, RESTART_MARKER_KEY, &marker);
+    if (result == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(handle);
+        return ESP_OK;
+    }
+    if (result != ESP_OK) {
+        nvs_close(handle);
+        return result;
+    }
+
+    *was_set = (marker != 0);
+    result = nvs_erase_key(handle, RESTART_MARKER_KEY);
+    if (result == ESP_OK) {
+        result = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return result;
 }
 
 esp_err_t config_webapp_get_i32(const char *key, int32_t *value)

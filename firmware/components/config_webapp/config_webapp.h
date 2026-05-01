@@ -17,6 +17,7 @@ typedef struct {
 } config_webapp_network_info_t;
 
 esp_err_t config_webapp_prepare(const char *nvs_namespace);
+esp_err_t config_webapp_consume_saved_restart_marker(bool *was_set);
 
 esp_err_t config_webapp_start(uint16_t http_port,
                               const config_webapp_restart_info_t *restart_info,

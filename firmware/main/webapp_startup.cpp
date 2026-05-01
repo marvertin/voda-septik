@@ -22,8 +22,8 @@ static bool s_webapp_started = false;
 static TimerHandle_t s_webapp_auto_stop_timer = nullptr;
 static constexpr uint32_t WEBAPP_AUTO_STOP_MS = 2U * 60U * 60U * 1000U;
 static constexpr const char *AP_MODE_SSID = "voda-septik-config";
-static bool s_boot_was_firmware_reset = false;
-static bool s_reset_reason_initialized = false;
+static bool s_auto_start_marker_initialized = false;
+static bool s_boot_should_auto_start = false;
 
 static bool should_auto_start_on_level(system_network_level_t level)
 {
@@ -31,21 +31,34 @@ static bool should_auto_start_on_level(system_network_level_t level)
         return true;
     }
 
-    if (!s_boot_was_firmware_reset) {
+    if (!s_boot_should_auto_start) {
         return false;
     }
 
     return (level == SYS_NET_IP_ONLY) || (level == SYS_NET_MQTT_READY);
 }
 
-static void ensure_reset_reason_initialized(void)
+static void ensure_auto_start_marker_initialized(void)
 {
-    if (s_reset_reason_initialized) {
+    if (s_auto_start_marker_initialized) {
         return;
     }
 
-    s_reset_reason_initialized = true;
-    s_boot_was_firmware_reset = (esp_reset_reason() == ESP_RST_SW);
+    s_auto_start_marker_initialized = true;
+    if (esp_reset_reason() != ESP_RST_SW) {
+        s_boot_should_auto_start = false;
+        return;
+    }
+
+    bool marker_set = false;
+    const esp_err_t marker_result = config_webapp_consume_saved_restart_marker(&marker_set);
+    if (marker_result != ESP_OK) {
+        ESP_LOGW(TAG, "Nelze nacist priznak restartu po ulozeni konfigurace: %s", esp_err_to_name(marker_result));
+        s_boot_should_auto_start = false;
+        return;
+    }
+
+    s_boot_should_auto_start = marker_set;
 }
 
 static void webapp_auto_stop_timer_cb(TimerHandle_t timer)
@@ -101,7 +114,7 @@ void webapp_startup_on_network_event(const network_event_t *event)
         return;
     }
 
-    ensure_reset_reason_initialized();
+    ensure_auto_start_marker_initialized();
 
     if (!should_auto_start_on_level(event->level)) {
         return;
@@ -113,6 +126,8 @@ void webapp_startup_on_network_event(const network_event_t *event)
                  "Automaticky start webapp po network eventu (level=%d) selhal: %s",
                  static_cast<int>(event->level),
                  esp_err_to_name(start_result));
+    } else if (event->level != SYS_NET_AP_CONFIG) {
+        s_boot_should_auto_start = false;
     }
 }
 
