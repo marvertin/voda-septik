@@ -1,58 +1,59 @@
 # OTA aktualizace firmware
 
-## Jak to uzivatelsky pouzivat
+Aktuální helper je `firmware/tools/zalevaci`, nikoli odstraněný `ota_flow_cli.sh`. Všechny příklady spouštěj z `firmware/`, po aktivaci ESP-IDF v5.5.2. Stav ověřen proti kódu 12. 10. 2026.
 
-Nejjednodussi postup je pouzit interaktivni helper:
+## Interaktivní postup
 
-1. Vygeneruj firmware (`idf.py build`).
-2. Spust skript:
+1. Sestav obraz pomocí `idf.py build`.
+2. Spusť `./tools/zalevaci` a vyber `OTA flow`.
+3. Vyber broker, obraz `build/voda-septik.bin` a IP počítače dostupnou z ESP; výchozí HTTP port je 8000.
+4. Helper spustí HTTP server, pošle `cmd/ota/start` a přes `mosquitto_sub` čeká na `system/boot_mode=ota` (výchozí timeout 300 s).
+5. Po startu nového firmware ověř měření, MQTT a displeje. Potvrzení otázky `y` / `yes` pošle `cmd/ota/confirm`.
+6. Po otázce helper vždy pošle restart: potvrzený obraz zůstane aktivní; bez potvrzení se při dalším bootu uplatní rollback. Nakonec ukončí HTTP server.
 
-```bash
-./tools/ota_flow_cli.sh
+Připojení lze změnit globálními parametry před subcommand nebo menu, například `./tools/zalevaci --host BROKER --port 1883`. Nástroj potřebuje `mosquitto_pub` i `mosquitto_sub`; heslo načítá z `~/.voda-septik/mqtt_password`.
+
+## Neinteraktivní použití
+
+```sh
+./tools/zalevaci ota --help
+./tools/zalevaci --host BROKER ota --bin build/voda-septik.bin --host-ip IP_POCITACE --no-reboot
 ```
 
-3. Ve skriptu vyber:
-   - MQTT broker a prihlaseni,
-  - soubor firmware (`build/voda-septik.bin`),
-   - sitovou adresu, odkud si ESP muze stahnout `.bin`.
-4. Skript spusti lokalni HTTP server, posle `cmd/ota/start` a vypisuje OTA eventy.
-5. Po rebootu noveho firmware skript pocka na signal bootu OTA image (`system/boot_mode = ota`) a teprve potom se zepta na potvrzeni.
-6. Pokud vse funguje, potvrd novy firmware (skript posle `cmd/ota/confirm`).
-7. Po vyhodnoceni potvrzovaci otazky skript vzdy pocka 0.5 s a posle `cmd/reboot` (jak pri potvrzeni, tak i bez potvrzeni).
+Nahraď `BROKER` a `IP_POCITACE` skutečnými adresami. Parametry:
 
-Rucni postup bez helper skriptu:
+- `--http-port` mění HTTP port (výchozí 8000).
+- `--timeout` mění čekání na pending OTA boot (výchozí 300 s).
+- `--confirm` potvrzuje obraz automaticky po zjištění `boot_mode=ota`; samo neověřuje senzory ani provozní funkčnost.
+- Bez `--confirm` se obraz nepotvrdí. Bez `--no-reboot` helper po čekání posílá další restart, a tím u nepotvrzeného obrazu vyvolá návrat na předchozí verzi.
+- S `--no-reboot` lze ověřit zařízení a ručně poslat potvrzení nebo restart přes `cmd`.
 
-```bash
-# start OTA
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "voda/septik/cmd/ota/start" \
-  -m "http://IP_SERVERU:8000/voda-septik.bin"
+## Ruční postup
 
-# sledovani OTA eventu
-mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -v \
-  -t "voda/septik/system/ota/#" -t "voda/septik/system/boot_mode"
+Připrav obraz na HTTP serveru dostupném z ESP. Z běžícího zařízení spusť OTA:
 
-# potvrzeni po uspesnem nabootovani a overeni funkcnosti
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "voda/septik/cmd/ota/confirm" -m "1"
+```sh
+./tools/zalevaci cmd ota/start http://IP_SERVERU:8000/voda-septik.bin
 ```
 
-## Jak to funguje uvnitr
+Sleduj `voda/septik/system/ota/#` a `voda/septik/system/boot_mode`. Po ověření nového obrazu:
 
-- OTA se spousti MQTT commandem `voda/septik/cmd/ota/start`.
-- Command handler v `main/mqtt_commands.cpp` vola OTA manager (`ota_manager_start_from_url`).
-- OTA manager (`main/ota_manager.cpp`) stahuje image pres HTTP(S), zapisuje ji do OTA partition a po dokonceni restartuje zarizeni.
-- Pri behu publikuje stav do:
-  - `voda/septik/system/ota/event`
-  - `voda/septik/system/ota/progress`
-- Po startu noveho firmware se publikuje `voda/septik/system/boot_mode`:
-  - `ota` = firmware je ve stavu pending verify
-  - `normal` = standardni, potvrzeny start
-- Potvrzeni probiha commandem `voda/septik/cmd/ota/confirm`, ktery vola `ota_manager_confirm_running_firmware()`.
-- Pokud firmware neni potvrzen a je aktivni rollback, bootloader vrati predchozi potvrzenou verzi.
+```sh
+./tools/zalevaci cmd ota/confirm 1
+./tools/zalevaci cmd reboot 1
+```
 
-## Poznamky k provozu
+Příkazy posílej bez retain. URL v aktuálním command handleru musí vejít do 127 znaků (vlastní OTA manager má větší buffer). Používej adresu dostupnou ze sítě ESP; `localhost` počítače z ESP dostupný není.
 
-- OTA URL musi byt dostupna ze stejne site jako ESP.
-- Pro rollback je potreba mit zapnuty bootloader rollback (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`) a zmenu mit opravdu nahranou do zarizeni.
-- Doporuceny postup je vzdy potvrzovat firmware az po realnem testu funkcnosti (senzory, MQTT, ovladani).
+## Implementace a rollback
+
+- `mqtt_commands.cpp` předává URL do `ota_manager_start_from_url`.
+- `ota_manager.cpp` akceptuje prefix HTTP/HTTPS, vyžaduje HTTP status 200 a zapisuje sekvenčně do následujícího OTA slotu. Pro HTTPS nemá výslovně nastavený certifikát ani certificate bundle; samotná akceptace URL nedokládá funkční HTTPS přenos.
+- `partitions.csv` obsahuje `ota_0` a `ota_1`, každý 0x180000 B. Aktualizuje se obraz aplikace, nikoli tabulka oddílů, bootloader nebo provozní data.
+- Události zahrnují `start`, `download`, `rebooting`, `confirmed`, `confirm_not_needed` a chyby jednotlivých kroků. Progress je 0–100 %, bez retain; při známé délce se hlásí přibližně po 5 procentních bodech.
+- Po úspěšném zápisu se změní boot slot a zařízení restartuje.
+- `state_manager` publikuje `system/boot_mode=ota` pro `ESP_OTA_IMG_PENDING_VERIFY`, jinak `normal`.
+- `cmd/ota/confirm` volá `esp_ota_mark_app_valid_cancel_rollback`. Není implementované automatické potvrzení podle senzorů ani vlastní časovač, který by po určité době sám restartoval nepověřený obraz.
+- Rollback je zapnutý v `sdkconfig` i `sdkconfig.defaults`; musí jej podporovat skutečně nahraný bootloader. Před zásahy do flash zálohuj NVS a datové oddíly, pokud je chceš zachovat.
+
+Související: [obnova prostředí](../../README.md), [MQTT registr](../../.agents/MQTT_INDEX.md).

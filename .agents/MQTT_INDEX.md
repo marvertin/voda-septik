@@ -1,100 +1,114 @@
-# MQTT Index
+# Mapa MQTT
 
-Korenny topic je pevne `voda/septik`. Zdroj pravdy je `firmware/main/mqtt_topics.h` a `firmware/main/mqtt_topics.cpp`.
+Ověřeno proti kódu 12. 10. 2026. Zdrojem pravdy jsou [mqtt_topics.h](../firmware/main/mqtt_topics.h) a [mqtt_topics.cpp](../firmware/main/mqtt_topics.cpp). Kořen je pevně `voda/septik`; cesty v tabulkách jsou relativní k němu. Registr má **66 topiců: 59 publikačních a 7 příkazových**.
 
-## Pravidla z kodu
+## Publikace a dostupnost
 
-- `mqtt_topic_id_t` v `mqtt_topics.h` musi poradne odpovidat `MQTT_TOPIC_TABLE` v `mqtt_topics.cpp`.
-- `static_assert` hlida pocet polozek tabulky proti `COUNT`.
-- Publish pouzivej pres `mqtt_publisher_enqueue_*`, ne primo pres `mqtt_publish`, pokud nejde o specialni pripad.
-- `mqtt_publisher_task` publikuje availability per topic; `EMPTY` payload znamena unavailable.
-- Command topicy jsou `SUBSCRIBE_ONLY` a obsluhuje je `mqtt_commands.cpp`.
-- Home Assistant discovery se generuje z tabulky a nazvu v `mqtt_ha_discovery.cpp`.
+- `mqtt_topic_id_t` musí odpovídat pořadí `MQTT_TOPIC_TABLE`; počet hlídá `static_assert`.
+- Běžná aplikační publikace používá `mqtt_publisher_enqueue_*`: fronta 32 položek, cache poslední hodnoty a odesílání změn. Stejná příchozí hodnota se znovu odešle po 60 s od poslední publikace; nejde o samostatný časovač publikující bez nových událostí.
+- Po MQTT reconnectu se cache odešle znovu; discovery a boot diagnostika se publikují při přechodu do `SYS_NET_MQTT_READY`.
+- `EMPTY` publikační událost pošle dostupnost `offline` a ponechá poslední retained hodnotu. Platná hodnota pošle `online` a vlastní payload.
+- Pro `stav/X` je dostupnost `availability/X`; například `voda/septik/availability/zasoba/objem_m3`. Pro ostatní topicy se přidává `/availability` na konec celé cesty.
+- `system/status` má vlastní retained LWT (`offline`) a online stav. HA entity kromě tohoto topicu nyní používají individuální dostupnost; discovery nekombinuje individuální dostupnost s globálním LWT. Celkový výpadek zařízení tedy není totožný s chybou konkrétního senzoru.
+- Publikační wrapper používá QoS 1. Přímá debug publikace používá QoS 0 bez retain; DS18B20 scan se odesílá přímo přes wrapper bez 128B cache publisheru.
+- Číselné hodnoty publisher serializuje na šest desetinných míst. Textový buffer má 128 B včetně ukončení; MQTT command payloady se rovněž zkracují na nejvýše 127 znaků.
 
-## Publish topicy
+## Publikační topicy
 
-Stav a mereni:
+| Cesta | Payload | QoS | Retain |
+| --- | --- | --- | --- |
+| `stav/zasoba/objem_m3` | number | 1 | ano |
+| `stav/zasoba/hladina_m` | number | 1 | ano |
+| `stav/cerpani/prutok_l_min` | number | 1 | ano |
+| `stav/cerpani/cerpano_celkem_l` | number | 1 | ano |
+| `stav/teplota/voda` | number | 1 | ano |
+| `stav/teplota/vzduch` | number | 1 | ano |
+| `stav/tlak/pred_filtrem_bar` | number | 1 | ano |
+| `stav/tlak/za_filtrem_bar` | number | 1 | ano |
+| `stav/tlak/rozdil_filtru_bar` | number | 1 | ano |
+| `stav/zanesenost_filtru_percent` | number | 1 | ano |
+| `stav/cerpani/pumpa/stav` | text | 1 | ano |
+| `elektro/cerpadlo/napeti_v` | number | 1 | ano |
+| `elektro/cerpadlo/proud_a` | number | 1 | ano |
+| `elektro/cerpadlo/vykon_cinny_w` | number | 1 | ano |
+| `elektro/cerpadlo/vykon_jalovy_var` | number | 1 | ano |
+| `elektro/cerpadlo/vykon_zdanlivy_va` | number | 1 | ano |
+| `elektro/cerpadlo/frekvence_hz` | number | 1 | ano |
+| `elektro/cerpadlo/cosfi` | number | 1 | ano |
+| `elektro/cerpadlo/energie_cinna_kwh` | number | 1 | ano |
+| `elektro/cerpadlo/energie_jalova_kvarh` | number | 1 | ano |
+| `system/status` | text | 1 | ano |
+| `system/boot_mode` | text | 1 | ano |
+| `system/ota/event` | text | 1 | ne |
+| `system/ota/progress` | number | 1 | ne |
+| `system/reboot_reason` | text | 1 | ano |
+| `system/reboot_counter` | number | 1 | ano |
+| `system/last_disconnect_duration_s` | number | 1 | ano |
+| `diag/fw_version` | text | 1 | ano |
+| `diag/build_timestamp` | text | 1 | ano |
+| `diag/git_hash` | text | 1 | ano |
+| `diag/uptime_s` | number | 1 | ano |
+| `diag/wifi_rssi_dbm` | number | 1 | ano |
+| `diag/wifi_reconnect_try` | number | 1 | ano |
+| `diag/wifi_reconnect_success` | number | 1 | ano |
+| `diag/wifi/connects` | number | 1 | ano |
+| `diag/wifi/disconnects` | number | 1 | ano |
+| `diag/mqtt/connects` | number | 1 | ano |
+| `diag/mqtt/disconnects` | number | 1 | ano |
+| `diag/mqtt_reconnects` | number | 1 | ano |
+| `diag/last_mqtt_rc` | number | 1 | ano |
+| `diag/heap_free_b` | number | 1 | ano |
+| `diag/heap_min_free_b` | number | 1 | ano |
+| `diag/nvs_errors` | number | 1 | ano |
+| `diag/ads1115/status` | text | 1 | ano |
+| `diag/ads1115/read_errors` | number | 1 | ano |
+| `diag/ads1115/last_ok_age_s` | number | 1 | ano |
+| `diag/modbus/kws/status` | text | 1 | ano |
+| `diag/modbus/kws/timeouts` | number | 1 | ano |
+| `diag/modbus/kws/crc_errors` | number | 1 | ano |
+| `diag/modbus/kws/read_errors` | number | 1 | ano |
+| `diag/modbus/kws/last_ok_age_s` | number | 1 | ano |
+| `diag/teplota/status` | text | 1 | ano |
+| `diag/teplota/bus_errors` | number | 1 | ano |
+| `diag/teplota/crc_errors` | number | 1 | ano |
+| `diag/teplota/read_errors` | number | 1 | ano |
+| `diag/teplota/last_ok_age_s` | number | 1 | ano |
+| `diag/events/sensor_queue_drops` | number | 1 | ano |
+| `diag/mqtt/publish_queue_drops` | number | 1 | ano |
+| `diag/teplota_scan` | json | 1 | ne |
 
-- `stav/zasoba/objem_m3` - objem nadrze podle aktualni tabulky topicu.
-- `stav/zasoba/hladina_m` - vyska hladiny.
-- `stav/cerpani/prutok_l_min` - aktualni prutok.
-- `stav/cerpani/cerpano_celkem_l` - celkove cerpano.
-- `stav/teplota/voda` - teplota vody.
-- `stav/teplota/vzduch` - teplota vzduchu.
-- `stav/tlak/pred_filtrem_bar` - tlak pred filtrem.
-- `stav/tlak/za_filtrem_bar` - tlak za filtrem.
-- `stav/tlak/rozdil_filtru_bar` - rozdil tlaku na filtru.
-- `stav/zanesenost_filtru_percent` - zanesenost filtru podle aktualni tabulky topicu.
-- `stav/cerpani/pumpa/stav` - textovy stav cerpadla.
+## Příkazy
 
-Elektromer:
+Všechny příkazy jsou `SUBSCRIBE_ONLY`, QoS 1, bez retain. Firmware přijaté retained příkazy ignoruje.
 
-- `elektro/cerpadlo/napeti_v`
-- `elektro/cerpadlo/proud_a`
-- `elektro/cerpadlo/vykon_cinny_w`
-- `elektro/cerpadlo/vykon_jalovy_var`
-- `elektro/cerpadlo/vykon_zdanlivy_va`
-- `elektro/cerpadlo/frekvence_hz`
-- `elektro/cerpadlo/cosfi`
-- `elektro/cerpadlo/energie_cinna_kwh`
-- `elektro/cerpadlo/energie_jalova_kvarh`
+| Cesta | Payload a chování |
+| --- | --- |
+| `cmd/reboot` | `1`, `true`, `on`, `yes`, `now` nebo prázdný payload vyvolá restart. |
+| `cmd/webapp` | `on` / `off` (také běžné bool varianty); zapne/vypne konfigurační web. |
+| `cmd/debug` | `on` / `off`; debug MQTT se při zapnutí automaticky vypne za 2 hodiny. |
+| `cmd/log/level` | `TAG=LEVEL`, `TAG:LEVEL`, `TAG LEVEL` nebo samotný `LEVEL`; úrovně NONE až VERBOSE, čísla 0–5. |
+| `cmd/ota/start` | URL obrazu `http://…` nebo `https://…`; praktický limit je 127 znaků command bufferu. |
+| `cmd/ota/confirm` | Pravdivý nebo prázdný payload potvrzuje běžící pending OTA image. |
+| `cmd/teplota/scan` | Pravdivý payload zapne pravidelný report; `0` / `off` vypne. Prázdný payload zapíná. |
 
-System:
+## Jednotky a význam
 
-- `system/status` - LWT/online status.
-- `system/boot_mode` - `ota` nebo `normal`.
-- `system/ota/event`
-- `system/ota/progress`
-- `system/reboot_reason`
-- `system/reboot_counter`
-- `system/last_disconnect_duration_s`
+- `stav/zasoba/objem_m3` je **m³**; `hladina_m` je m. Starý `objem_l` není v registru.
+- Průtok je l/min, celkové čerpání je l. Nulový průtok je platná hodnota.
+- Tlak je bar, zanesení filtru %; správná cesta je `stav/zanesenost_filtru_percent`, bez mezisegmentu `tlak`.
+- `stav/cerpani/pumpa/stav` je `bezi`, `stoji` nebo `chyba`, odvozené z činného výkonu (hranice 5 W). Není to povel pro relé.
+- Energie elektroměru přichází do `state_manager` ve Wh/varh a před publikací se dělí 1000 na kWh/kvarh.
+- `system/reboot_counter` znamená počet startů, ukládá se do `sys_meta/boot_count_v2` a zvyšuje se jednou při startu `state_manager`.
+- `system/reboot_reason` je textové číslo `esp_reset_reason_t`; `last_disconnect_duration_s` měří výpadek konektivity po ztrátě stavu MQTT ready.
+- `diag/last_mqtt_rc` je registrovaný, ale proměnná ve `state_manager` je nyní inicializovaná na 0 a bez další aktualizace. Nevydávej jej za skutečný poslední chybový kód klienta.
 
-Diagnostika:
+## Home Assistant a debug
 
-- `diag/fw_version`
-- `diag/build_timestamp`
-- `diag/git_hash`
-- `diag/uptime_s`
-- `diag/wifi_rssi_dbm`
-- `diag/wifi_reconnect_try`
-- `diag/wifi_reconnect_success`
-- `diag/wifi/connects`
-- `diag/wifi/disconnects`
-- `diag/mqtt/connects`
-- `diag/mqtt/disconnects`
-- `diag/mqtt_reconnects`
-- `diag/last_mqtt_rc`
-- `diag/heap_free_b`
-- `diag/heap_min_free_b`
-- `diag/nvs_errors`
-- `diag/ads1115/status`
-- `diag/ads1115/read_errors`
-- `diag/ads1115/last_ok_age_s`
-- `diag/modbus/kws/status`
-- `diag/modbus/kws/timeouts`
-- `diag/modbus/kws/crc_errors`
-- `diag/modbus/kws/read_errors`
-- `diag/modbus/kws/last_ok_age_s`
-- `diag/teplota/status`
-- `diag/teplota/bus_errors`
-- `diag/teplota/crc_errors`
-- `diag/teplota/read_errors`
-- `diag/teplota/last_ok_age_s`
-- `diag/events/sensor_queue_drops`
-- `diag/mqtt/publish_queue_drops`
-- `diag/teplota_scan`
+- `mqtt_ha_discovery.cpp` publikuje retained konfigurace pro publikační topicy pod `homeassistant/<component>/<object_id>/config` (object ID je `voda_septik_` + normalizovaná celá cesta topicu; ID zařízení je `voda_septik_esp32`).
+- `system/status` je connectivity binary sensor; číselné jednotky a třídy se odvozují z cest. `diag/*` a většina `system/*` jsou diagnostické entity.
+- Průtok již nemá `expire_after=30`: nedostupnost se řídí availability.
+- `diag/teplota_scan` je JSON se seznamem `found`; HA konfigurace zobrazuje jejich počet a JSON atributy. Přímý scan publish nyní nevytváří odpovídající individuální availability, přestože ji discovery nastavuje; samotné přijetí reportu proto nezaručuje dostupnou HA entitu.
+- Debug není součástí centrálního registru. Aktivní větve jsou `debug/prutok`, `debug/teplota`, `debug/tlak`, `debug/tlak_cfg`, `debug/filtr`, `debug/zasoba` a `debug/cfg/zasoba`. Zprávy obsahují zdrojový soubor, řádek a funkci a mají buffer 192 B.
+- Při změně názvů topiců řeš i staré retained discovery konfigurace na brokeru; nová konfigurace sama neodstraní starou entitu.
 
-## Command topicy
-
-- `cmd/reboot` - reboot zarizeni.
-- `cmd/webapp` - start/stop konfiguracni webapp.
-- `cmd/debug` - start/stop debug rezimu, auto-off po 2 hodinach.
-- `cmd/log/level` - payload `tag=LEVEL`, `tag:LEVEL`, `tag LEVEL`, nebo samotny `LEVEL`.
-- `cmd/ota/start` - payload URL firmware image.
-- `cmd/ota/confirm` - potvrzeni pending OTA image.
-- `cmd/teplota/scan` - zapnuti/vypnuti periodickeho DS18B20 scan reportu.
-
-## Pozor na nesoulady
-
-- `firmware/README.md` misty uvadi starsi/novejsi nazvy, napriklad `stav/zasoba/objem_l` a `stav/tlak/zanesenost_filtru_percent`; aktualni kod ma `stav/zasoba/objem_m3` a `stav/zanesenost_filtru_percent`.
-- Pri zmene topicu zkontroluj i `mqtt_ha_discovery.cpp`, dokumentaci a helper `firmware/tools/zalevaci`.
+Postupy: [provozní README](../firmware/README.md), [logování](../firmware/docs/logging.md), [OTA](../firmware/docs/ota.md).

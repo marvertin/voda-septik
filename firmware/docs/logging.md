@@ -1,155 +1,61 @@
-# Logovani a zmena log levelu pres MQTT
+# Logování a debug MQTT
 
-## Jak to uzivatelsky pouzivat
+Ověřeno proti aktivnímu kódu a `sdkconfig` 12. 10. 2026. Rozlišuj **sériové ESP logy** a **samostatné MQTT debug zprávy**.
 
-### Rychle nastaveni jedne hodnoty
+## Sériové logy
 
-Pro zmenu log levelu konkretniho tagu publikuj command na topic:
+Příkaz `voda/septik/cmd/log/level` volá `esp_log_level_set`. Přijímá `TAG=LEVEL`, `TAG:LEVEL`, `TAG LEVEL`, nebo samotný `LEVEL` pro globální `*`. Úrovně: NONE/0, ERROR/1, WARN/2, INFO/3, DEBUG/4, VERBOSE/5 (také TRACE).
 
-- topic: `voda/septik/cmd/log/level`
-- payload: `TAG=LEVEL`
+Aktuální `sdkconfig` má `CONFIG_LOG_DEFAULT_LEVEL=3`, `CONFIG_LOG_MAXIMUM_LEVEL=3` a dynamické řízení. Výchozí i maximální zahrnutá úroveň je **INFO**. Nastavení DEBUG/VERBOSE přes MQTT samo nevrátí logy vynechané při překladu; pro jejich skutečné zahrnutí je potřeba změnit maximum sestavení a vytvořit nový firmware. Tento dokument konfiguraci nemění.
 
-Pro zmenu defaultni urovne pro vsechny tagy lze poslat i jen samotny `LEVEL`.
+Z `firmware/`:
 
-Priklad:
-
-```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "voda/septik/cmd/log/level" \
-  -m "mqtt_commands=DEBUG"
+```sh
+./tools/zalevaci log --tag mqtt_commands --level INFO
+./tools/zalevaci log --tag tlak --level WARN
+./tools/zalevaci log --tag '*' --level WARN
+./tools/zalevaci tags
 ```
 
-Povolene urovne:
+Platné tagy zahrnují `mqtt_commands`, `mqtt_publisher_task`, `state_manager`, `network_init`, `tlak`, `zasoba`, `ads1115`, `teplota`, `elektromer`, `prutokomer`, `ota_manager`, `webapp_startup`. Používej názvy z kódu; staré příklady `mqtt_cmd` nebo `TLAK` nejsou aktuální tagy.
 
-- `NONE` (0)
-- `ERROR` (1)
-- `WARN` (2)
-- `INFO` (3)
-- `DEBUG` (4)
-- `VERBOSE` (5, lze i `TRACE`)
+Nastavení log levelu je za běhu v RAM a není uložené jako konfigurační položka. MQTT reconnect znovu nenastavuje všechny úrovně; po restartu platí nastavení sestavení. Sériový výstup sleduj pomocí `idf.py -p PORT monitor`.
 
-Lze nastavit i globalni uroven:
+## Debug zprávy přes MQTT
 
-```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "voda/septik/cmd/log/level" \
-  -m "*=WARN"
+```sh
+./tools/zalevaci cmd debug on
+./tools/zalevaci cmd debug off
 ```
 
-Nebo ekvivalentne bez tagu:
+`cmd/debug` řídí `g_debug_enabled`, není to nastavení úrovně ESP logů. Zapnutí obnoví dvouhodinový časovač; po uplynutí nebo restartu je debug vypnutý.
 
-```bash
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" -u "$MQTT_USER" -P "$MQTT_PASS" -q 1 \
-  -t "voda/septik/cmd/log/level" \
-  -m "WARN"
+Zprávy vznikají přes `DEBUG_PUBLISH`, přímo přes MQTT klienta s **QoS 0 a bez retain**, pouze při připojení. Buffer je 192 B a prefix obsahuje zdrojový soubor, řádek a funkci. Kořen je `voda/septik/debug/`.
+
+| Větev | Obsah |
+| --- | --- |
+| `prutok` | průtok, celkový objem a pulsy |
+| `teplota` | výsledek čtení teplotních čidel |
+| `tlak_cfg` | kalibrace a parametry tlaků |
+| `tlak` | RAW hodnoty a zpracování tlakových kanálů |
+| `filtr` | rozdíl tlaků a zanesení |
+| `cfg/zasoba` | kalibrace a parametry hladiny |
+| `zasoba` | RAW, výška a objem v m³ |
+
+Pro odběr použij `mosquitto_sub` s připojením ke svému brokeru a topicem `voda/septik/debug/#`. MQTT heslo je v lokálním souboru helperu, nikoli v tomto dokumentu.
+
+## Kalibrace a diagnostika
+
+Pro tlak používej `tlk_b_ads_r4`, `tlk_b_ads_r20`, `tlk_a_ads_r4`, `tlk_a_ads_r20` a fyzikální meze `tlk_b_p_*` / `tlk_a_p_*`. Výchozí RAW body jsou 6400/32000. Pro hladinu používej `lvl_ads_raw_min/max`, `lvl_h_min/max` a `tank_area_m2`; MQTT objem je `objem_m3`, ne litry.
+
+Samotný ESP log level DEBUG nezapíná debug MQTT. Běžné dlouhodobé chyby a stav zařízení sleduj přes `diag/*`; debug slouží pro podrobnější krátké ověření filtrů a kalibrace.
+
+Retained zprávy na command topicích lze vyčistit pomocí:
+
+```sh
+./tools/zalevaci clear-retained
 ```
 
-### Interaktivni skript
+Firmware je při příjmu ignoruje. Tento příkaz nemaže retained discovery ani měření.
 
-Jednotny helper spustis prikazem:
-
-```bash
-zalevaci
-```
-
-Napoveda a neinteraktivni prikazy:
-
-```bash
-zalevaci --help
-```
-
-V menu je volba `Nastavit log level`.
-
-Skript umi najit tagy ve zdrojacich (`main`, `components`, `managed_components`) a nabidnout je interaktivne.
-
-Priklad pouziti:
-
-```bash
-# 1) spust helper
-zalevaci
-# 2) vyber "Nastavit log level"
-# 3) vyber tag (nebo *) a uroven
-
-# nebo neinteraktivne:
-zalevaci log --tag mqtt_cmd --level DEBUG
-```
-
-Skript si stejne jako ostatni CLI helpery umi nacist heslo ze souboru `~/.voda-septik/mqtt_password`.
-
-### Vycisteni starych retained commandu
-
-Pokud broker drzi stare retained zpravy na `cmd/*`, vycisti je jednim prikazem:
-
-```bash
-zalevaci
-```
-
-V menu vyber `Vycistit retained cmd/*`. Skript posle pro vsechny command topicy retained null zpravu (`-r -n`) a tim je na brokeru smaze.
-
-## Jak to funguje uvnitr
-
-- MQTT topic `cmd/log/level` je registrovany v centralni tabulce topicu (`main/mqtt_topics.h/.cpp`).
-- Subscriber (`main/mqtt_commands.cpp`) payload parsuje jako:
-  - `tag=level`
-  - `tag:level`
-  - `tag level`
-  - `level` (nastavi default `*`)
-- Uroven se mapuje na `esp_log_level_t` a aplikuje pres `esp_log_level_set(tag, level)`.
-- Po kazde uspesne zmene se loguje potvrzeni s tagem a finalni urovni.
-
-### Sjednoceni tagu v projektu
-
-- V hlavnich souborech je pouzivany jednotny styl `static const char *TAG = "..."`.
-- U `main/blikaniled.cpp` uz neni per-loop prepis log levelu; log level je rizeny centralne (default + MQTT command).
-- Ve `state_manager` se defaultni log level inicializuje jen jednou, aby MQTT nastaveni nebylo po reconnectu prepisovano.
-
-## Doporuceni pro provoz
-
-- V beznem provozu nech globalni uroven na `WARN`.
-- Pro kratke ladeni zvys uroven jen na konkretnim tagu (napr. `mqtt_commands=DEBUG`).
-- Po dodiagnostikovani vrat hodnoty zpet na `WARN`, at se nesnizuje vykon a nezahlcuje serial/MQTT vystup.
-
-## Ladeni tlaku (4-20 mA)
-
-Pro ladeni tlakove vetve nastav tag `tlak` na `DEBUG`:
-
-```bash
-zalevaci log --tag tlak --level DEBUG
-```
-
-V debug logu sleduj zejmena:
-
-- `raw` hodnoty pred/za filtrem (stabilita a sum)
-- prepocitany proud `i=... mA` (zda odpovida realnemu senzoru)
-- tlak `p=... bar` pred/za filtrem
-- rozdil `dP=... bar` a odvozenou `clog=...%`
-
-Prakticky postup pri kalibraci:
-
-1. Pri znamem bodu (4 mA / 20 mA) over `raw` a uprav `tlk_raw_4ma`, `tlk_raw_20ma`.
-2. Over mapovani rozsahu cidla pres `tlk_p_min` a `tlk_p_max`.
-3. Podle realneho stavu filtru dolad `tlk_dp_100`, aby procenta zaneseni sedela.
-
-## Ladeni zasoby (hladina -> litry)
-
-Pro ladeni vetve zasoby nastav tag `zasoba` na `DEBUG`:
-
-```bash
-zalevaci log --tag zasoba --level DEBUG
-```
-
-V `DEBUG_PUBLISH` topicu `debug/zasoba` sleduj zejmena:
-
-- `raw` (filtrovana ADC hodnota)
-- `hladina_m` (interne vypoctena vyska hladiny)
-- `objem_l` (finalni hodnota publikovana do `stav/zasoba/objem_l`)
-- `area_m2` (konfiguracni plocha nadrze)
-
-Konfigurace pro prepocet na objem:
-
-- `lvl_raw_min`, `lvl_raw_max`, `lvl_h_min`, `lvl_h_max` (kalibrace vysky)
-- `tank_area_m2` (pudorysna plocha nadrze, default `5.4` pro 2 × 2.7 m)
-
-Pouzity vztah:
-
-- `objem_l = vyska_m * tank_area_m2 * 1000`
+Související: [kalibrace](../README.md), [konfigurace](../../.agents/CONFIG_INDEX.md), [diagnostika](diagnostika.md).

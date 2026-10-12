@@ -1,65 +1,49 @@
 # Diagnostika firmware
 
-Tento dokument popisuje hranici mezi tvrdou chybou firmware, běžnou uživatelskou telemetrií, diagnostikou a explicitním debug režimem.
+Ověřeno proti aktivním zdrojům 12. 10. 2026. Diagnostika rozlišuje chybu platformy, chybu měření, síťový výpadek a explicitně zapnuté ladění.
 
-## Tvrdé chyby `Exxx`
+## Tvrdé chyby
 
-Tvrdá chyba je určena pro stav, ve kterém firmware nemůže bezpečně pokračovat kvůli chybě implementace, rozbité základní platformě nebo zásadnímu konfliktu hardware. Při tvrdé chybě se hlásí unikátní kód `Exxx`; pravidla přidělování jsou v `docs/error-codes.md`.
+`APP_ERROR_CHECK` hlásí unikátní `Exxx`, zavolá handler pro log/TM1637 a následně `ESP_ERROR_CHECK`. Používá se zejména při inicializaci základní platformy, registraci konfigurace, vytváření tasků/front a obsluze watchdogu. Úplná inventura 141 aktivních kódů je v [error-codes.md](error-codes.md).
 
-Mezi tvrdé chyby patří:
+Běžný výpadek Wi-Fi/MQTT není sám o sobě tvrdou chybou. ADS1115, teploty a elektroměr mají vlastní měkkou diagnostiku; nepřítomný LCD deaktivuje zobrazování místo ukončení aplikace. Průtok vyžaduje správný flash oddíl a při jeho inicializační chybě používá tvrdou chybu.
 
-- inicializace NVS, task watchdogu, event loopu, WiFi driveru a základní sítě,
-- registrace konfigurace a MQTT topiců, pokud jde o chybu firmware,
-- vytvoření základních tasků a front,
-- konflikt pinů nebo konfigurace, který nemůže vzniknout běžným provozem.
+Po chybovém resetu aplikace ukazuje rychlou LED sekvenci přibližně 10 s. Watchdog je nastavený na 5 s a `trigger_panic=false`; nepřisuzuj každému watchdog hlášení automatický restart.
 
-Mezi tvrdé chyby nepatří:
+## Měření a nedostupnost
 
-- dočasné nepřipojení WiFi nebo MQTT,
-- neodpovídající senzor,
-- nefunkční displej,
-- chybějící data, pokud lze stav vyjádřit jako nedostupný údaj.
+`state_manager` převádí chybné teploty, hladinu/objem, tlaky a elektrické veličiny na `EMPTY` MQTT události. Publisher tím označí individuální availability jako `offline`, nikoli nulovou hodnotu. Platná hodnota obnoví `online`. Starý retained payload může zůstat na brokeru, HA jej má posuzovat podle dostupnosti.
 
-## Hlavní MQTT a Home Assistant
+- Průtok 0 je platný stav po 3 s bez impulsu. Současná průtoková větev pro neplatné float hodnoty nepoužívá stejnou EMPTY větev jako ostatní měření; jde o známý rozdíl v implementaci.
+- Stav pumpy je `bezi` / `stoji` podle hranice 5 W, při neplatném výkonu `chyba`.
+- `system/status` používá globální MQTT LWT `offline`; HA discovery však u jednotlivých entit aktuálně nespojuje globální LWT s individuální availability. Celkový síťový výpadek a porucha čidla tedy mají různé mechanismy.
+- Fronty uchovávají poslední vzorky ADC pomocí overwrite, aby pomalý konzument nečetl nahromaděné staré vzorky.
 
-Hlavní topicy (`stav/*`, `elektro/*`, `system/*`) nesou údaje, které mají smysl pro uživatele. Nemají obsahovat servisní podrobnosti typu CRC chyba, počet timeoutů nebo interní RAW hodnoty.
+## Provozní diagnostika MQTT
 
-Pokud údaj není k dispozici, publikuje se nedostupnost přes dostupnost dané entity, ne náhradní hodnota s diagnostickým významem. Poslední platná hodnota se nemá používat jako maskování poruchy.
+| Oblast | Topicy pod `voda/septik/` |
+| --- | --- |
+| Verze a paměť | `diag/fw_version`, `diag/git_hash`, `diag/build_timestamp`, `diag/uptime_s`, `diag/heap_free_b`, `diag/heap_min_free_b` |
+| Wi-Fi/MQTT | `diag/wifi_rssi_dbm`, `diag/wifi_reconnect_try`, `diag/wifi_reconnect_success`, `diag/wifi/connects`, `diag/wifi/disconnects`, `diag/mqtt/connects`, `diag/mqtt/disconnects`, `diag/mqtt_reconnects` |
+| NVS | `diag/nvs_errors` |
+| ADS1115 | `diag/ads1115/status`, `diag/ads1115/read_errors`, `diag/ads1115/last_ok_age_s` |
+| Modbus | `diag/modbus/kws/status`, `timeouts`, `crc_errors`, `read_errors`, `last_ok_age_s` pod stejnou větví |
+| Teploty | `diag/teplota/status`, `bus_errors`, `crc_errors`, `read_errors`, `last_ok_age_s` pod stejnou větví |
+| Fronty | `diag/events/sensor_queue_drops`, `diag/mqtt/publish_queue_drops` |
+| ROM scan | `diag/teplota_scan` (JSON, jen při zapnutém scanu) |
 
-`system/reboot_counter` je historický název topicu; obsahuje počet startů firmware podle NVS počítadla. Počítadlo se zvyšuje právě jednou při startu `state_manager`, ne při MQTT reconnectu ani při opakované publikaci boot diagnostiky.
+Status měřicích modulů je `ok` / `chyba`. Čítače a stáří posledního měření pocházejí ze snapshotů modulů. Diagnostika se publikuje při síťových událostech/telemetrii; telemetrie je plánovaná nejvýše po 10 s nebo při změně stavu. Opakované senzorické warningy jsou omezené přibližně na jeden log za 60 s.
 
-## DIAG topicy
+`diag/last_mqtt_rc` je v registru, ale runtime proměnná není aktualizovaná a zůstává 0. `diag/esp_vcc_mv` v aktuálním registru není.
 
-`diag/*` je určeno pro řešení problémů s částmi systému: WiFi/MQTT, pamětí, NVS, I2C, ADS1115, 1-Wire teplotami, Modbus elektroměrem a podobně.
+## Boot metadata
 
-DIAG nesmí zahlcovat broker ani log, ani když je část hardware odpojená. Preferovaný tvar je periodicky publikovaný stav, čítač chyb a stáří posledního platného měření. DIAG nemá přenášet každý jednotlivý chybný pokus.
+`system/reboot_counter` je počet startů (nikoli reconnectů), uložený jako `sys_meta/boot_count_v2`. Zvyšuje se jednou při startu `state_manager`. `system/reboot_reason` je číselný `esp_reset_reason_t`; `system/boot_mode` rozlišuje pending OTA (`ota`) a běžný obraz (`normal`).
 
-Příklady vhodných DIAG údajů:
+`restart_info.cpp` vrací chyby NVS volajícímu; `state_manager` loguje chybu a zvyšuje `diag/nvs_errors`, nikoli automaticky shazuje firmware. Pokud systémový čas není platný, čas restartu se ukládá jako 0. Aktivní zdroje neobsahují vlastní SNTP inicializaci.
 
-- `diag/ads1115/status`, `diag/ads1115/read_errors`, `diag/ads1115/last_ok_age_s`,
-- `diag/wifi/connects`, `diag/wifi/disconnects`, `diag/mqtt/connects`, `diag/mqtt/disconnects`,
-- `diag/modbus/kws/status`, `diag/modbus/kws/timeouts`, `diag/modbus/kws/crc_errors`, `diag/modbus/kws/read_errors`, `diag/modbus/kws/last_ok_age_s`,
-- `diag/teplota/status`, `diag/teplota/bus_errors`, `diag/teplota/crc_errors`, `diag/teplota/read_errors`, `diag/teplota/last_ok_age_s`,
-- `diag/events/sensor_queue_drops`, `diag/mqtt/publish_queue_drops`.
+## Debug
 
-## DEBUG režim
+Explicitní `cmd/debug=on` zapíná podrobnou větev `debug/*` a automaticky se vypne po dvou hodinách. RAW hodnoty, kalibrace a filtry patří sem; dlouhodobé čítače chyb patří do `diag/*`. Sériové log levely se nastavují samostatně a jejich maximum sestavení je nyní INFO.
 
-DEBUG je explicitně zapínaný režim pro ladění detailů, zejména filtrů, hystereze, kalibrací a RAW hodnot. V tomto režimu je přijatelné vyšší množství dat.
-
-Debug výstupy patří do `debug/*` a mají být vypnuté v běžném provozu. Provozní diagnostika, která je potřeba dlouhodobě, patří do `diag/*`, ne do `debug/*`.
-
-## Aktuální audit
-
-Současný návrh hlavních topiců odpovídá pravidlům: běžné hodnoty jdou do `stav/*` a `elektro/*`, chybějící měření se ve `state_manager` posílá jako nedostupná entita.
-
-Tvrdé chyby jsou většinou použité správně: WiFi inicializace je fatalní, výpadek připojení nikoliv; ADS1115 se při chybě zařízení chová jako nedostupný zdroj dat; displeje neukončují firmware.
-
-Aktuální stav doplnění:
-
-- `elektromer.cpp`: chyby Modbus elektroměru jsou agregované do `diag/modbus/kws/*` a logované rate-limitovaně.
-- `teplota.cpp`: chyby DS18B20 jsou agregované do `diag/teplota/*` a logované rate-limitovaně.
-- `ads1115.cpp`: stav ADC a chyby čtení jsou dostupné v `diag/ads1115/*`; RAW/filtrační detaily zůstávají v DEBUG.
-- Fronty mají základní počítadla zahozených zpráv v `diag/events/sensor_queue_drops` a `diag/mqtt/publish_queue_drops`.
-- `diag/esp_vcc_mv` byl odstraněn, protože firmware neměl spolehlivý zdroj této hodnoty.
-
-Zbývající známá drobnost mimo senzorickou diagnostiku: v `restart_info.cpp` by chyba zápisu restart metadat do NVS nemusela shodit firmware; stačilo by zvýšit `diag/nvs_errors`.
+Další informace: [logování](logging.md), [MQTT registr](../../.agents/MQTT_INDEX.md), [konfigurace](../../.agents/CONFIG_INDEX.md).

@@ -1,79 +1,104 @@
-# Project Index
+# Mapa projektu
 
-Tento index je orientacni mapa repozitare pro rychle navazani prace.
+Ověřeno proti aktivním zdrojům 12. 10. 2026. Repo obsahuje monitoring vody v nádrži (bývalý septik), čerpání, tlaků před/za filtrem, teplot a elektrických veličin čerpadla. Název helperu `zalevaci` ani položka `auto_mode` nedokládají implementované řízení závlahy: aktuální aktivní firmware měří, publikuje a odvozuje stav pumpy z výkonu; GPIO pro její spínání není v `pins.h`.
 
-## Koren
+## Dokumentace a zdroje pravdy
 
-- `README.md` - obnova projektu, instalace prostredi, sestaveni a zaloha provoznich dat.
+- [Kořenové README](../README.md): instalace a obnova.
+- [Provozní README](../firmware/README.md): kalibrace a obsluha.
+- [Hardware README](../hardware/README.md): knihovny a propojení periferií.
+- [Konfigurace](CONFIG_INDEX.md): 32 položek v 7 sekcích.
+- [MQTT](MQTT_INDEX.md): 66 topiců, availability a discovery.
+- [Diagnostika](../firmware/docs/diagnostika.md), [logování](../firmware/docs/logging.md), [OTA](../firmware/docs/ota.md), [kódy chyb](../firmware/docs/error-codes.md).
 
-- `firmware/` - ESP-IDF firmware pro zarizeni voda/septik.
-- `hardware/` - KiCad projekt `Voda septik`, schemata, PCB, vlastni footprinty a symboly.
-- `.github/workflows/build.yml` - CI build firmware pri zmenach ve `firmware/**`, ESP-IDF `v5.5.2`, target `esp32`.
-- `.gitignore` - aktualne ignoruje pouze `.DS_Store`.
+Zdrojem pravdy je kód a explicitní CMake seznam zdrojů. Dokumentaci externích komponent v `managed_components/` udržuje jejich dodavatel.
 
-## Firmware build
+## Sestavení a prostředí
 
-- `firmware/CMakeLists.txt` - ESP-IDF project wrapper, `project(voda-septik)`.
-- `firmware/main/CMakeLists.txt` - registruje aplikační zdroje a zavislosti.
-- `firmware/sdkconfig.defaults` - zapina rollback OTA a podporu BOYA flash.
-- `firmware/partitions.csv` - partition table.
-- `firmware/dependencies.lock` - lock managed komponent.
+- `firmware/CMakeLists.txt`: projekt `voda-septik`, CMake minimálně 3.22; načítá IDF přes `IDF_PATH`.
+- `firmware/main/CMakeLists.txt`: aktivní aplikační zdroje, včetně C bridge `voda-septik.c`.
+- ESP-IDF v5.5.2, target `esp32`, flash 4 MB. CI má stejnou verzi a publikuje firmware, bootloader a partition table.
+- `sdkconfig` je verzovaný; `sdkconfig.defaults` přidává rollback OTA a podporu BOYA flash. `partitions.csv` má dva OTA sloty po 0x180000 B, NVS a čtyři vlastní datové oddíly.
+- Sedm registry komponent je uložených v `managed_components` spolu s lock souborem: ads111x 1.1.14, esp_idf_lib_helpers 1.4.0, hd44780 1.3.0, i2cdev 2.1.1, onewire 1.1.0, pcf8574 1.0.10, tm1637 1.0.1.
+- Projektový `.envrc` načítá `~/.espressif/v5.5.2/esp-idf/export.sh` a přidává `tools/` do PATH. Je volitelný a určený pro macOS/Linux.
+- Běžný `build/` je ignorovaný. `.vscode/settings.json` je lokální; firmware lze sestavit bez něj.
 
-## Firmware dokumentace
+## Start aplikace
 
-- `firmware/README.md` - provozni dokumentace, MQTT strom, kalibrace tlaku a zasoby, helper `zalevaci`.
-- `firmware/docs/ota.md` - OTA tok pres MQTT command a HTTP download.
-- `firmware/docs/logging.md` - zmena log levelu pres MQTT a debug doporuceni.
-- `firmware/docs/diagnostika.md` - hranice mezi stavem, diag, debug a tvrdou chybou.
-- `firmware/docs/error-codes.md` - pravidla a rozsahy `Exxx` kodu.
+`app_main` v C bridge volá `cpp_app_main`:
 
-## Aplikacni entrypoint
+1. Spustí BOOT task, indikaci případného chybového resetu a status displej; vypíše oddíly.
+2. Inicializuje NVS a watchdog (5 s, oba idle core, `trigger_panic=false`). U NVS bez volných stránek nebo s jinou verzí může provést erase NVS.
+3. Vytvoří aplikační frontu 32 událostí a síťový bridge.
+4. Připraví NVS `app_cfg`, sedm sekcí konfigurace a konfigurační web.
+5. Načte Wi-Fi/MQTT nastavení a spustí síť s LWT. `MQTT_BENCH_MODE=false` znamená normální provoz; testovací broker není používán.
+6. Spustí MQTT publisher (fronta 32), command handler a LCD.
+7. Spustí `state_manager`, průtok, ADS1115, hladinu, tlaky, elektroměr a teploty.
 
-- `firmware/main/voda-septik.cpp`
-  - startuje BOOT tlacitko, chybovou LED sekvenci po error resetu, TM1637 status display,
-  - inicializuje NVS a task watchdog,
-  - registruje konfiguracni sekce `Sit`, `System`, `Teplota`, `Zasoba`, `Tlak`, `Elektromer`, `Prutokomer`,
-  - startuje Wi-Fi/MQTT, LWT, MQTT publish task, MQTT command subscriber,
-  - startuje LCD, `state_manager`, ADS1115 a senzoricke tasky.
-- `firmware/main/voda-septik.c` - C bridge na C++ `cpp_app_main`.
+## Tok dat
 
-## Hlavni runtime moduly
+```text
+ADS1115 → poslední vzorky ve dvou jednoprvkových frontách → tlak / zásoba ┐
+GPIO ISR → průtok                                                    │
+1-Wire → teploty                                                      ├→ sensor_events → state_manager → LCD / TM1637
+UART2 / RS485 → elektroměr                                            │                            └→ MQTT publisher → broker
+network_core → network_event_bridge → síťové změny / telemetrie        ┘
+MQTT příkazy → mqtt_commands → web / debug / logování / OTA / scan
+```
 
-- `state_manager.*` - centralni konzument `sensor_events`, publikuje MQTT stav/diag, ridi dostupnost entit a status indikatory.
-- `sensor_events.*` - FreeRTOS fronta aplikacnich udalosti ze senzoru do state manageru.
-- `mqtt_topics.*` - centralni registry MQTT topicu, smeru, typu payloadu, QoS a retain.
-- `mqtt_publisher_task.*` - fronta publikace, cache poslednich hodnot, periodicky refresh, availability topicy.
-- `mqtt_commands.*` - subscriber pro command topicy: reboot, webapp, debug, log level, OTA, DS18B20 scan.
-- `mqtt_ha_discovery.*` - generovani Home Assistant MQTT discovery konfiguraci z registru topicu.
-- `network_event_bridge.*` - prevod udalosti z `network_core` do stavu aplikace.
-- `debug_mqtt.*` - debug publikace pod `debug/*`, rizena globalnim `g_debug_enabled`.
-- `ota_manager.*` - OTA download, progress/event publikace a potvrzeni pending image.
+Události jsou `EVT_SENSOR`, `EVT_NETWORK_STATE_CHANGE`, `EVT_NETWORK_TELEMETRY`, `EVT_TICK` (poslední je definovaný, ale aktivní kód nemá producenta). Nepoužívej historický název `EVT_NETWORK`.
 
-## Senzory a periferie
+## Aplikační moduly (`firmware/main/`)
 
-- `ads1115.*` - sdileny ADC zdroj pro tlak a hladinu, vystavuje overwrite fronty pro posledni sample.
-- `tlak.*` - tlak pred/za filtrem, EMA/hystereze, vypocet rozdilu a zanesenosti filtru.
-- `zasoba.*` - hladina a prepocet na objem nadrze.
-- `teplota.*` - DS18B20 voda/vzduch, scan report, diag chyb.
-- `prutokomer.*` - pulzni prutokomer, aktualni prutok a celkove cerpano.
-- `elektromer.*` - KWS-303L pres Modbus/RS485, elektricke hodnoty cerpadla.
-- `lcd.*` - HD44780 LCD pres I2C.
-- `status_display.*` - TM1637 stavovy displej a indikace poruch.
-- `boot_button.*` - dlouhy stisk GPIO0 pro konfiguracni AP/webapp.
-- `pins.h` - mapa GPIO pinu.
+| Modul | Zodpovědnost a důležité vazby |
+| --- | --- |
+| `ads1115.*` | Jediný vlastník ADC: I2C0, 0x48, PGA ±2,048 V, ALERT/RDY. AIN1 tlak za, AIN2 tlak před, AIN3 hladina. Tlaky 250 ms / 128 SPS, hladina 2 s / 16 SPS. Fronty posledních vzorků používají overwrite. |
+| `tlak.*` | RAW → bar, TrimmedMean<7,1>, EMA, hystereze, zaokrouhlení; rozdíl tlaků a zanesení v %. Chybný kanál reprezentuje NaN. |
+| `zasoba.*` | RAW → výška → objem v m³, TrimmedMean<5,1>, EMA a směrová hystereze (`directional_hysteresis.hpp`). Výchozí plocha 5,4 m². |
+| `prutokomer.*` | GPIO33 ISR a kruhová historie 128 časů impulsů, odhad průtoku v okně cca 1,5 s, vyhodnocení 200 ms, nula po 3 s bez impulsu. Výchozí 38 impulsů/l. Celkový objem přetrvává po celých litrech. |
+| `flash_monotonic_counter.*` | Zápisy bitů do `flow_data0`, základ a marker rolloveru v NVS `flash_ctr`; obnovuje rozpracovaný rollover. Zálohuj data i příslušné NVS společně. |
+| `teplota.*` | DS18B20 přes onewire, čtení scratchpadu a CRC přímo v modulu. Konverze 800 ms + prodleva 1000 ms; čtení tedy není přesná perioda 1 s. Discovery cca 30 s, zapnutý scan report cca 5 s. Dvě ROM adresy z konfigurace. |
+| `elektromer.*` | KWS-303L přes Modbus RTU, UART2 9600 8N1 / MAX3485, funkce 0x03; prodleva cyklu 5 s, timeout čtení 200 ms. Devět elektrických veličin, CRC a čítače chyb. |
+| `sensor_events.*` | Typované senzorické a síťové události, fronta a čítač zahozených publish událostí. |
+| `network_event_bridge.*` | Převádí callback `network_event_t` na dvě události. Telemetrie nejvýše každých 10 s nebo při změně síťové úrovně. |
+| `state_manager.*` | Konzumuje události, převádí jednotky elektroměru, aktualizuje displeje, boot metadata, diagnostiku a MQTT dostupnost. Pumpa `bezi` od 5 W, jinak `stoji`, při neplatném výkonu `chyba`. |
+| `mqtt_topics.*` | Centrální registr cest, směru, payloadu, QoS a retain. |
+| `mqtt_publisher_task.*` | Fronta, poslední hodnoty, potlačení shodných zpráv, obnovovací publikace při nové události po 60 s, flush po reconnectu. |
+| `mqtt_commands.*` | Registrace subscriberu a dispatch sedmi příkazů; ignoruje retained commandy, časově omezuje debug na 2 hodiny. |
+| `mqtt_ha_discovery.*` | Retained HA konfigurace všech publikačních topiců, názvy, jednotky, individuální availability. |
+| `debug_mqtt.*` | Přímá QoS 0 publikace do `debug/*`, mimo publisher cache, řízená `g_debug_enabled`. |
+| `ota_manager.*` | HTTP klient a sekvenční zápis do druhého OTA slotu; reboot a ruční potvrzení pending image. |
+| `network_config.*`, `system_config.*` | Definice a registrace konfigurace; síťové výchozí údaje nezveřejňuj. |
+| `restart_info.*` | NVS `sys_meta`, počet startů a důvod resetu; chyby vrací volajícímu bez `APP_ERROR_CHECK`. Nesynchronizovaný čas se ukládá jako 0. |
+| `webapp_startup.*` | HTTP web na portu 80, AP / MQTT zapnutí, návrat po restartu z uložení konfigurace, auto-stop 2 hodiny. |
+| `boot_button.*` | Běžný stisk GPIO0, debounce 40 ms. Aplikační callback přepne do AP jednou za běh. |
+| `lcd.*` | HD44780 / PCF8574 0x27, samostatné I2C1, fronta 8; nepřítomný LCD pouze deaktivuje výstup. |
+| `status_display.*` | TM1637 a LED: síť, aktivita MQTT, točící indikace průtoku, segmenty chyb senzorů a hlášení `Exxx`. |
+| `trimmed_mean.hpp`, `directional_hysteresis.hpp` | Pomocné filtry pro měření; parametry neurčují registr konfigurace samy o sobě. |
 
-## Vlastni komponenty
+## Vlastní komponenty
 
-- `components/config_store` - registry konfiguracnich polozek, NVS read/write API.
-- `components/config_webapp` - jednoducha HTTP konfiguracni webapp nad `config_store`.
-- `components/network_core` - reusable Wi-Fi/MQTT lifecycle a `mqtt_publish`.
-- `components/error_check` - `APP_ERROR_CHECK` wrapper pro tvrdou chybu s kodem.
-- `components/tm1637_startup_animation` - TM1637 startovni animace.
+- `config_store`: typový registr, sekce, limity a NVS.
+- `config_webapp`: HTML formulář, typová validace, uložení a restart; captive portal URL.
+- `network_core`: Wi-Fi STA/AP, reconnect 1–60 s, MQTT lifecycle/LWT, callback a základní publish wrapper. Aplikační logika je mimo komponentu.
+- `error_check`: společný fatalní wrapper a možnost registrovat handler pro zobrazení kódu.
+- `tm1637_startup_animation`: knihovní animace; provázání volajícího ověřuj ve `status_display.cpp`.
 
-## Hardware
+## Hardware a provozní pomocníci
 
-- `hardware/Voda septik.kicad_pro` - KiCad projekt.
-- `hardware/Voda septik.kicad_sch` - schema.
-- `hardware/Voda septik.kicad_pcb` - PCB.
-- `hardware/martin.pretty/` a `hardware/zaciname.pretty/` - vlastni footprinty.
-- `hardware/martin.kicad_sym`, `hardware/0martin.kicad_sym` - vlastni symboly.
+KiCad schéma i PCB jsou v `hardware/`; mapu GPIO a knihoven shrnuje [hardware/README.md](../hardware/README.md). Schéma není náhradou za `pins.h` při posuzování aktivního firmware.
+
+`firmware/tools/zalevaci` má interaktivní menu i subcommandy `cmd`, `log`, `clear-retained`, `tags`, `ota`. Podporuje běžný i bench broker; jeho `--bench` nepřepíná firmware, pouze cíl CLI. Heslo je mimo Git.
+
+`firmware/ha/docker-compose.yml` je volitelná konfigurace Mosquitto a Home Assistantu. Provozní data a uživatelská `.storage` jsou mimo Git; pohyblivé image tagy nepřipínají totožnou verzi.
+
+## Známé hranice současného stavu
+
+- `interval_s`, `auto_mode`, `tepl_max` nejsou čtené pro řízení aktivního runtime.
+- Sériové logy jsou v `sdkconfig` omezené na INFO; MQTT debug je samostatný.
+- `diag/last_mqtt_rc` zůstává 0, protože jeho runtime proměnná není aktualizovaná.
+- HA discovery používá individuální availability bez kombinace s globálním LWT. NaN průtoku nemá stejnou EMPTY větev jako teplota/tlak/hladina/elektroměr.
+- Manifest `main/idf_component.yml` stále deklaruje široké `idf >=4.1.0`, ale ověřené sestavení a CI jsou pouze na 5.5.2; tuto deklaraci neber jako ověřenou podporu IDF 4.1.
+- Přímý DS18B20 scan publish neaktualizuje individuální availability použitou v jeho HA discovery.
+- Knihovna KiCad `PCM_Espressif` není uložená ani verzově připnutá v projektu; její tabulka footprintů nemusí být globálně připojená.
+- Statická kontrola zdrojů a předchozí čisté sestavení nejsou ověřením skutečného chování periferií na zařízení.

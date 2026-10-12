@@ -13,14 +13,14 @@ Repozitář obsahuje ESP-IDF firmware a KiCad návrh hardware. Provozní dokumen
 - `firmware/partitions.csv` – rozdělení 4MB flash paměti.
 - `firmware/tools/zalevaci` – nástroj pro MQTT příkazy, diagnostiku a OTA.
 - `firmware/ha/` – konfigurace Home Assistantu a Mosquitto pro Docker Compose.
-- `hardware/` – KiCad projekt, schéma, PCB a vlastní knihovny.
+- `hardware/` – KiCad projekt, schéma, PCB a vlastní knihovny; mapa v [hardware/README.md](hardware/README.md).
 - `AGENTS.md` a `.agents/` – pracovní instrukce a mapy projektu.
 
 ## Verze a větve
 
 - Firmware: **ESP-IDF v5.5.2**, target **esp32**. Stejnou verzi používá automatické sestavení v `.github/workflows/build.yml`.
 - Hardware byl upravován v **KiCadu 9**.
-- `main` je provozní větev; `develop` slouží pro vývoj. Obsah větví nemusí být stejný. Aktuální rozdíl ověří `git diff develop main` po načtení vzdálených změn.
+- `main` je provozní větev; `develop` slouží pro vývoj. K 12. 10. 2026 jsou srovnané a aktivní vývoj neprobíhá. Dokumentační změny se podle zadání ukládají na **obě větve**; pokud jsou srovnané, používá se tentýž commit přes fast-forward. Před prací ověř `git fetch origin`, `git branch -vv` a `git diff develop main`. Pozdější odlišné runtime změny nepřenášej do provozu jen kvůli dokumentaci.
 
 Obnovu začni z `main`, pokud nepotřebuješ konkrétní vývojovou verzi. IDF ani verze knihoven se při obnově automaticky neaktualizují na novější řadu.
 
@@ -99,7 +99,7 @@ Broker a přihlašování lze nastavit parametry nástroje nebo proměnnými pro
 
 MQTT heslo si nástroj ukládá do `~/.voda-septik/mqtt_password`. Tento soubor **není v repozitáři**: heslo uchovej ve správci hesel nebo bezpečné záloze. Nástroj si při prvním použití vyžádá chybějící heslo. Heslo nezapisuj do README ani jej nepřidávej do Gitu.
 
-OTA používá MQTT příkazy a HTTP(S) stažení obrazu. Nový firmware po ověření funkčnosti vyžaduje potvrzení kvůli rollbacku. Aktuální rozhraní helperu popisuje `./tools/zalevaci ota --help`; protokol popisuje [firmware/docs/ota.md](firmware/docs/ota.md). Odkaz na `tools/ota_flow_cli.sh` v této starší dokumentaci je historický; tento skript již v repozitáři není.
+OTA používá MQTT příkazy a HTTP(S) stažení obrazu. Nový firmware po ověření funkčnosti vyžaduje potvrzení kvůli rollbacku. Aktuální rozhraní helperu popisuje `./tools/zalevaci ota --help`; interaktivní i neinteraktivní postup a rollback popisuje [firmware/docs/ota.md](firmware/docs/ota.md).
 
 ## Obnova hardware v KiCadu
 
