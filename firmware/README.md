@@ -10,6 +10,7 @@ Dokumentace ověřena proti kódu 12. 10. 2026. Instalaci ESP-IDF a obnovu z Git
 - [Konfigurační položky, výchozí hodnoty a meze](../.agents/CONFIG_INDEX.md)
 - [Úplný MQTT registr](../.agents/MQTT_INDEX.md)
 - [Hardware, piny a knihovny](../hardware/README.md)
+- [Vývoj, nasazování a verzování](docs/vyvoj-a-nasazeni.md)
 - [OTA](docs/ota.md), [logování](docs/logging.md), [diagnostika](docs/diagnostika.md), [chybové kódy](docs/error-codes.md)
 
 ## Sestavení

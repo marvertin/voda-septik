@@ -24,14 +24,19 @@ Pracovní instrukce pro repozitář `voda-septik`. Stav dokumentace ověřen pro
 - U čisté dokumentace ověř lokální odkazy, skutečné API, klíče, jednotky a příkazy proti zdrojům. Nové sestavení není nutné, pokud se kód ani konfigurace nezměnily.
 - Necommituj build výstupy, `.DS_Store`, lokální flash/monitor logy ani provozní hesla.
 
-## Větve a dokumentační commity
+## Vývoj, větve, nasazení a verze
 
-Uživatel požaduje dokumentační změny na **obou větvích `main` a `develop`**. V době tohoto průchodu jsou srovnané a aktivní vývoj neprobíhá.
+Závazný postup je v [firmware/docs/vyvoj-a-nasazeni.md](firmware/docs/vyvoj-a-nasazeni.md).
 
-- Před prací zkontroluj pracovní strom a načti stav vzdálených větví.
-- Jsou-li větve srovnané, vytvoř jeden dokumentační commit a posuň obě větve na stejný commit pomocí fast-forward; odešli obě na GitHub.
-- Pokud se později rozejdou, nepřenášej tímto postupem automaticky runtime změny do `main`. Dokumentaci aplikuj s ohledem na skutečný obsah každé větve.
-- Na konci ověř stav obou vzdálených větví a vypiš commit.
+- Novou funkcionalitu vyvíjej na **develop**. Podle změny nasazuj lokálně přes USB nebo vzdáleně přes **OTA** a otestuj ji.
+- Po úspěšném testu a potvrzení OTA posuň **main na konkrétní commit skutečně běžící v provozu**, nikoli automaticky na nejnovější netestovaný develop. U USB musí být obdobně ověřené nasazení a provoz.
+- Opravu provozního problému dělej na **main**, aktualizuj patch verzi a **ihned ji nasaď**, otestuj a při OTA potvrď. Potom ji přenes do develop. Selhané/čekající nasazení nezapisuj jako dokončené.
+- Čistou dokumentaci commituj na **obou větvích**; jsou-li srovnané, tentýž commit přes fast-forward. Při rozdílném runtime obsahu přenes pouze dokumentaci. Samotná dokumentace nezvyšuje release verzi a nenasazuje firmware.
+- Před prací načti vzdálené větve/tagy a ověř pracovní strom; nepoužívej force-push jako náhradu za sladění historie.
+- Verze aplikace nyní pochází z `git describe --always --tags --dirty`. Nové release tagy mají formát `vMAJOR.MINOR.PATCH`: patch opravy, minor kompatibilní funkce, major nekompatibilní změny. Verzový tag připrav na čistém commitu před finálním buildem; již zveřejněné tagy neposouvej.
+- Eviduj úplné SHA commitu, tag/popisek, SHA-256 binárního obrazu a potvrzení/test nasazení. Nepovažuj `diag/git_hash` za skutečné SHA: aktuálně vrací prefix verze před první pomlčkou.
+- Změna IDF není zvýšení aplikační verze. Nevytvářej novou release verzi jen kvůli těmto instrukcím.
+- Dokumentační HEAD main může být před posledním nasazeným obrazem; přesný provozovaný commit určuje evidence/tag. Odeslání MQTT commandu nebo úspěšné CI není důkazem potvrzeného OTA.
 
 ## Rychlá kontrola
 

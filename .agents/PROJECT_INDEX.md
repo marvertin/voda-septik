@@ -9,6 +9,7 @@ Ověřeno proti aktivním zdrojům 12. 10. 2026. Repo obsahuje monitoring vody v
 - [Hardware README](../hardware/README.md): knihovny a propojení periferií.
 - [Konfigurace](CONFIG_INDEX.md): 32 položek v 7 sekcích.
 - [MQTT](MQTT_INDEX.md): 66 topiců, availability a discovery.
+- [Pravidla větví, nasazení a verzování](../firmware/docs/vyvoj-a-nasazeni.md).
 - [Diagnostika](../firmware/docs/diagnostika.md), [logování](../firmware/docs/logging.md), [OTA](../firmware/docs/ota.md), [kódy chyb](../firmware/docs/error-codes.md).
 
 Zdrojem pravdy je kód a explicitní CMake seznam zdrojů. Dokumentaci externích komponent v `managed_components/` udržuje jejich dodavatel.

@@ -112,3 +112,7 @@ Všechny příkazy jsou `SUBSCRIBE_ONLY`, QoS 1, bez retain. Firmware přijaté 
 - Při změně názvů topiců řeš i staré retained discovery konfigurace na brokeru; nová konfigurace sama neodstraní starou entitu.
 
 Postupy: [provozní README](../firmware/README.md), [logování](../firmware/docs/logging.md), [OTA](../firmware/docs/ota.md).
+
+## Identifikace verze a nasazení
+
+`diag/fw_version` pochází z `esp_app_desc_t.version`, nyní odvozené z Git tagů. `diag/git_hash` však aktuálně publikuje pouze prefix této verze před první pomlčkou a u tagovaných buildů není hash. Pro určení provozovaného commitu používej úplnou verzi a evidenci nasazení; postup je v [pravidlech vývoje a nasazení](../firmware/docs/vyvoj-a-nasazeni.md).

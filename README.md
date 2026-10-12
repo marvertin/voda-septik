@@ -20,7 +20,7 @@ Repozitář obsahuje ESP-IDF firmware a KiCad návrh hardware. Provozní dokumen
 
 - Firmware: **ESP-IDF v5.5.2**, target **esp32**. Stejnou verzi používá automatické sestavení v `.github/workflows/build.yml`.
 - Hardware byl upravován v **KiCadu 9**.
-- `main` je provozní větev; `develop` slouží pro vývoj. K 12. 10. 2026 jsou srovnané a aktivní vývoj neprobíhá. Dokumentační změny se podle zadání ukládají na **obě větve**; pokud jsou srovnané, používá se tentýž commit přes fast-forward. Před prací ověř `git fetch origin`, `git branch -vv` a `git diff develop main`. Pozdější odlišné runtime změny nepřenášej do provozu jen kvůli dokumentaci.
+- Nová funkcionalita vzniká na `develop`, nasazuje se přes USB/OTA a testuje. Po potvrzení OTA se `main` posune na skutečně provozovaný commit. Provozní opravy vznikají na `main` a ihned se nasazují; následně se přenesou do develop. Čistá dokumentace patří na obě větve bez zvýšení release verze. Úplný postup a mechanismus Git verzí jsou v [pravidlech vývoje a nasazení](firmware/docs/vyvoj-a-nasazeni.md).
 
 Obnovu začni z `main`, pokud nepotřebuješ konkrétní vývojovou verzi. IDF ani verze knihoven se při obnově automaticky neaktualizují na novější řadu.
 

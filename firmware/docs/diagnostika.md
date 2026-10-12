@@ -47,3 +47,7 @@ Status měřicích modulů je `ok` / `chyba`. Čítače a stáří posledního m
 Explicitní `cmd/debug=on` zapíná podrobnou větev `debug/*` a automaticky se vypne po dvou hodinách. RAW hodnoty, kalibrace a filtry patří sem; dlouhodobé čítače chyb patří do `diag/*`. Sériové log levely se nastavují samostatně a jejich maximum sestavení je nyní INFO.
 
 Další informace: [logování](logging.md), [MQTT registr](../../.agents/MQTT_INDEX.md), [konfigurace](../../.agents/CONFIG_INDEX.md).
+
+## Identifikace verze a nasazení
+
+`diag/fw_version` pochází z `esp_app_desc_t.version`, nyní odvozené z Git tagů. `diag/git_hash` však aktuálně publikuje pouze prefix této verze před první pomlčkou a u tagovaných buildů není hash. Pro určení provozovaného commitu používej úplnou verzi a evidenci nasazení; postup je v [pravidlech vývoje a nasazení](vyvoj-a-nasazeni.md).
