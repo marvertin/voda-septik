@@ -25,7 +25,7 @@ Ověřeno proti aktivním zdrojům 12. 10. 2026. `APP_ERROR_CHECK` při neúspě
 
 ## Aktuální inventura
 
-V aktivních modulech je **141 unikátních kódů**. Cesty jsou relativní ke `firmware/`.
+V aktivních modulech je **142 unikátních kódů**. Cesty jsou relativní ke `firmware/`.
 
 | Soubor | Použité kódy |
 | --- | --- |
@@ -42,7 +42,7 @@ V aktivních modulech je **141 unikátních kódů**. Cesty jsou relativní ke `
 | `main/teplota.cpp` | `E771`, `E772`, `E773`, `E774`, `E775`, `E776`, `E777` |
 | `main/tlak.cpp` | `E723`, `E724`, `E725`, `E726`, `E727`, `E728`, `E729`, `E730`, `E731`, `E732`, `E733`, `E734`, `E735`, `E737`, `E738`, `E739`, `E740` |
 | `main/voda-septik.cpp` | `E101`, `E102`, `E103`, `E104`, `E105`, `E106`, `E107`, `E108`, `E109`, `E110`, `E111`, `E112`, `E113`, `E114`, `E116`, `E117`, `E118`, `E119`, `E120` |
-| `main/zasoba.cpp` | `E756`, `E757`, `E758`, `E759`, `E760`, `E761`, `E762`, `E763`, `E764`, `E765`, `E766`, `E767`, `E768` |
+| `main/zasoba.cpp` | `E756`, `E757`, `E758`, `E759`, `E760`, `E761`, `E762`, `E763`, `E764`, `E765`, `E766`, `E767`, `E768`, `E769` |
 
 `restart_info.cpp` nyní vrací chyby volajícímu; `state_manager` je loguje a zvyšuje `diag/nvs_errors`. Původní tvrzení o fatalním zápisu restart metadat již neplatí.
 

@@ -63,6 +63,7 @@ Výstupy: `stav/tlak/pred_filtrem_bar`, `stav/tlak/za_filtrem_bar`, `stav/tlak/r
 | `lvl_h_min` | 0 m | výška v minimu |
 | `lvl_h_max` | 1,9 m | výška v maximu |
 | `tank_area_m2` | 5,4 m² | plocha nádrže |
+| `lvl_unpump_cm` | 10 cm | minimální hladina pro čerpání ode dna (0–500 cm) |
 | `lvl_ema_alpha` | 0,25 | EMA |
 | `lvl_hyst_m` | 0,002 m | směrová hystereze |
 | `lvl_round_dec` | 2 | desetinná místa objemu |
@@ -70,9 +71,11 @@ Výstupy: `stav/tlak/pred_filtrem_bar`, `stav/tlak/za_filtrem_bar`, `stav/tlak/r
 RAW se lineárně převede na výšku, filtruje a převádí vztahy:
 
 ```text
-objem_m3 = výška_m × tank_area_m2
+objem_m3 = max(0, výška_m − lvl_unpump_cm / 100) × tank_area_m2
 objem_l  = objem_m3 × 1000    (pouze případný přepočet mimo MQTT registr)
 ```
+
+Objem udává využitelnou zásobu. Publikovaná i zobrazovaná výška zůstává skutečná, bez odečtu. Parametr nastav ve webu v sekci Zásoba; ukládá se do NVS a použije se po restartu.
 
 Nejprve zkalibruj výšku, potom nastav skutečnou plochu a ověř výsledný objem. ADC kanál hladiny se čte po 2 s. Aktuální MQTT výstupy jsou **`stav/zasoba/objem_m3` [m³]** a `stav/zasoba/hladina_m` [m]; topic `objem_l` již není registrovaný.
 

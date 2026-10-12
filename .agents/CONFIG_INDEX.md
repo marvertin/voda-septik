@@ -4,7 +4,7 @@ Ověřeno proti aktivním zdrojům 12. 10. 2026. Zdrojem pravdy jsou definice `c
 
 ## Uložení a použití
 
-- Sedm sekcí (`Sit`, `System`, `Teplota`, `Zasoba`, `Tlak`, `Elektromer`, `Prutokomer`) obsahuje celkem 32 položek.
+- Sedm sekcí (`Sit`, `System`, `Teplota`, `Zasoba`, `Tlak`, `Elektromer`, `Prutokomer`) obsahuje celkem 33 položek.
 - `components/config_store` uchovává registr a typové get/set API nad NVS namespace `app_cfg`; float se ukládá jako blob.
 - Chybějící hodnota používá výchozí hodnotu z kódu. Aktuální hodnoty uložené v zařízení nejsou totožné s výchozími hodnotami a nejsou zálohované Gitem.
 - Konfigurační web validuje typy a meze, zapisuje hodnoty a po uložení restartuje zařízení. Síť i kalibrace se načítají při inicializaci příslušných modulů.
@@ -53,6 +53,7 @@ Zdroj: [main/zasoba.cpp](../firmware/main/zasoba.cpp).
 | `lvl_h_min` | float | 0.0 | 0.0 až 5.0 | Vyska hladiny pro minimalni hodnotu senzoru. |
 | `lvl_h_max` | float | 1.900 | 0.0 až 5.0 | Vyska hladiny pro maximalni hodnotu senzoru. |
 | `tank_area_m2` | float | 5.4 | 0.1 až 50.0 | Pudorysna plocha nadrze pouzita pro prepocet vysky na objem. |
+| `lvl_unpump_cm` | float | 10.0 cm | 0.0 až 500.0 cm | Neodčerpatelná výška ode dna; odečítá se pouze pro výpočet využitelné zásoby, nejméně 0 m³. Skutečná hladina se nemění. |
 | `lvl_ema_alpha` | float | 0.25 | 0.01 až 1.0 | Koeficient EMA filtru na vysce hladiny (0-1). |
 | `lvl_hyst_m` | float | 0.002 | 0.0 až 0.05 | Mrtve pasmo hystereze vysky hladiny v metrech. |
 | `lvl_round_dec` | int32 | 2 | 1 až 3 | Pocet desetinnych mist pro publikovany objem (1-3; 1=desetiny, 2=setiny, 3=tisiciny). |

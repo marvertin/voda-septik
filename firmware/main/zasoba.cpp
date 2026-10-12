@@ -35,12 +35,14 @@ static constexpr int32_t LEVEL_DEFAULT_RAW_MAX = 32000;  // 20 mA pres 100 ohm s
 static constexpr float LEVEL_DEFAULT_HEIGHT_MIN_M = 0.0f;
 static constexpr float LEVEL_DEFAULT_HEIGHT_MAX_M = 1.900;
 static constexpr float LEVEL_DEFAULT_TANK_AREA_M2 = 5.4f;
+static constexpr float LEVEL_DEFAULT_UNPUMPABLE_CM = 10.0f;
 static constexpr float LEVEL_DEFAULT_EMA_ALPHA = 0.25f;
 static constexpr float LEVEL_DEFAULT_HYST_M = 0.002f;
 static constexpr int32_t LEVEL_DEFAULT_ROUND_DECIMALS = 2;
 
 static constexpr float LEVEL_MIN_HEIGHT_M = 0.0f;
 static constexpr float LEVEL_MAX_HEIGHT_M = 5.0f;
+static constexpr float LEVEL_MAX_UNPUMPABLE_CM = LEVEL_MAX_HEIGHT_M * 100.0f;
 static constexpr float LEVEL_MIN_TANK_AREA_M2 = 0.1f;
 static constexpr float LEVEL_MAX_TANK_AREA_M2 = 50.0f;
 static constexpr float LEVEL_MIN_EMA_ALPHA = 0.01f;
@@ -80,6 +82,11 @@ static const config_item_t LEVEL_TANK_AREA_ITEM = {
     .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_TANK_AREA_M2, .default_bool = false,
     .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = LEVEL_MIN_TANK_AREA_M2, .max_float = LEVEL_MAX_TANK_AREA_M2,
 };
+static const config_item_t LEVEL_UNPUMPABLE_ITEM = {
+    .key = "lvl_unpump_cm", .label = "Minimalni hladina pro cerpani [cm]", .description = "Vyska neodcerpatelne vody ode dna. Odecita se pouze pri vypoctu vyuzitelne zasoby; zobrazovana hladina zustava skutecna.",
+    .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_UNPUMPABLE_CM, .default_bool = false,
+    .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.0f, .max_float = LEVEL_MAX_UNPUMPABLE_CM,
+};
 static const config_item_t LEVEL_EMA_ALPHA_ITEM = {
     .key = "lvl_ema_alpha", .label = "Hladina EMA alpha", .description = "Koeficient EMA filtru na vysce hladiny (0-1).",
     .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = LEVEL_DEFAULT_EMA_ALPHA, .default_bool = false,
@@ -103,6 +110,7 @@ void zasoba_register_config_items(void)
     APP_ERROR_CHECK("E758", config_store_register_item(&LEVEL_H_MIN_ITEM));
     APP_ERROR_CHECK("E759", config_store_register_item(&LEVEL_H_MAX_ITEM));
     APP_ERROR_CHECK("E760", config_store_register_item(&LEVEL_TANK_AREA_ITEM));
+    APP_ERROR_CHECK("E769", config_store_register_item(&LEVEL_UNPUMPABLE_ITEM));
     APP_ERROR_CHECK("E761", config_store_register_item(&LEVEL_EMA_ALPHA_ITEM));
     APP_ERROR_CHECK("E762", config_store_register_item(&LEVEL_HYST_M_ITEM));
     APP_ERROR_CHECK("E764", config_store_register_item(&LEVEL_ROUND_DECIMALS_ITEM));
@@ -114,6 +122,7 @@ typedef struct {
     float height_min;
     float height_max;
     float tank_area_m2;
+    float unpumpable_cm;
     float ema_alpha;
     float hyst_m;
     int32_t round_decimals;
@@ -125,6 +134,7 @@ static level_calibration_config_t g_level_config = {
     .height_min = LEVEL_DEFAULT_HEIGHT_MIN_M,
     .height_max = LEVEL_DEFAULT_HEIGHT_MAX_M,
     .tank_area_m2 = LEVEL_DEFAULT_TANK_AREA_M2,
+    .unpumpable_cm = LEVEL_DEFAULT_UNPUMPABLE_CM,
     .ema_alpha = LEVEL_DEFAULT_EMA_ALPHA,
     .hyst_m = LEVEL_DEFAULT_HYST_M,
     .round_decimals = LEVEL_DEFAULT_ROUND_DECIMALS,
@@ -145,12 +155,13 @@ static constexpr int64_t LEVEL_HYST_DEBUG_PERIOD_US = 2LL * 1000LL * 1000LL;
 static void publish_config_debug(void)
 {
     DEBUG_PUBLISH("cfg/zasoba",
-                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f e=%.3f hy=%.4f rd=%ld",
+                  "rmn=%ld rmx=%ld hmn=%.3f hmx=%.3f a=%.3f uc=%.2f e=%.3f hy=%.4f rd=%ld",
                   (long)g_level_config.adc_raw_min,
                   (long)g_level_config.adc_raw_max,
                   (double)g_level_config.height_min,
                   (double)g_level_config.height_max,
                   (double)g_level_config.tank_area_m2,
+                  (double)g_level_config.unpumpable_cm,
                   (double)g_level_config.ema_alpha,
                   (double)g_level_config.hyst_m,
                   (long)g_level_config.round_decimals);
@@ -174,6 +185,7 @@ static void load_level_calibration_config(void)
     g_level_config.height_min = config_store_get_float_item(&LEVEL_H_MIN_ITEM);
     g_level_config.height_max = config_store_get_float_item(&LEVEL_H_MAX_ITEM);
     g_level_config.tank_area_m2 = config_store_get_float_item(&LEVEL_TANK_AREA_ITEM);
+    g_level_config.unpumpable_cm = config_store_get_float_item(&LEVEL_UNPUMPABLE_ITEM);
     g_level_config.ema_alpha = config_store_get_float_item(&LEVEL_EMA_ALPHA_ITEM);
     g_level_config.hyst_m = config_store_get_float_item(&LEVEL_HYST_M_ITEM);
     g_level_config.round_decimals = config_store_get_i32_item(&LEVEL_ROUND_DECIMALS_ITEM);
@@ -181,6 +193,12 @@ static void load_level_calibration_config(void)
     if (g_level_config.tank_area_m2 <= 0.0f) {
         g_level_config.tank_area_m2 = LEVEL_DEFAULT_TANK_AREA_M2;
         ESP_LOGW(TAG, "Neplatna plocha nadrze, pouzivam default %.3f m2", (double)g_level_config.tank_area_m2);
+    }
+
+    if (!std::isfinite(g_level_config.unpumpable_cm) || g_level_config.unpumpable_cm < 0.0f
+        || g_level_config.unpumpable_cm > LEVEL_MAX_UNPUMPABLE_CM) {
+        g_level_config.unpumpable_cm = LEVEL_DEFAULT_UNPUMPABLE_CM;
+        ESP_LOGW(TAG, "Neplatna minimalni hladina pro cerpani, pouzivam default %.2f cm", (double)g_level_config.unpumpable_cm);
     }
 
     if (g_level_config.ema_alpha <= 0.0f || g_level_config.ema_alpha > 1.0f) {
@@ -199,12 +217,13 @@ static void load_level_calibration_config(void)
     }
 
     ESP_LOGI(TAG,
-             "Nactena kalibrace objemu: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m area=%.3f m2 ema=%.3f hyst=%.4f rd=%ld",
+             "Nactena kalibrace objemu: raw_min=%ld raw_max=%ld h_min=%.3f m h_max=%.3f m area=%.3f m2 unpump=%.2f cm ema=%.3f hyst=%.4f rd=%ld",
              (long)g_level_config.adc_raw_min,
              (long)g_level_config.adc_raw_max,
              g_level_config.height_min,
              g_level_config.height_max,
              g_level_config.tank_area_m2,
+             g_level_config.unpumpable_cm,
              g_level_config.ema_alpha,
              g_level_config.hyst_m,
              (long)g_level_config.round_decimals);
@@ -316,6 +335,8 @@ static void log_hysteresis_debug_periodic(int64_t now_us, float input_height_m, 
 
 static float height_to_volume_m3(float height_m)
 {
+    // Hladina pro displej/MQTT zustava skutecna; odecet plati jen pro zasobu.
+    height_m -= g_level_config.unpumpable_cm / 100.0f;
     if (height_m < 0.0f) {
         height_m = 0.0f;
     }
