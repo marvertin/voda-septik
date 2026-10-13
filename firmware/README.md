@@ -119,3 +119,13 @@ Heslo helper načítá z `~/.voda-septik/mqtt_password` nebo vlastního `--pass-
 ## Provozní data a zálohy
 
 V Gitu jsou zdroje a výchozí konfigurace, nikoli aktuální NVS kalibrace, čítače v ESP nebo lokální MQTT heslo. Pro obnovu zařízení udržuj i zálohu datových oddílů a záznam provozní konfigurace. Podrobnosti a obnova Home Assistantu jsou v [kořenovém README](../README.md).
+
+## Zanesení diskového filtru (nové MQTT rozhraní)
+
+Výpočet zanesení přemístěn z tlakových senzorů do monitoru u state_manager. Nezaokrouhlené kalibrované tlaky (po RAW trimmed mean, před EMA a hysterezí) se odečítají podepsaně. Desetisekundové okno vyžaduje průtok nejméně 25 l/min, čerstvé vstupy a nejméně 30 tlakových dvojic. Z každé strany Δp odstraní 10 % vzorků a vypočte průměr a populační směrodatnou odchylku z ponechaných hodnot. Průměr průtoku je ze všech tlakových vzorků okna. Meze nestability viz `.agents/CONFIG_INDEX.md`; neplatné okno nikdy nemaže platný výsledek.
+
+`voda/septik/stav/filtr/mereni` drží poslední platný výsledek s boot counterem a číslem měření v jedné zprávě. Bez průtoku se ID nemění. Po restartu se začíná invalid stavem; HA uchovává předchozí výsledek. Nejde o automatické nulování ani o procenta fyzického ucpání.
+
+Připravený HA package `ha/homeassistant/packages/filter.yaml` načti pod `homeassistant: packages: !include_dir_named packages` v provozním configuration.yaml (sloučit s existujícím homeassistant blokem). Obsahuje obnovený trigger senzor s časem přijetí pouze nové dvojice, procenta a automatický příznak čištění s hysterezí. Trigger senzory HA obnovuje po restartu: https://www.home-assistant.io/integrations/template/ . Po přejmenování entit uprav reference v package. Výchozí meze 0.05/1.0/0.8 bar jsou pouze návrh k doladění, nikoli výrobcem stanovený limit. Provozní HA instalace není totožná s ukázkou v repozitáři; nasazení package eviduj samostatně. Staré firmware procento a jeho discovery jsou odstraněny, proto nový release mění MQTT rozhraní (major).
+
+Host test: `c++ -std=c++17 -Wall -Wextra -Werror -Imain tests/filter_monitor_test.cpp main/filter_monitor.cpp -o /tmp/filter_monitor_test && /tmp/filter_monitor_test`.

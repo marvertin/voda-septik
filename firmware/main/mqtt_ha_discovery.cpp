@@ -108,6 +108,7 @@ static ha_topic_name_cfg_t s_ha_topic_name_cfg[(size_t)mqtt_topic_id_t::COUNT] =
     {mqtt_topic_id_t::TOPIC_CMD_OTA_START, "CMD OTA start", {0}, false},
     {mqtt_topic_id_t::TOPIC_CMD_OTA_CONFIRM, "CMD OTA confirm", {0}, false},
     {mqtt_topic_id_t::TOPIC_CMD_TEPLOTA_SCAN, "CMD teplota scan", {0}, false},
+    {mqtt_topic_id_t::TOPIC_STAV_FILTR_MERENI, "Mereni filtru", {0}, false},
 };
 
 static_assert((sizeof(s_ha_topic_name_cfg) / sizeof(s_ha_topic_name_cfg[0])) == (size_t)mqtt_topic_id_t::COUNT,
@@ -283,6 +284,10 @@ static ha_entity_meta_t infer_meta(const mqtt_topic_descriptor_t &topic)
     if (topic.payload_kind == mqtt_payload_kind_t::JSON) {
         meta.component = "sensor";
         meta.icon = "mdi:code-json";
+        if (topic.id == mqtt_topic_id_t::TOPIC_STAV_FILTR_MERENI) {
+            meta.value_template = "{{ (value_json.boot_count | string) ~ ':' ~ (value_json.measurement_id | string) if value_json.valid else 'unknown' }}";
+            meta.json_attributes_topic = topic.full_topic;
+        }
         if (topic.id == mqtt_topic_id_t::TOPIC_DIAG_TEPLOTA_SCAN) {
             meta.value_template = "{{ value_json.found | count }}";
             meta.unit = "count";
@@ -458,6 +463,11 @@ static bool build_availability_topic(const char *state_topic, char *availability
 
 static esp_err_t publish_discovery_for_topic(const mqtt_topic_descriptor_t &topic)
 {
+    if (topic.id == mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT) {
+        const esp_err_t err = mqtt_publish("homeassistant/sensor/voda_septik_voda_septik_stav_zanesenost_filtru_percent/config", "", true);
+        if (err != ESP_OK) return err;
+        return mqtt_publish(topic.full_topic, "", true);
+    }
     char slug[160] = {0};
     sanitize_to_id(topic.full_topic, slug, sizeof(slug));
 

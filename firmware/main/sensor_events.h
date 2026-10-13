@@ -42,6 +42,7 @@ typedef struct {
 
 typedef struct {
     float prutok;
+    float prutok_monitor;
     float cerpano_celkem;
 } sensor_flow_data_t;
 
@@ -49,7 +50,8 @@ typedef struct {
     float pred_filtrem;
     float za_filtrem;
     float rozdil_filtru;
-    float zanesenost_filtru;
+    float pred_filtr_monitor;
+    float za_filtr_monitor;
 } sensor_pressure_data_t;
 
 typedef struct {

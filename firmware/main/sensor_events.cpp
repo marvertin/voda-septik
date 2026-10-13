@@ -156,13 +156,14 @@ void sensor_event_to_string(const app_event_t *event, char *buffer, size_t buffe
                 case SENSOR_EVENT_PRESSURE:
                     snprintf(buffer,
                              buffer_len,
-                             "event=%s type=pressure ts=%lld p_before=%.3fbar p_after=%.3fbar dp=%.3fbar clog=%.1f%%",
+                             "event=%s type=pressure ts=%lld p_before=%.3fbar p_after=%.3fbar dp=%.3fbar monitor_before=%.4f monitor_after=%.4f",
                              event_type_to_string(event->event_type),
                              (long long)event->timestamp_us,
                              event->data.sensor.data.pressure.pred_filtrem,
                              event->data.sensor.data.pressure.za_filtrem,
                              event->data.sensor.data.pressure.rozdil_filtru,
-                             event->data.sensor.data.pressure.zanesenost_filtru);
+                             event->data.sensor.data.pressure.pred_filtr_monitor,
+                             event->data.sensor.data.pressure.za_filtr_monitor);
                     break;
 
                 case SENSOR_EVENT_ELECTRIC_METER:

@@ -4,7 +4,7 @@ Ověřeno proti aktivním zdrojům 12. 10. 2026. Zdrojem pravdy jsou definice `c
 
 ## Uložení a použití
 
-- Sedm sekcí (`Sit`, `System`, `Teplota`, `Zasoba`, `Tlak`, `Elektromer`, `Prutokomer`) obsahuje celkem 33 položek.
+- Sedm sekcí (`Sit`, `System`, `Teplota`, `Zasoba`, `Tlak`, `Elektromer`, `Prutokomer`) obsahuje celkem 38 položek.
 - `components/config_store` uchovává registr a typové get/set API nad NVS namespace `app_cfg`; float se ukládá jako blob.
 - Chybějící hodnota používá výchozí hodnotu z kódu. Aktuální hodnoty uložené v zařízení nejsou totožné s výchozími hodnotami a nejsou zálohované Gitem.
 - Konfigurační web validuje typy a meze, zapisuje hodnoty a po uložení restartuje zařízení. Síť i kalibrace se načítají při inicializaci příslušných modulů.
@@ -75,7 +75,7 @@ Zdroj: [main/tlak.cpp](../firmware/main/tlak.cpp).
 | `tlk_ema_alpha` | float | 0.55 | 0.01 až 1.0 | Spolecny koeficient EMA filtru tlaku (0-1). |
 | `tlk_hyst_bar` | float | 0.02 | 0.0 až 1.0 | Spolecne mrtve pasmo hystereze tlaku v barech. |
 | `tlk_round_dec` | int32 | 2 | 1 až 3 | Spolecny pocet desetinnych mist pro publikovany tlak (1-3). |
-| `tlk_dp_100` | float | 1.0 | 0.01 až 20.0 | Rozdil tlaku, ktery odpovida 100% zanesenosti filtru. |
+| `tlk_dp_100` | float | 1.0 | 0.01 až 20.0 | Zastaralá položka; procenta nyní počítá HA, firmware ji nevyužívá. |
 
 ## Elektroměr
 
@@ -110,3 +110,17 @@ Zdroj: [main/prutokomer.cpp](../firmware/main/prutokomer.cpp).
 - Po softwarovém restartu vyvolaném uložením konfigurace se web znovu spustí po získání IP podle jednorázového NVS markeru `app_cfg/web_restart`. Běžný start v STA jej automaticky nezapíná.
 
 Související provozní postup: [firmware/README.md](../firmware/README.md).
+
+## Vyhodnocení filtru (sekce Tlak)
+
+Zdroj: `main/filter_monitor_config.cpp`, načítá state_manager při startu.
+
+| Klíč | Typ | Výchozí | Meze | Význam |
+| --- | --- | --- | --- | --- |
+| `flt_min_flow` | float | 25 | 25–200 | Minimální surový průtok l/min po celé okno. |
+| `flt_dp_offset` | float | 0 | −2–2 | Odečítaný posun čidel v bar; žádné automatické nulování. |
+| `flt_dp_std` | float | 0.05 | 0.001–2 | Maximální směrodatná odchylka ořezaného Δp v bar. |
+| `flt_flow_rng` | float | 0.20 | 0.01–1 | Maximální (max−min)/průměr průtoku. |
+| `flt_p_rng` | float | 0.30 | 0.01–5 | Maximální ořezaný rozsah každého tlaku v bar. |
+
+Meze kvality jsou výchozí hodnoty k doladění podle provozních dat. Okno je pevně 10 s, stáří/gap nejvýše 1 s, nejméně 30 dvojic tlaků. `sample_count` označuje počet ponechaných vzorků po ořezu.

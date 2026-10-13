@@ -7,8 +7,8 @@ Ověřeno proti aktivním zdrojům 12. 10. 2026. Repo obsahuje monitoring vody v
 - [Kořenové README](../README.md): instalace a obnova.
 - [Provozní README](../firmware/README.md): kalibrace a obsluha.
 - [Hardware README](../hardware/README.md): knihovny a propojení periferií.
-- [Konfigurace](CONFIG_INDEX.md): 32 položek v 7 sekcích.
-- [MQTT](MQTT_INDEX.md): 66 topiců, availability a discovery.
+- [Konfigurace](CONFIG_INDEX.md): 38 položek v 7 sekcích.
+- [MQTT](MQTT_INDEX.md): 67 topiců, availability a discovery.
 - [Pravidla větví, nasazení a verzování](../firmware/docs/vyvoj-a-nasazeni.md).
 - [Diagnostika](../firmware/docs/diagnostika.md), [logování](../firmware/docs/logging.md), [OTA](../firmware/docs/ota.md), [kódy chyb](../firmware/docs/error-codes.md).
 
@@ -54,7 +54,7 @@ Události jsou `EVT_SENSOR`, `EVT_NETWORK_STATE_CHANGE`, `EVT_NETWORK_TELEMETRY`
 | Modul | Zodpovědnost a důležité vazby |
 | --- | --- |
 | `ads1115.*` | Jediný vlastník ADC: I2C0, 0x48, PGA ±2,048 V, ALERT/RDY. AIN1 tlak za, AIN2 tlak před, AIN3 hladina. Tlaky 250 ms / 128 SPS, hladina 2 s / 16 SPS. Fronty posledních vzorků používají overwrite. |
-| `tlak.*` | RAW → bar, TrimmedMean<7,1>, EMA, hystereze, zaokrouhlení; rozdíl tlaků a zanesení v %. Chybný kanál reprezentuje NaN. |
+| `tlak.*` | RAW → bar, TrimmedMean<7,1>, EMA, hystereze, zaokrouhlení; okamžitý rozdíl tlaků; nezaokrouhlené kalibrované páry pro monitor filtru. Chybný kanál reprezentuje NaN. |
 | `zasoba.*` | RAW → výška → objem v m³, TrimmedMean<5,1>, EMA a směrová hystereze (`directional_hysteresis.hpp`). Výchozí plocha 5,4 m². |
 | `prutokomer.*` | GPIO33 ISR a kruhová historie 128 časů impulsů, odhad průtoku v okně cca 1,5 s, vyhodnocení 200 ms, nula po 3 s bez impulsu. Výchozí 38 impulsů/l. Celkový objem přetrvává po celých litrech. |
 | `flash_monotonic_counter.*` | Zápisy bitů do `flow_data0`, základ a marker rolloveru v NVS `flash_ctr`; obnovuje rozpracovaný rollover. Zálohuj data i příslušné NVS společně. |
@@ -103,3 +103,5 @@ KiCad schéma i PCB jsou v `hardware/`; mapu GPIO a knihoven shrnuje [hardware/R
 - Přímý DS18B20 scan publish neaktualizuje individuální availability použitou v jeho HA discovery.
 - Knihovna KiCad `PCM_Espressif` není uložená ani verzově připnutá v projektu; její tabulka footprintů nemusí být globálně připojená.
 - Statická kontrola zdrojů a předchozí čisté sestavení nejsou ověřením skutečného chování periferií na zařízení.
+
+`filter_monitor.*`: samostatný monitor volaný ze state_manager pro surový průtok a dvojice kalibrovaných tlaků před EMA/hysterezí/zaokrouhlením. `filter_monitor_config.cpp`: 5 položek sekce Tlak. Časy událostí jsou monotónní od startu; HA doplňuje čas příjmu nového měření.

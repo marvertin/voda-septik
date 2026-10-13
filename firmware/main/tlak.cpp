@@ -101,7 +101,7 @@ static const config_item_t PRESSURE_ROUND_DECIMALS_ITEM = {
     .max_string_len = 0, .min_int = PRESSURE_MIN_ROUND_DECIMALS, .max_int = PRESSURE_MAX_ROUND_DECIMALS, .min_float = 0.0f, .max_float = 0.0f,
 };
 static const config_item_t PRESSURE_DP100_ITEM = {
-    .key = "tlk_dp_100", .label = "dP pro 100% zaneseni [bar]", .description = "Rozdil tlaku, ktery odpovida 100% zanesenosti filtru.",
+    .key = "tlk_dp_100", .label = "dP pro 100% zaneseni [bar]", .description = "Zastarale: procenta zanesenosti nyni pocita Home Assistant. Tato polozka se nepouziva.",
     .type = CONFIG_VALUE_FLOAT, .default_string = nullptr, .default_int = 0, .default_float = PRESSURE_DEFAULT_DP100_BAR, .default_bool = false,
     .max_string_len = 0, .min_int = 0, .max_int = 0, .min_float = 0.01f, .max_float = 20.0f,
 };
@@ -183,17 +183,6 @@ static pressure_sensor_static_t s_pressure_sensor_after = {
     .ema_initialized = false,
     .hysteresis = &s_pressure_hysteresis_after,
 };
-
-static float clamp01(float value)
-{
-    if (value < 0.0f) {
-        return 0.0f;
-    }
-    if (value > 1.0f) {
-        return 1.0f;
-    }
-    return value;
-}
 
 static void publish_config_debug(void)
 {
@@ -382,12 +371,6 @@ static float round_to_decimals(float value, int32_t decimals)
     return std::roundf(value * 100.0f) / 100.0f;
 }
 
-static float pressure_diff_to_clogging_percent(float pressure_diff_bar)
-{
-    const float normalized = clamp01(pressure_diff_bar / g_pressure_config.dp_100_percent_bar);
-    return normalized * 100.0f;
-}
-
 static bool process_pressure_sensor(pressure_sensor_static_t *sensor,
                                     int32_t raw_from_ads1115,
                                     pressure_sensor_sample_t *sample)
@@ -486,13 +469,13 @@ static void tlak_task(void *pvParameters)
         const float za_filtrem = za_sensor_valid ? za_filtrem_sensor.pressure_rounded : NAN;
 
         float rozdil_filtru;
-        float zanesenost_filtru;
+
         if (pred_sensor_valid && za_sensor_valid ) {
             rozdil_filtru = pred_filtrem - za_filtrem;
-            zanesenost_filtru = pressure_diff_to_clogging_percent(rozdil_filtru);
+
         }  else {
             rozdil_filtru = NAN;
-            zanesenost_filtru = NAN;
+
         }   
 
         app_event_t event = {
@@ -506,7 +489,8 @@ static void tlak_task(void *pvParameters)
                             .pred_filtrem = pred_filtrem,
                             .za_filtrem = za_filtrem,
                             .rozdil_filtru = rozdil_filtru,
-                            .zanesenost_filtru = zanesenost_filtru,
+                            .pred_filtr_monitor = pred_sensor_valid ? pred_filtrem_sensor.pressure_raw : NAN,
+                            .za_filtr_monitor = za_sensor_valid ? za_filtrem_sensor.pressure_raw : NAN,
                         },
                     },
                 },
@@ -516,15 +500,14 @@ static void tlak_task(void *pvParameters)
         bool queued = sensor_events_publish(&event, pdMS_TO_TICKS(20));
 
         DEBUG_PUBLISH("filtr",
-                  "q=%d ts=%lld valid_pred=%d valid_za=%d pred=%.3f za=%.3f dp=%.3f clog=%.1f",
+                  "q=%d ts=%lld valid_pred=%d valid_za=%d pred=%.3f za=%.3f dp=%.3f",
                   queued ? 1 : 0,
                   (long long)event.timestamp_us,
                   pred_sensor_valid ? 1 : 0,
                   za_sensor_valid ? 1 : 0,
                   (double)pred_filtrem,
                   (double)za_filtrem,
-                  (double)rozdil_filtru,
-                  (double)zanesenost_filtru);
+                  (double)rozdil_filtru);
 
         publish_config_debug_periodic(timestamp_us);
 

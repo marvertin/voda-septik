@@ -1,0 +1,59 @@
+# Enable with homeassistant: packages: !include_dir_named packages
+# Provisional hydraulic thresholds: edit after calibration for the actual filter.
+# Entity IDs below must be updated together if renamed in HA.
+template:
+  - triggers:
+      - trigger: mqtt
+        topic: voda/septik/stav/filtr/mereni
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set p = trigger.payload_json | default({}) %}
+          {% set old_boot = state_attr('sensor.voda_septik_filter_pressure_diff', 'boot_count') | int(-1) %}
+          {% set old_id = state_attr('sensor.voda_septik_filter_pressure_diff', 'measurement_id') | int(-1) %}
+          {{ p.get('valid', false) == true
+             and is_number(p.get('pressure_diff_bar'))
+             and is_number(p.get('flow_l_min'))
+             and p.get('flow_l_min', 0) | float(0) >= 25
+             and (p.get('boot_count', -1) | int(-1) > old_boot
+                  or (p.get('boot_count', -1) | int(-1) == old_boot
+                      and p.get('measurement_id', 0) | int(0) > old_id)) }}
+    sensor:
+      - name: Voda Septik Filter Pressure Diff
+        unique_id: voda_septik_filter_pressure_diff_held
+        unit_of_measurement: bar
+        device_class: pressure
+        state_class: measurement
+        state: "{{ trigger.payload_json.pressure_diff_bar }}"
+        attributes:
+          boot_count: "{{ trigger.payload_json.boot_count }}"
+          measurement_id: "{{ trigger.payload_json.measurement_id }}"
+          measured_at: "{{ now().isoformat() }}"
+          flow_l_min: "{{ trigger.payload_json.flow_l_min }}"
+          pressure_diff_stddev_bar: "{{ trigger.payload_json.pressure_diff_stddev_bar }}"
+          sample_count: "{{ trigger.payload_json.sample_count }}"
+  - sensor:
+      - name: Voda Septik Filter Clogging
+        unique_id: voda_septik_filter_clogging
+        unit_of_measurement: "%"
+        availability: "{{ is_number(states('sensor.voda_septik_filter_pressure_diff')) }}"
+        state: >-
+          {% set deadband = 0.05 %}
+          {% set cleaning_limit = 1.0 %}
+          {% set dp = states('sensor.voda_septik_filter_pressure_diff') | float(0) %}
+          {{ ([0, ([100, 100 * (dp - deadband) / (cleaning_limit - deadband)] | min)] | max) | round(1) }}
+  - triggers:
+      - trigger: state
+        entity_id: sensor.voda_septik_filter_pressure_diff
+    conditions:
+      - condition: template
+        value_template: "{{ is_number(states('sensor.voda_septik_filter_pressure_diff')) }}"
+    binary_sensor:
+      - name: Voda Septik Filter Needs Cleaning
+        unique_id: voda_septik_filter_needs_cleaning
+        device_class: problem
+        state: >-
+          {% set cleaning_limit = 1.0 %}
+          {% set clear_limit = 0.8 %}
+          {% set dp = states('sensor.voda_septik_filter_pressure_diff') | float(0) %}
+          {{ dp >= cleaning_limit or (this.state == 'on' and dp > clear_limit) }}

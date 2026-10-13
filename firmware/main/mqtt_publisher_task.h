@@ -9,7 +9,7 @@
 
 #include "mqtt_topics.h"
 
-static constexpr size_t MQTT_PUBLISH_TEXT_MAX_LEN = 128;
+static constexpr size_t MQTT_PUBLISH_TEXT_MAX_LEN = 384;
 
 enum class mqtt_publish_value_type_t : uint8_t {
     BOOL = 0,

@@ -80,6 +80,7 @@ const mqtt_topic_descriptor_t MQTT_TOPIC_TABLE[(size_t)mqtt_topic_id_t::COUNT] =
     TOPIC_ENTRY(TOPIC_CMD_OTA_START,                     "cmd/ota/start",                    SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_OTA_CONFIRM,                   "cmd/ota/confirm",                  SUBSCRIBE_ONLY, TEXT,    1, false),
     TOPIC_ENTRY(TOPIC_CMD_TEPLOTA_SCAN,                  "cmd/teplota/scan",                 SUBSCRIBE_ONLY, TEXT,    1, false),
+    TOPIC_ENTRY(TOPIC_STAV_FILTR_MERENI, "stav/filtr/mereni", PUBLISH_ONLY, JSON, 1, true),
 };
 
 #undef TOPIC_ENTRY

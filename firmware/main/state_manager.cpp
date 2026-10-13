@@ -20,6 +20,7 @@ extern "C" {
 #include <stdio.h>
 
 #include "state_manager.h"
+#include "filter_monitor.h"
 #include "ads1115.h"
 #include "elektromer.h"
 #include "sensor_events.h"
@@ -371,7 +372,7 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
     const float pred_filtrem = event.data.pressure.pred_filtrem;
     const float za_filtrem = event.data.pressure.za_filtrem;
     const float rozdil_filtru = event.data.pressure.rozdil_filtru;
-    const float zanesenost_filtru = event.data.pressure.zanesenost_filtru;
+
 
     const bool sensor_fault_pred_filtrem = !std::isfinite(pred_filtrem);
     const bool sensor_fault_za_filtrem = !std::isfinite(za_filtrem);
@@ -425,10 +426,6 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
             ESP_LOGW(TAG, "Enqueue empty rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_empty));
         }
 
-        esp_err_t clog_empty = mqtt_publisher_enqueue_empty(mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT);
-        if (clog_empty != ESP_OK) {
-            ESP_LOGW(TAG, "Enqueue empty zanesenosti filtru selhalo: %s", esp_err_to_name(clog_empty));
-        }
 
     } else {
 
@@ -439,12 +436,7 @@ static void publish_pressure_to_outputs(const sensor_event_t &event)
             ESP_LOGW(TAG, "Enqueue rozdilu tlaku filtru selhalo: %s", esp_err_to_name(diff_result));
         }
 
-        esp_err_t clog_result = mqtt_publisher_enqueue_double(
-            mqtt_topic_id_t::TOPIC_STAV_ZANESENOST_FILTRU_PERCENT,
-            (double)zanesenost_filtru);
-        if (clog_result != ESP_OK) {
-            ESP_LOGW(TAG, "Enqueue zanesenosti filtru selhalo: %s", esp_err_to_name(clog_result));
-        }
+
     }
 }
 
@@ -507,18 +499,41 @@ static void publish_electric_meter_to_outputs(const sensor_event_t &event)
                         "energie_jalova");
 }
 
+static void publish_filter(const FilterResult &r) {
+    char payload[MQTT_PUBLISH_TEXT_MAX_LEN];
+    int n;
+    if (r.valid && s_boot_restart_info_valid) {
+        n = snprintf(payload, sizeof(payload),
+            "{\"valid\":true,\"boot_count\":%lu,\"measurement_id\":%lu,\"pressure_diff_bar\":%.6f,\"flow_l_min\":%.4f,\"pressure_diff_stddev_bar\":%.6f,\"sample_count\":%u}",
+            (unsigned long)s_boot_restart_info.boot_count, (unsigned long)r.measurement_id,
+            (double)r.pressure_diff_bar, (double)r.flow_l_min,
+            (double)r.pressure_diff_stddev_bar, (unsigned)r.sample_count);
+    } else {
+        n = snprintf(payload, sizeof(payload),
+            "{\"valid\":false,\"boot_count\":%lu,\"measurement_id\":0,\"pressure_diff_bar\":null,\"flow_l_min\":null,\"pressure_diff_stddev_bar\":null,\"sample_count\":0}",
+            (unsigned long)s_boot_restart_info.boot_count);
+    }
+    if (n > 0 && (size_t)n < sizeof(payload)) {
+        const esp_err_t err = mqtt_publisher_enqueue_text(mqtt_topic_id_t::TOPIC_STAV_FILTR_MERENI, payload);
+        if (err != ESP_OK) ESP_LOGW(TAG, "Publikace filtru selhala: %s", esp_err_to_name(err));
+    }
+}
+
 static void state_manager_task(void *pvParameters)
 {
     (void)pvParameters;
     APP_ERROR_CHECK("E601", esp_task_wdt_add(nullptr));
     update_restart_info_once_per_boot();
 
+    FilterMonitor filter(filter_monitor_load_config());
+    publish_filter(filter.result());
     app_event_t event = {};
     char debug_line[128];
     bool mqtt_ready_published = false;
     bool boot_diagnostics_published = false;
 
     while (true) {
+        filter.tick(esp_timer_get_time());
         if (!sensor_events_receive(&event, STATE_MANAGER_EVENT_WAIT_TICKS)) {
             APP_ERROR_CHECK("E602", esp_task_wdt_reset());
             continue;
@@ -541,11 +556,17 @@ static void state_manager_task(void *pvParameters)
                         APP_ERROR_CHECK("E606", esp_task_wdt_reset());
                         break;
                     case SENSOR_EVENT_FLOW: {
+                        if (esp_timer_get_time() - event.timestamp_us <= 1000000)
+                            filter.flow(event.data.sensor.data.flow.prutok_monitor, event.timestamp_us);
                         publish_flow_to_outputs(event.data.sensor);
                         APP_ERROR_CHECK("E607", esp_task_wdt_reset());
                         break;
                     }
                     case SENSOR_EVENT_PRESSURE:
+                        if (esp_timer_get_time() - event.timestamp_us <= 1000000)
+                            filter.pressure(event.data.sensor.data.pressure.pred_filtr_monitor,
+                                        event.data.sensor.data.pressure.za_filtr_monitor, event.timestamp_us);
+                        publish_filter(filter.result());
                         publish_pressure_to_outputs(event.data.sensor);
                         APP_ERROR_CHECK("E608", esp_task_wdt_reset());
                         break;

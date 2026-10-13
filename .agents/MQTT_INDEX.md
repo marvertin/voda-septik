@@ -1,6 +1,6 @@
 # Mapa MQTT
 
-Ověřeno proti kódu 12. 10. 2026. Zdrojem pravdy jsou [mqtt_topics.h](../firmware/main/mqtt_topics.h) a [mqtt_topics.cpp](../firmware/main/mqtt_topics.cpp). Kořen je pevně `voda/septik`; cesty v tabulkách jsou relativní k němu. Registr má **66 topiců: 59 publikačních a 7 příkazových**.
+Ověřeno proti kódu 12. 10. 2026. Zdrojem pravdy jsou [mqtt_topics.h](../firmware/main/mqtt_topics.h) a [mqtt_topics.cpp](../firmware/main/mqtt_topics.cpp). Kořen je pevně `voda/septik`; cesty v tabulkách jsou relativní k němu. Registr má **67 topiců: 60 publikačních a 7 příkazových**.
 
 ## Publikace a dostupnost
 
@@ -116,3 +116,11 @@ Postupy: [provozní README](../firmware/README.md), [logování](../firmware/doc
 ## Identifikace verze a nasazení
 
 `diag/fw_version` pochází z `esp_app_desc_t.version`, nyní odvozené z Git tagů. `diag/git_hash` však aktuálně publikuje pouze prefix této verze před první pomlčkou a u tagovaných buildů není hash. Pro určení provozovaného commitu používej úplnou verzi a evidenci nasazení; postup je v [pravidlech vývoje a nasazení](../firmware/docs/vyvoj-a-nasazeni.md).
+
+## Nové měření filtru
+
+`stav/filtr/mereni`: JSON, QoS v registru 1, retain ano; publisher používá společný MQTT wrapper jako ostatní topicy. Payload: `valid`, `boot_count`, `measurement_id`, `pressure_diff_bar`, `flow_l_min`, `pressure_diff_stddev_bar`, `sample_count`. Bez absolutního času a procent. Průtok je průměr při měření, nikoli aktuální průtok. Záporné Δp zůstává podepsané.
+
+Před prvním měřením po restartu `valid=false`, ID 0, hodnoty null, počet 0. Po každém přijatém 10s okně ID vzroste i při stejné hodnotě. Bez vhodného průtoku a při vadných datech zůstává poslední výsledek; publisher jej obnovuje po 60 s při nových tlakových událostech a po reconnectu. HA discovery vystavuje dvojici boot:measurement jako stav a JSON jako atributy. HA trvalý výsledek ignoruje invalid zprávy, duplicity a starší dvojice, čas přijetí ukládá pouze u nové dvojice.
+
+Starý `stav/zanesenost_filtru_percent` zůstává v registru kvůli stabilitě ID, firmware jej již nepublikuje a při discovery odstraní jeho starou retained konfiguraci i hodnotu. Nahrazuje jej HA package `firmware/ha/homeassistant/packages/filter.yaml`. Instantní `stav/tlak/rozdil_filtru_bar` je nadále okamžitá diagnostika; pro zanesení používej výhradně nové filtrované měření. Textová kapacita publisheru zvýšena na 384 B.

@@ -251,6 +251,7 @@ static void pocitani_pulsu(void *pvParameters)
                     .data = {
                         .flow = {
                             .prutok = publikovany_prutok,
+                            .prutok_monitor = surovy_prutok,
                             .cerpano_celkem = cerpano_celkem,
                         },
                     },

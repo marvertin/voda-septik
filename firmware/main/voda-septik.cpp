@@ -12,6 +12,7 @@
 
 #include "pins.h"
 #include "prutokomer.h"
+#include "filter_monitor.h"
 #include "teplota.h"
 #include "zasoba.h"
 #include "tlak.h"
@@ -232,7 +233,8 @@ void cpp_app_main(void)
     zasoba_register_config_items();
 
     APP_ERROR_CHECK("E109", config_store_begin_section("Tlak"));
-    tlak_register_config_items(); 
+    tlak_register_config_items();
+    filter_monitor_register_config_items();
 
     APP_ERROR_CHECK("E120", config_store_begin_section("Elektromer"));
     elektromer_register_config_items();

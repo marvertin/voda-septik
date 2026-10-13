@@ -47,3 +47,7 @@ V aktivních modulech je **142 unikátních kódů**. Cesty jsou relativní ke `
 `restart_info.cpp` nyní vrací chyby volajícímu; `state_manager` je loguje a zvyšuje `diag/nvs_errors`. Původní tvrzení o fatalním zápisu restart metadat již neplatí.
 
 Kontroluj kódy v aktivních `.cpp`/`.c` souborech, nikoli pouze prostým hledáním v celém repozitáři (zahrnovalo by i tuto tabulku a archiv). U config_store se kódy mohou předávat jeho pomocné funkci `check_or_abort`.
+
+## Monitor filtru
+
+E910–E914: registrace položek `flt_min_flow`, `flt_dp_offset`, `flt_dp_std`, `flt_flow_rng`, `flt_p_rng` v `filter_monitor_config.cpp`.

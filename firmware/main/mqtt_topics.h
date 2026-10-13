@@ -76,6 +76,7 @@ enum class mqtt_topic_id_t : uint16_t {
     TOPIC_CMD_OTA_CONFIRM,
     TOPIC_CMD_TEPLOTA_SCAN,
 
+    TOPIC_STAV_FILTR_MERENI,
     COUNT,
 };
 
