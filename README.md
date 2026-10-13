@@ -12,7 +12,7 @@ Repozitář obsahuje ESP-IDF firmware a KiCad návrh hardware. Provozní dokumen
 - `firmware/sdkconfig.defaults` – doplňující výchozí nastavení.
 - `firmware/partitions.csv` – rozdělení 4MB flash paměti.
 - `firmware/tools/zalevaci` – nástroj pro MQTT příkazy, diagnostiku a OTA.
-- `firmware/ha/` – konfigurace Home Assistantu a Mosquitto pro Docker Compose.
+- `firmware/ha/` – [podklady pro vytvoření a obnovu provozu HA a MQTT](firmware/ha/README.md), dvě samostatné Compose služby a verzovaná konfigurace bez provozních hesel.
 - `hardware/` – KiCad projekt, schéma, PCB a vlastní knihovny; mapa v [hardware/README.md](hardware/README.md).
 - `AGENTS.md` a `.agents/` – pracovní instrukce a mapy projektu.
 
@@ -20,7 +20,7 @@ Repozitář obsahuje ESP-IDF firmware a KiCad návrh hardware. Provozní dokumen
 
 - Firmware: **ESP-IDF v5.5.2**, target **esp32**. Stejnou verzi používá automatické sestavení v `.github/workflows/build.yml`.
 - Hardware byl upravován v **KiCadu 9**.
-- Nová funkcionalita vzniká na `develop`, nasazuje se přes USB/OTA a testuje. Po potvrzení OTA se `main` posune na skutečně provozovaný commit. Provozní opravy vznikají na `main` a ihned se nasazují; následně se přenesou do develop. Čistá dokumentace patří na obě větve bez zvýšení release verze. Úplný postup a mechanismus Git verzí jsou v [pravidlech vývoje a nasazení](firmware/docs/vyvoj-a-nasazeni.md).
+- Nová funkcionalita vzniká na dočasné větvi `develop` vytvořené z `main`, nasazuje se přes USB/OTA a testuje. Po potvrzení OTA se `main` posune na skutečně provozovaný commit. Provozní opravy vznikají na `main` a ihned se nasazují; následně se přenesou do develop, pokud existuje. Po začlenění a ověření se develop smaže. Čistá dokumentace patří na main a případně existující develop bez zvýšení release verze. Úplný postup a mechanismus Git verzí jsou v [pravidlech vývoje a nasazení](firmware/docs/vyvoj-a-nasazeni.md).
 
 Obnovu začni z `main`, pokud nepotřebuješ konkrétní vývojovou verzi. IDF ani verze knihoven se při obnově automaticky neaktualizují na novější řadu.
 

@@ -91,7 +91,7 @@ KiCad schéma i PCB jsou v `hardware/`; mapu GPIO a knihoven shrnuje [hardware/R
 
 `firmware/tools/zalevaci` má interaktivní menu i subcommandy `cmd`, `log`, `clear-retained`, `tags`, `ota`. Podporuje běžný i bench broker; jeho `--bench` nepřepíná firmware, pouze cíl CLI. Heslo je mimo Git.
 
-`firmware/ha/docker-compose.yml` je volitelná konfigurace Mosquitto a Home Assistantu. Provozní data a uživatelská `.storage` jsou mimo Git; pohyblivé image tagy nepřipínají totožnou verzi.
+`firmware/ha/README.md` popisuje vytvoření a obnovu provozu podle amuru. Dvě samostatné Compose definice `docker-compose.homeassistant.yml` a `docker-compose.mqtt.yml` připínají HA 2026.2.3 a Mosquitto 2.1.2. Veškerá konfigurace YAML včetně package filtru je verzovaná; provozní hesla, `.storage`, databáze, retained zprávy a další data jsou mimo Git a potřebují soukromou zálohu. Trvalá větev je main; develop se vytváří až při vývoji a po plném začlenění se maže.
 
 ## Známé hranice současného stavu
 

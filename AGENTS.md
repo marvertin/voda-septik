@@ -28,10 +28,10 @@ Pracovní instrukce pro repozitář `voda-septik`. Stav dokumentace ověřen pro
 
 Závazný postup je v [firmware/docs/vyvoj-a-nasazeni.md](firmware/docs/vyvoj-a-nasazeni.md).
 
-- Novou funkcionalitu vyvíjej na **develop**. Podle změny nasazuj lokálně přes USB nebo vzdáleně přes **OTA** a otestuj ji.
+- Trvalá větev je **main**. **develop** vytvářej z main až při začátku nového vývoje; po úplném začlenění a ověření ji smaž lokálně i vzdáleně. Novou funkcionalitu vyvíjej na **develop**. Podle změny nasazuj lokálně přes USB nebo vzdáleně přes **OTA** a otestuj ji.
 - Po úspěšném testu a potvrzení OTA posuň **main na konkrétní commit skutečně běžící v provozu**, nikoli automaticky na nejnovější netestovaný develop. U USB musí být obdobně ověřené nasazení a provoz.
 - Opravu provozního problému dělej na **main**, aktualizuj patch verzi a **ihned ji nasaď**, otestuj a při OTA potvrď. Potom ji přenes do develop. Selhané/čekající nasazení nezapisuj jako dokončené.
-- Čistou dokumentaci commituj na **obou větvích**; jsou-li srovnané, tentýž commit přes fast-forward. Při rozdílném runtime obsahu přenes pouze dokumentaci. Samotná dokumentace nezvyšuje release verzi a nenasazuje firmware.
+- Čistou dokumentaci commituj na **main** a také na **develop**, pokud existuje; jsou-li srovnané, tentýž commit přes fast-forward. Při rozdílném runtime obsahu přenes pouze dokumentaci. Samotná dokumentace nezvyšuje release verzi a nenasazuje firmware.
 - Před prací načti vzdálené větve/tagy a ověř pracovní strom; nepoužívej force-push jako náhradu za sladění historie.
 - Verze aplikace nyní pochází z `git describe --always --tags --dirty`. Nové release tagy mají formát `vMAJOR.MINOR.PATCH`: patch opravy, minor kompatibilní funkce, major nekompatibilní změny. Verzový tag připrav na čistém commitu před finálním buildem; již zveřejněné tagy neposouvej.
 - Eviduj úplné SHA commitu, tag/popisek, SHA-256 binárního obrazu a potvrzení/test nasazení. Nepovažuj `diag/git_hash` za skutečné SHA: aktuálně vrací prefix verze před první pomlčkou.

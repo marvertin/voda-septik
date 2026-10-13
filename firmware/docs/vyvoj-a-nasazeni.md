@@ -4,7 +4,7 @@ Pravidla uživatele a aktuální mechanismus verzování, ověřené 12. 10. 202
 
 ## Význam větví
 
-- **`develop`**: nová funkcionalita a její testování.
+- **`develop`**: dočasná větev pro novou funkcionalitu a její testování. Vytvoř ji z aktuální main při začátku vývoje; po úplném začlenění do main a ověřeném nasazení ji smaž lokálně i vzdáleně.
 - **`main`**: provozní kód. Funkcionalita z develop sem patří až po úspěšném nasazení, testu a při OTA také potvrzení nového obrazu.
 - Čistá dokumentace se ukládá na obě větve. Takový commit nemění běžící obraz, přesto mění Git HEAD a může změnit popis verze při příštím sestavení.
 
@@ -12,7 +12,7 @@ Pravidla uživatele a aktuální mechanismus verzování, ověřené 12. 10. 202
 
 ## Nová funkcionalita
 
-1. Načti vzdálený stav, ověř pracovní strom a pracuj na `develop`.
+1. Načti vzdálený stav, ověř pracovní strom a vytvoř `develop` z aktuální `main`, pokud neexistuje; pracuj na `develop`.
 2. Implementuj a commitni změnu, aktualizuj související dokumentaci a zvol odpovídající verzi.
 3. Sestav z čistého, konkrétního commitu s ESP-IDF v5.5.2. Poznamenej úplné SHA commitu, verzový tag/popisek a kontrolní součet výsledného `.bin`.
 4. Podle rozsahu změny nahraj lokálně přes USB nebo vzdáleně přes OTA. Lokální nahrání použij zejména při změně bootloaderu/tabulky oddílů nebo pokud OTA není dostupné; samotná OTA aktualizuje aplikaci.
@@ -29,14 +29,14 @@ Test s `--confirm` v neinteraktivním OTA helperu potvrzuje obraz automaticky po
 1. Opravu prováděj na **`main`** proti skutečně provozované verzi. Nepřidávej k ní netestovanou funkcionalitu z develop.
 2. Aktualizuj patch verzi, commitni, sestav z čistého stromu a proveď potřebné rychlé kontroly.
 3. **Opravu ihned nasaď** vhodným způsobem (USB nebo OTA), otestuj ji; u OTA potvrď fungující obraz. Zaznamenej výsledek a skutečně nasazený commit.
-4. Opravu následně přenes i do `develop`, aby ji další vývoj neztratil. Jsou-li větve srovnané, stačí fast-forward; při rozpracovaném vývoji začleň opravu merge nebo odpovídajícím cherry-pickem a ověř výsledek.
+4. Pokud `develop` existuje, opravu následně přenes i do `develop`, aby ji další vývoj neztratil. Jsou-li větve srovnané, stačí fast-forward; při rozpracovaném vývoji začleň opravu merge nebo odpovídajícím cherry-pickem a ověř výsledek.
 5. Pokud oprava nasadit nebo potvrdit nejde, označ ji jako čekající na nasazení. Nepovažuj commit na main ani úspěšný CI build za důkaz, že již běží v zařízení. Poslední potvrzené nasazení zůstává určující.
 
 U hotfixu se commit na main vytváří před nasazením; tato krátká mezifáze je výjimka z pravidla přesného provozního commitu. Nezaměňuj ji s úspěšným dokončením nasazení.
 
 ## Čistě dokumentační změny
 
-- Aktualizuj dokumentaci na `main` i `develop`.
+- Aktualizuj dokumentaci na `main`; na `develop` ji přenes jen pokud tato vývojová větev existuje.
 - Jsou-li větve srovnané, použij jeden commit a obě na něj posuň přes fast-forward.
 - Jsou-li odlišné, přenes pouze dokumentační změnu; neslučuj do main neověřenou funkcionalitu jen kvůli dokumentaci.
 - Samotná dokumentace nemá zvyšovat release verzi firmware ani vyvolávat nahrání nového obrazu.
